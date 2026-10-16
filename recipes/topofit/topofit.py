@@ -752,9 +752,19 @@ def process(connection, config, metadata):
             skipped,
         )
 
-        pending_output: list[tuple[str, list]] = []
+        # The originals go back before TopoFit runs, as OpenMSK does, so the scanner
+        # keeps them when reconstruction fails.
+        volumes = []
         for source_series_index, images in sorted(image_groups.items()):
             ordered, volume_xyz, affine = _mrd_series_to_nifti(images)
+            volumes.append((source_series_index, ordered, volume_xyz, affine))
+            if send_original:
+                originals = _clone_original_series(ordered, next_series_index)
+                _send_images(connection, originals, "restamped original")
+                next_series_index += 1
+
+        for source_series_index, ordered, volume_xyz, affine in volumes:
+            pending_output: list[tuple[str, list]] = []
             run_id = f"series-{source_series_index}-{uuid.uuid4().hex}"
             run_dir = WORKSPACE / run_id
             run_dir.mkdir(parents=True, exist_ok=False)
@@ -764,11 +774,6 @@ def process(connection, config, metadata):
             nifti.set_qform(affine, code=1)
             nifti.set_sform(affine, code=1)
             nib.save(nifti, str(input_path))
-
-            if send_original:
-                originals = _clone_original_series(ordered, next_series_index)
-                pending_output.append(("restamped original", originals))
-                next_series_index += 1
 
             result = run_topofit_workflow(input_path, run_dir, options)
             qc_images = _qc_mrd_images(
@@ -796,6 +801,9 @@ def process(connection, config, metadata):
                 )
                 pending_output.append(("TopoFit patch table", report_images))
                 next_series_index += 1
+            # Sent per series, so a later series' failure cannot discard these.
+            for label, images in pending_output:
+                _send_images(connection, images, label)
             logging.info(
                 "TOPOFIT_OPENRECON_RESULT status=%s elapsed_seconds=%.3f "
                 "manifest=%s warning=%s",
@@ -805,8 +813,6 @@ def process(connection, config, metadata):
                 result.warning,
             )
 
-        for label, images in pending_output:
-            _send_images(connection, images, label)
         connection.send_logging(
             constants.MRD_LOGGING_INFO,
             f"TopoFit completed: {len(image_groups)} series; {RESEARCH_WARNING}",

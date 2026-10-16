@@ -136,11 +136,12 @@ tests:
       assert parameters[\"ssusegpu\"][\"default\"] is False
       assert parameters[\"sscrop\"][\"default\"] == 0
       assert len(label[\"parameters\"]) <= 14
-      assert len(parameters) == 14
+      assert len(parameters) == len(label[\"parameters\"])
       assert parameters[\"ssparc\"][\"type\"] == \"choice\"
       assert parameters[\"ssparc\"][\"default\"] == \"none\"
       assert {value[\"id\"] for value in parameters[\"ssparc\"][\"values\"]} == {\"none\", \"desikan\", \"glasser\", \"both\"}
-      assert \"ssdebugthresholdsegment\" in parameters
+      assert {value[\"id\"] for value in parameters[\"ssvolumes\"][\"values\"]} == {\"none\", \"log\", \"report\", \"report_female\", \"report_male\"}
+      assert parameters[\"ssquantage\"][\"default\"] == 0
       assert Path(\"/opt/code/python-ismrmrd-server/OpenReconREADME.md\").stat().st_size > 0
       print(\"openrecon assets ok, parameters:\", len(label[\"parameters\"]))
       "'
@@ -173,6 +174,35 @@ tests:
     validate:
       - output_exists: ${output_dir}/synthseg/t1w_seg.nii.gz
       - output_exists: ${output_dir}/synthseg/t1w_volumes.csv
+
+  - name: Brain volume report renders from the real volume CSV
+    description: >-
+      Load the shipped IXI and 7 T norms as chosen by field strength, read the
+      --vol CSV written by the real network above and render both report pages,
+      so the norms' column names must match what mri_synthseg writes.
+    command: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import numpy as np
+      import brainquant
+
+      volumes = brainquant.read_volumes("${output_dir}/synthseg/t1w_volumes.csv")
+      subject = brainquant.resolve_subject(None, 30, "female")
+      for field_strength, cohort in ((2.89, "IXI"), (6.98, "AHEAD")):
+          norms_path, _ = brainquant.select_norms(field_strength)
+          norms = brainquant.load_norms(norms_path)
+          assert norms.reference.cohort == cohort, norms.reference
+          report = brainquant.assess(norms, volumes, subject)
+          assert all(result.percentile is not None for result in report.results)
+          pages = brainquant.render_pages(report)
+          assert len(pages) == 2
+          for page in pages:
+              assert page.dtype == np.uint16 and min(page.shape) >= 1024 and page.max() <= 4095
+              assert 0.005 < float(np.mean(page < 2048)) < 0.5
+          for result in report.results:
+              print(cohort, brainquant.log_fields(result))
+      print("brain volume report ok:", len(report.results), "structures")
+      PY
+    expected_output_contains: brain volume report ok
 
   - name: Segmentation matches the input geometry and label set
     description: >-

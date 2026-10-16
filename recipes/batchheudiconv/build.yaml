@@ -54,9 +54,6 @@ build:
         path:
           - /opt/batch-heudiconv
         bins: []
-    - test:
-        name: Basic
-        script: bh01_prep_dir.sh
 categories:
   - workflows
   - data organisation

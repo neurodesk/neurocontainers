@@ -79,6 +79,8 @@ build:
         - ca-certificates
         - "dcm2niix={{ context.dcm2niix_package_version }}"
         - file
+        - imagemagick
+        - xdotool
         - "mricron={{ context.mricron_package_version }}"
         - pigz
         - xauth

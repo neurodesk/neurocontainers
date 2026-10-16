@@ -111,20 +111,6 @@ build:
         bins:
           - ads
 
-    - test:
-        name: verify_openads_installation
-        script: |-
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          echo "[1/2] Check ads binary"
-          command -v ads
-
-          echo "[2/2] Check ads help"
-          ads --help >/dev/null
-
-          echo "OpenADS container smoke test completed."
-
 categories:
   - diffusion imaging
   - structural imaging

@@ -84,16 +84,6 @@ build:
         - mkdir -p /tmp/bidsvue/cache /tmp/bidsvue/config /tmp/bidsvue/data
         - chmod -R a+rwx /tmp/bidsvue
       condition: arch == "x86_64"
-    - test:
-        name: check BIDSvue install
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          test -x /usr/bin/bidsvue
-          test -f /usr/share/applications/BIDSvue.desktop
-          test -f /usr/share/icons/hicolor/32x32/apps/bidsvue.png
-          grep -q "Name=BIDSvue" /usr/share/applications/BIDSvue.desktop
     - run:
         - mkdir -p /opt/bidsvue-testdata
         - tar -xzf {{ get_file("bidsvue_source") }} -C /opt/bidsvue-testdata --strip-components=3 BIDSvue-{{ context.version

@@ -68,9 +68,9 @@
         {  { "sendoriginal"  } { "True"  } }
         {  { "config"  } { "qsmxt"  } }
         {  { "sendoutputs"  } { "qsm"  } }
-        {  { "qsmalgorithm"  } { "rts"  } }
+        {  { "qsmalgorithm"  } { "whqsm"  } }
         {  { "unwrappingalgorithm"  } { "romeo"  } }
-        {  { "bfalgorithm"  } { "pdf"  } }
+        {  { "bfalgorithm"  } { "harperella"  } }
         {  { "maskpreset"  } { "robust-threshold"  } }
         { }
         { }

@@ -24,8 +24,6 @@ files:
   - name: globusconnectpersonal_aarch64_tgz
     url: https://downloads.globus.org/globus-connect-personal/v3/linux_aarch64/stable/globusconnectpersonal-aarch64-{{ context.version }}.tgz
     condition: arch == "aarch64"
-  - name: gc-ctrl.py
-    filename: gc-ctrl.py
 
 auto_update:
   method: webpage
@@ -53,7 +51,6 @@ build:
     - run:
         - tar -xzf {{ get_file(context.globus_archive) }} -C /opt
         - test -d /opt/globusconnectpersonal-{{ context.version }}
-        - install -m 0755 {{ get_file("gc-ctrl.py") }} /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
         - grep -q "_get_linux_distro_name" /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
         - python -m py_compile /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
         - rm -rf /opt/globusconnectpersonal-{{ context.version }}/__pycache__

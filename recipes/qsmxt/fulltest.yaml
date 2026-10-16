@@ -1,5 +1,6 @@
 name: qsmxt
-version: "9.22.0"
+version: "10.0.0"
+upstream_version: "10.0.0"
 
 test_data:
   output_dir: test_output
@@ -27,9 +28,9 @@ setup:
     if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
     for flag, expected in (
-        ("--qsm-algorithm", "hdqsm"),
+        ("--qsm-algorithm", "rts"),
         ("--unwrapping-algorithm", "romeo"),
-        ("--bf-algorithm", "ismv"),
+        ("--bf-algorithm", "vsharp"),
     ):
         try:
             flag_index = sys.argv.index(flag)
@@ -37,11 +38,12 @@ setup:
             raise SystemExit(f"qsmxt OpenRecon should pass {flag} {expected}")
         if flag_index + 1 >= len(sys.argv) or sys.argv[flag_index + 1] != expected:
             raise SystemExit(f"qsmxt OpenRecon should pass {flag} {expected}")
-    if "--mask" in sys.argv:
-        mask_index = sys.argv.index("--mask")
-        expected_mask = "magnitude,bet:0.5,close:1,fill-holes:0"
-        if mask_index + 1 >= len(sys.argv) or sys.argv[mask_index + 1] != expected_mask:
-            raise SystemExit(f"qsmxt OpenRecon should pass --mask {expected_mask}")
+    if "--mask" not in sys.argv:
+        raise SystemExit("qsmxt OpenRecon must pass --mask")
+    mask_index = sys.argv.index("--mask")
+    expected_mask = "magnitude,threshold:otsu,close:1,fill-holes:0"
+    if mask_index + 1 >= len(sys.argv) or sys.argv[mask_index + 1] != expected_mask:
+        raise SystemExit(f"qsmxt OpenRecon should pass --mask {expected_mask}")
 
     bids = Path(sys.argv[2])
     output = Path(sys.argv[3])
@@ -258,7 +260,8 @@ tests:
                       'EchoTime': te, 'MagneticFieldStrength': 3.0, 'B0_dir': [0, 0, 1],
                   }))
           settings = qsmxt._settings_from_config({'parameters': {
-              'sendoutputs': 'smwi', 'maskpreset': 'robust-threshold',
+              'sendoutputs': 'smwi', 'inhomogeneitycorrection': 'fine',
+              'maskpreset': 'robust-threshold',
               'maskcleanup': 'none', 'qsmalgorithm': 'tkd',
           }})
           output = root / 'output'
@@ -405,6 +408,84 @@ tests:
           print("xQSM produced a finite, nonconstant susceptibility map")
       PYCODE
 
+  - name: HD-BET anatomical inference without Internet sockets
+    description: Run normal HD-BET with close/fill on the public MNI template and verify mask geometry
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import os
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      restriction = r"""
+      import ctypes
+      import errno
+      import os
+      import platform
+      import socket
+      import sys
+
+      assert platform.system() == "Linux" and platform.machine() == "x86_64"
+      class Filter(ctypes.Structure):
+          _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
+                      ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint)]
+      class Program(ctypes.Structure):
+          _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Filter))]
+      instructions = (Filter * 10)(
+          Filter(0x20, 0, 0, 4),
+          Filter(0x15, 1, 0, 0xc000003e),
+          Filter(0x06, 0, 0, 0x80000000),
+          Filter(0x20, 0, 0, 0),
+          Filter(0x15, 0, 4, 41),
+          Filter(0x20, 0, 0, 16),
+          Filter(0x15, 1, 0, socket.AF_INET),
+          Filter(0x15, 0, 1, socket.AF_INET6),
+          Filter(0x06, 0, 0, 0x00050000 | errno.ENETUNREACH),
+          Filter(0x06, 0, 0, 0x7fff0000),
+      )
+      libc = ctypes.CDLL(None, use_errno=True)
+      program = Program(len(instructions), instructions)
+      if libc.prctl(38, 1, 0, 0, 0) or libc.prctl(22, 2, ctypes.byref(program), 0, 0):
+          raise OSError(ctypes.get_errno(), "cannot install Internet socket restriction")
+      for family in (socket.AF_INET, socket.AF_INET6):
+          try:
+              socket.socket(family, socket.SOCK_STREAM)
+          except OSError as error:
+              assert error.errno == errno.ENETUNREACH, error
+          else:
+              raise AssertionError("Internet socket restriction failed")
+      os.execvp(sys.argv[1], sys.argv[1:])
+      """
+      source = Path("/opt/qsmxt/test-data/MNI152_T1_2mm.nii.gz")
+      assert os.environ["QSM_MODEL_DIR"] == "/opt/qsmxt/models"
+      assert Path("/opt/qsmxt/models/hd-bet.onnx").is_file()
+      with tempfile.TemporaryDirectory() as directory:
+          root = Path(directory)
+          cache = root / "model-cache"
+          cache.mkdir()
+          output = root / "mask.nii.gz"
+          subprocess.run([
+              sys.executable, "-c", restriction, "qsmxt", "mask", "hd-bet", str(source),
+              "--output", str(output), "--op", "close:1", "--op", "fill-holes:0",
+          ], check=True, env=dict(os.environ, QSM_MODEL_CACHE=str(cache)))
+          image = nib.load(source)
+          mask = nib.load(output)
+          data = mask.get_fdata()
+          assert mask.shape == image.shape
+          np.testing.assert_allclose(mask.affine, image.affine, atol=1e-5)
+          assert np.isfinite(data).all()
+          assert set(np.unique(data)) == {0.0, 1.0}
+          assert np.count_nonzero(data) > 0
+          assert np.count_nonzero(data == 0) > 0
+          assert not data[np.ix_([0, -1], [0, -1], [0, -1])].any()
+          print("HD-BET produced a finite nonempty binary mask with matching geometry offline")
+      PYCODE
+
   - name: OpenRecon server entrypoints
     description: Verify the OpenRecon server and deployed qsmxt module are present
     script: |
@@ -431,52 +512,139 @@ tests:
       parameter_ids = {parameter["id"] for parameter in data["parameters"]}
       expected = {
           "config",
+          "inputseries",
           "sendoutputs",
           "sourceseparation",
-          "maskthresholdpercentile",
-          "pipelinepreset",
           "qsmalgorithm",
           "unwrappingalgorithm",
           "bfalgorithm",
           "maskpreset",
+          "inhomogeneitycorrection",
+          "twopass",
+          "pipelinepreset",
+          "qsmreference",
+          "vsharpgrid",
+          "swiunwrapping",
       }
-      assert expected <= parameter_ids
+      assert expected == parameter_ids, f"Missing: {expected - parameter_ids}; unexpected: {parameter_ids - expected}"
       parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
-      pipeline_preset = parameters["pipelinepreset"]
-      assert pipeline_preset["type"] == "choice"
-      assert pipeline_preset["default"] == "custom"
+      assert list(parameters) == [
+          "config",
+          "inputseries",
+          "sendoutputs",
+          "inhomogeneitycorrection",
+          "maskpreset",
+          "pipelinepreset",
+          "unwrappingalgorithm",
+          "bfalgorithm",
+          "qsmalgorithm",
+          "vsharpgrid",
+          "twopass",
+          "qsmreference",
+          "sourceseparation",
+          "swiunwrapping",
+      ]
+      assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
       import sys
       sys.path.insert(0, "/opt/code/python-ismrmrd-server")
       import qsmxt
-      assert {value["id"] for value in pipeline_preset["values"]} == {
-          "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
-      }
+      assert parameters["pipelinepreset"]["default"] == "custom"
+      assert [value["id"] for value in parameters["pipelinepreset"]["values"]] == ["custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS]
+      assert parameters["config"]["default"] == "qsmxt"
+      assert [value["id"] for value in parameters["config"]["values"]] == ["qsmxt", "qsmxt_gre_motion", "qsmxt_ep3d", "qsmxt_ep3d_denoise"]
+      import importlib
+      for value in parameters["config"]["values"]:
+          assert callable(importlib.import_module(value["id"]).process)
       assert parameters["sourceseparation"]["default"] == "off"
       assert {value["id"] for value in parameters["sourceseparation"]["values"]} == set(qsmxt.SOURCE_SEPARATION_METHODS)
-      assert parameters["qsmalgorithm"]["default"] == "hdqsm"
+      assert parameters["qsmalgorithm"]["default"] == "rts"
       assert "whqsm" in {
           value["id"] for value in parameters["qsmalgorithm"]["values"]
       }
       assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-      assert parameters["bfalgorithm"]["default"] == "ismv"
-      if "inputseries" in parameters:
-          assert parameters["inputseries"]["default"] == "distortion-corrected"
-          assert [
-              value["id"] for value in parameters["inputseries"]["values"]
-          ] == [
-              "distortion-corrected",
-              "non-distortion-corrected",
-              "both",
-          ]
-      if "maskcleanup" in parameter_ids:
-          assert parameters["maskpreset"]["default"] == "bet"
-          assert parameters["maskinginput"]["default"] == "magnitude"
-          assert parameters["betfractionalintensity"]["default"] == 0.5
-          assert parameters["maskcleanup"]["default"] == "close-fill"
+      assert parameters["bfalgorithm"]["default"] == "vsharp"
+      assert parameters["inputseries"]["default"] == "distortion-corrected"
+      assert [
+          value["id"] for value in parameters["inputseries"]["values"]
+      ] == [
+          "distortion-corrected",
+          "non-distortion-corrected",
+          "both",
+      ]
+      assert len(data["parameters"]) == len(parameters) == 14
+      assert "maskcleanup" not in parameter_ids
+      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
+      assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
+      for parameter_id in ("twopass",):
+          assert parameters[parameter_id]["type"] == "boolean"
+          assert parameters[parameter_id]["default"] is False
+      assert parameters["qsmreference"]["type"] == "string"
+      assert parameters["qsmreference"]["default"] == "mean"
+      assert parameters["vsharpgrid"]["default"] == "native"
+      assert {value["id"] for value in parameters["vsharpgrid"]["values"]} == {"native", "finest", "isotropic"}
+      assert parameters["swiunwrapping"]["default"] == "laplacian"
+      assert {value["id"] for value in parameters["swiunwrapping"]["values"]} == {"laplacian", "laplacian-slice", "romeo"}
+      defaults = {key: parameter["default"] for key, parameter in parameters.items()}
+      settings = qsmxt._settings_from_config({"parameters": defaults})
+      assert settings["two_pass"] is settings["motion_correction"] is False
+      assert settings["qsm_reference"] == "mean"
+      assert settings["vsharp_grid"] == "native"
+      assert settings["swi_unwrapping"] == "laplacian"
+      assert settings["pipeline_preset"] == "custom"
+      assert settings["masking_input"] == "magnitude"
+      assert settings["bet_fractional_intensity"] == 0.5
+      assert settings["mask_threshold_percentile"] == 65.0
+      correction = parameters["inhomogeneitycorrection"]
+      assert correction["default"] == qsmxt.DEFAULT_HOMOGENEITY_PROFILE == "standard"
+      assert correction["label"]["en"] == "Homogeneity correction"
+      assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
+      assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
       assert "sendoriginal" not in parameter_ids
-      assert parameters["maskthresholdpercentile"]["default"] == 65.0
       assert "minip" not in parameter_ids
       print(label)
+      PY
+
+
+  - name: GRE echo alignment configuration
+    description: Verify the installed GRE motion configuration forces alignment and preserves advanced settings
+    script: |
+      set -euo pipefail
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import copy
+      import json
+      from pathlib import Path
+      from unittest.mock import patch
+
+      import qsmxt
+      import qsmxt_gre_motion
+
+      for shape in ("bare", "nested", "json"):
+          parameters = {"motioncorrection": False, "motionreference": "last",
+                        "qsmreference": "none", "inhomogeneitycorrection": "fine"}
+          config = parameters if shape == "bare" else {"parameters": parameters}
+          if shape == "json":
+              config = json.dumps(config)
+          before = copy.deepcopy(config)
+          received = []
+          with patch.object(qsmxt, "process", side_effect=lambda connection, config, metadata: received.append(config)):
+              qsmxt_gre_motion.process(None, config, None)
+          assert config == before
+          settings = qsmxt._settings_from_config(received[0])
+          assert settings["motion_correction"] is True
+          assert settings["motion_reference"] == "last"
+          assert settings["qsm_reference"] == "none"
+          assert settings["inhomogeneity_correction"] == "fine"
+          command = qsmxt._qsmxt_command(Path("bids"), Path("output"), settings)
+          assert "--motion-correction" in command
+          assert command[command.index("--motion-reference") + 1] == "last"
+          assert command[command.index("--homogeneity-nbox") + 1] == "15"
+      received = []
+      with patch.object(qsmxt, "process", side_effect=lambda connection, config, metadata: received.append(config)):
+          qsmxt_gre_motion.process(None, {}, None)
+      assert qsmxt._settings_from_config(received[0])["motion_reference"] == "first"
+      assert qsmxt._settings_from_config({})["motion_correction"] is False
+      assert qsmxt._settings_from_config({"motioncorrection": True})["motion_correction"] is True
+      print("Installed GRE echo alignment configuration verified")
       PY
 
   - name: OpenRecon bridge imports and display scaling
@@ -510,7 +678,7 @@ tests:
       PY
 
   - name: OpenRecon bridge sends derived QSM images
-    description: Run the qsmxt OpenRecon bridge against generated MRD images with a fake QSMxT derivative writer
+    description: Select GRE sources among processed products and return originals and QSM images
     timeout: 180
     script: |
       set -euo pipefail
@@ -586,7 +754,13 @@ tests:
           image(1, 2, "gre_qsm", np.full(shape_zyx, 1002, dtype=np.float32)),
           image(2, 1, "gre_qsm_Pha", np.full(shape_zyx, 2001, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
           image(2, 2, "gre_qsm_Pha", np.full(shape_zyx, 2002, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
+          image(3, 1, "gre_qsm_Romeo_Mask", np.ones(shape_zyx, dtype=np.float32)),
+          image(4, 1, "gre_qsm_Romeo_P", np.full(shape_zyx, 3001, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
       ]
+      companion_meta = ismrmrd.Meta.deserialize(images[-2].attribute_string)
+      companion_meta["SliceNo"] = "2"
+      companion_meta["NumberOfSlices"] = "2"
+      images[-2].attribute_string = companion_meta.serialize()
       connection = FakeConnection(images)
       qsmxt.OPENRECON_WORK_ROOT = Path(os.environ["OUTPUT_DIR"]) / "openrecon-work"
 
@@ -609,10 +783,18 @@ tests:
       assert len(connection.sent_batches) == 3
       assert len(connection.sent_batches[-1]) == 2
 
-      for original, source in zip(
-          [image for batch in connection.sent_batches[:2] for image in batch], images,
-      ):
+      originals = [image for batch in connection.sent_batches[:-1] for image in batch]
+      assert len(originals) == 4
+      assert {
+          ismrmrd.Meta.deserialize(image.attribute_string)["SeriesDescription"]
+          for image in originals
+      } == {"gre_qsm_original", "gre_qsm_Pha_original"}
+      for original, source in zip(originals, images[:4]):
           np.testing.assert_array_equal(original.data, source.data)
+          for field in ("matrix_size", "field_of_view", "position", "read_dir", "phase_dir", "slice_dir"):
+              np.testing.assert_array_equal(
+                  getattr(original.getHead(), field), getattr(source.getHead(), field),
+              )
       first = connection.sent_batches[-1][0]
       first_header = first.getHead()
       first_meta = ismrmrd.Meta.deserialize(first.attribute_string)
@@ -770,10 +952,28 @@ tests:
           assert magnitude_error < 0.05 < naive_error
 
           output = Path(work) / "out"
-          subprocess.run(["qsmxt", "run", str(bids), str(output), "--force"], check=True, capture_output=True)
+          qsmxt._run_qsmxt(bids, output, result["settings"])
           chimaps = list(output.rglob("*_Chimap.nii*"))
           assert chimaps and np.isfinite(nib.load(chimaps[0]).get_fdata()).all()
       print("3D EPI dual polarity motion correction, phase matching, averaging and QSMxT verified")
       PYCODE
 
-upstream_version: 9.22.0
+  - name: native QSMxT 10 reconstruction features
+    description: Exercise iLSQR, two-pass, echo motion, anisotropic slice SWI, gap refusal, and ROI reference arithmetic
+    command: python /opt/qsmxt/verify_v10_runtime.py
+    expected_output_contains: Native named ventricular and numeric union references subtract the actual ROI mean
+
+  - name: offline SynthSeg anatomy and ventricular labels
+    description: Run packaged SynthSeg v1 with a 128-voxel crop on MNI anatomy, independently of custom segmentation reference tests
+    command: python /opt/qsmxt/verify_v10_runtime.py --segmentation
+    expected_output_contains: Packaged offline SynthSeg v1 produced all 32 labels including ventricles on MNI anatomy
+
+  - name: All outputs follow effective echo count
+    description: Run the real MRD adapter and native engine for one, two, and three echoes and verify returned maps
+    command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py
+    expected_output_contains: All returns compatible maps at one and two echoes and retains T2*/R2* at three echoes
+
+  - name: Preferred input falls back to ND
+    description: Verify native MRD fallback, preferred and unmarked inputs, selection errors, and original returns
+    command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py --nd-fallback
+    expected_output_contains: ND fallback returns finite nonzero maps with actual input labels and preserves originals

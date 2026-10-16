@@ -87,3 +87,14 @@ def test_copy_rejects_invalid_image_options(tmp_path: Path, options, message) ->
     recipe_dir = _foreign_copy_recipe(tmp_path, options)
     with pytest.raises(ValueError, match=message):
         compile_recipe(recipe_dir, architecture="aarch64")
+
+
+def test_compile_rejects_nested_test_directive(tmp_path: Path) -> None:
+    recipe_dir = _foreign_copy_recipe(tmp_path, {})
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text())
+    recipe["build"]["directives"] = [
+        {"test": {"name": "smoke", "builtin": "test_deploy.sh"}}
+    ]
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
+    with pytest.raises(ValueError, match="fulltest.yaml"):
+        compile_recipe(recipe_dir, architecture="aarch64")

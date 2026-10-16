@@ -21,6 +21,7 @@ import time
 import traceback
 import uuid
 from pathlib import Path
+from typing import NamedTuple
 
 import ismrmrd
 import nibabel as nib
@@ -42,9 +43,23 @@ DEFAULT_ECHO_TIME_MS = 20.0
 DEFAULT_ECHO_SPACING_MS = 5.0
 DEFAULT_FIELD_STRENGTH_T = 3.0
 DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
-DEFAULT_QSM_ALGORITHM = "hdqsm"
+
+
+class HomogeneityParameters(NamedTuple):
+    sigma_mm: int
+    nbox: int
+
+
+HOMOGENEITY_PROFILES = {
+    "off": None,
+    "standard": HomogeneityParameters(sigma_mm=7, nbox=3),
+    "fine": HomogeneityParameters(sigma_mm=7, nbox=15),
+}
+DEFAULT_HOMOGENEITY_PROFILE = "standard"
+
+DEFAULT_QSM_ALGORITHM = "rts"
 DEFAULT_UNWRAPPING_ALGORITHM = "romeo"
-DEFAULT_BF_ALGORITHM = "ismv"
+DEFAULT_BF_ALGORITHM = "vsharp"
 ALGORITHM_PIPELINE_PRESETS = {
     "romeo-resharp-rts": {
         "unwrapping_algorithm": "romeo",
@@ -145,7 +160,8 @@ QSM_WINDOW_LOW_PERCENTILE = 1.0
 QSM_WINDOW_HIGH_PERCENTILE = 99.0
 QSM_WINDOW_MIN_NONZERO_VOXELS = 100
 QSM_DICOM_PPB_PER_PPM = 1000.0
-DEFAULT_MASK_PRESET = "bet"
+MASK_PRESETS = ("bet", "robust-threshold", "combined", "hd-bet")
+DEFAULT_MASK_PRESET = "robust-threshold"
 DEFAULT_MASKING_INPUT = "magnitude"
 DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
 DEFAULT_MASK_CLEANUP = "close-fill"
@@ -344,12 +360,13 @@ def process(connection, config, metadata):
                         settings,
                         input_pair=input_pair,
                     )
-                    _run_qsmxt(bids_dir, output_dir, settings)
+                    pair_settings = conversion["settings"]
+                    _run_qsmxt(bids_dir, output_dir, pair_settings)
                     _log_qsmxt_nifti_diagnostics(output_dir)
                     output_specs = _find_qsmxt_outputs(
                         output_dir,
                         conversion,
-                        settings,
+                        pair_settings,
                     )
                     output_images.extend(
                         _build_output_images(
@@ -422,8 +439,10 @@ def write_bids_dataset(
         int(phase_group["key"][0]),
         phase_group["order"],
     )
+    requested_outputs = settings["send_outputs"]
     preprocessed_volume = None
     if settings["ep3d_dual_polarity"]:
+        settings = _settings_for_echo_count(settings, 1)
         magnitude_echo_groups, phase_echo_groups, preprocessed_volume = (
             _ep3d_dual_polarity_average(
                 magnitude_group["images"],
@@ -436,17 +455,11 @@ def write_bids_dataset(
         magnitude_echo_groups = _echo_image_groups(magnitude_group["images"])
         phase_echo_groups = _echo_image_groups(phase_group["images"])
 
-    n_echoes = min(len(magnitude_echo_groups), len(phase_echo_groups))
-    if n_echoes == 0:
-        raise ValueError("QSMxT requires at least one magnitude and one phase image")
-    if len(magnitude_echo_groups) != len(phase_echo_groups):
-        logging.warning(
-            "Magnitude/phase echo group count mismatch; using first %d pair(s): "
-            "%d magnitude, %d phase",
-            n_echoes,
-            len(magnitude_echo_groups),
-            len(phase_echo_groups),
-        )
+    magnitude_echo_groups, phase_echo_groups = _align_source_echo_groups(
+        magnitude_echo_groups, phase_echo_groups,
+        magnitude_group["name"], phase_group["name"],
+    )
+    n_echoes = len(magnitude_echo_groups)
 
     if settings["max_echoes"] > 0:
         n_echoes = min(n_echoes, settings["max_echoes"])
@@ -454,6 +467,13 @@ def write_bids_dataset(
         raise ValueError("Source separation requires at least 3 GRE magnitude/phase echoes")
     magnitude_echo_groups = magnitude_echo_groups[:n_echoes]
     phase_echo_groups = phase_echo_groups[:n_echoes]
+    if not settings["ep3d_dual_polarity"]:
+        settings = _settings_for_echo_count(settings, n_echoes)
+    if settings["send_outputs"] != requested_outputs:
+        logging.info(
+            "QSMxT All omits T2*/R2* for %d selected echo(s); at least 3 are required",
+            n_echoes,
+        )
 
     logging.info(
         "Derived QSMxT echo groups: magnitude=%d group size(s)=%s, "
@@ -501,6 +521,14 @@ def write_bids_dataset(
 
     phase_paths = []
     magnitude_paths = []
+    acquisition_geometry = _acquisition_geometry_sidecar(
+        [image for group in magnitude_echo_groups + phase_echo_groups for image in group],
+        metadata,
+        settings,
+    )
+    if acquisition_geometry.get("MRAcquisitionType") == "2D":
+        for group in magnitude_echo_groups + phase_echo_groups:
+            _validate_2d_stack_positions(group)
     resolved_b0_dir = None
     resolved_b0_dir_source = None
     for echo_index in range(n_echoes):
@@ -541,7 +569,17 @@ def write_bids_dataset(
         if mag_volume.shape != phase_volume.shape:
             raise ValueError(
                 "Magnitude and phase echo volumes have different shapes for "
-                f"echo {echo_number}: {mag_volume.shape} vs {phase_volume.shape}"
+                f"echo {echo_number} ({magnitude_group['name']!r} vs "
+                f"{phase_group['name']!r}): {mag_volume.shape} vs {phase_volume.shape}"
+            )
+        if (
+            not np.all(np.isfinite(affine))
+            or not np.all(np.isfinite(phase_affine))
+            or not np.allclose(affine, phase_affine, rtol=0, atol=1e-4)
+        ):
+            raise ValueError(
+                f"Magnitude/phase affine geometry mismatch for echo {echo_number}: "
+                f"{magnitude_group['name']!r} vs {phase_group['name']!r}"
             )
         b0_dir, b0_dir_source = _b0_dir_for_affine(phase_affine, settings)
         if resolved_b0_dir is None:
@@ -557,6 +595,7 @@ def write_bids_dataset(
         nib.save(nib.Nifti1Image(phase_volume.astype(np.float32), phase_affine), phase_path)
 
         sidecar = {
+            **acquisition_geometry,
             "EchoTime": echo_times[echo_index],
             "MagneticFieldStrength": field_strength,
             "B0_dir": list(b0_dir),
@@ -590,6 +629,7 @@ def write_bids_dataset(
     )
     source_geometry_images = _sorted_stack_images(magnitude_echo_groups[0])
     return {
+        "settings": settings,
         "bids_dir": bids_dir,
         "anat_dir": anat_dir,
         "subject": "01",
@@ -608,6 +648,56 @@ def write_bids_dataset(
         "input_variant": input_pair["variant"],
         "input_short_label": input_pair["short_label"],
     }
+
+
+def _acquisition_geometry_sidecar(images, metadata, settings):
+    values = {"SliceThickness": [], "MRAcquisitionType": []}
+    for image in images:
+        meta = _meta_from_image(image)
+        for key in values:
+            value = _meta_text(meta, key)
+            if value:
+                values[key].append(value)
+    user_parameters = getattr(metadata, "userParameters", None)
+    for kind in ("userParameterDouble", "userParameterString"):
+        for parameter in getattr(user_parameters, kind, []) or []:
+            if parameter.name in values:
+                values[parameter.name].append(str(parameter.value))
+    if settings["slice_thickness_mm"] is not None:
+        values["SliceThickness"] = [str(settings["slice_thickness_mm"])]
+    if settings["acquisition_type"]:
+        values["MRAcquisitionType"] = [settings["acquisition_type"]]
+    sidecar = {"SliceEncodingDirection": "k"}
+    thicknesses = [float(value) for value in values["SliceThickness"]]
+    if thicknesses:
+        if any(not np.isfinite(value) or value <= 0 for value in thicknesses):
+            raise ValueError("SliceThickness metadata must be positive and finite")
+        if not np.allclose(thicknesses, thicknesses[0], rtol=0, atol=1e-4):
+            raise ValueError("Inconsistent SliceThickness metadata across magnitude/phase echoes")
+        sidecar["SliceThickness"] = thicknesses[0]
+    else:
+        logging.warning(
+            "SliceThickness metadata unavailable. Supply independent acquired thickness "
+            "in image metadata or MRD userParameters to enable QSMxT slice-gap checking."
+        )
+    acquisition_types = {value.strip().upper() for value in values["MRAcquisitionType"]}
+    if acquisition_types:
+        if not acquisition_types <= {"2D", "3D"} or len(acquisition_types) != 1:
+            raise ValueError("MRAcquisitionType metadata must consistently identify 2D or 3D")
+        sidecar["MRAcquisitionType"] = acquisition_types.pop()
+    return sidecar
+
+
+def _validate_2d_stack_positions(images):
+    if len(images) < 2 or any(int(image.getHead().matrix_size[2]) != 1 for image in images):
+        return
+    ordered = sorted(images, key=_stack_image_sort_key)
+    positions = np.asarray([image.getHead().position for image in ordered], dtype=float)
+    steps = np.diff(positions, axis=0)
+    if not np.isfinite(steps).all() or np.linalg.norm(steps[0]) <= 0:
+        raise ValueError("2D slice stacks require distinct finite scanner positions")
+    if not np.allclose(steps, steps[0], rtol=0.01, atol=1e-4):
+        raise ValueError("Nonuniform 2D slice positions cannot be represented by a NIfTI affine")
 
 
 def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settings):
@@ -748,14 +838,9 @@ def _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings):
     return json.loads(outputs_path.read_text())
 
 
-def _run_qsmxt(bids_dir, output_dir, settings):
-    binary = (
-        settings["qsmxt_binary"]
-        or os.environ.get("QSMXT_BINARY")
-        or DEFAULT_QSMXT_BINARY
-    )
+def _qsmxt_command(bids_dir, output_dir, settings):
     cmd = [
-        binary,
+        settings["qsmxt_binary"],
         "run",
         str(bids_dir),
         str(output_dir),
@@ -770,6 +855,18 @@ def _run_qsmxt(bids_dir, output_dir, settings):
     for mask_section in _mask_sections(settings):
         cmd.extend(["--mask", mask_section])
     _append_optional_arg(cmd, "--qsm-reference", settings["qsm_reference"])
+    cmd.extend(["--vsharp-grid", settings["vsharp_grid"]])
+    cmd.extend(["--swi-unwrapping", settings["swi_unwrapping"]])
+    for setting, flag in (
+        ("two_pass", "--two-pass"),
+        ("motion_correction", "--motion-correction"),
+        ("ignore_slice_gap", "--ignore-slice-gap"),
+    ):
+        if settings[setting]:
+            cmd.append(flag)
+    if settings["motion_correction"]:
+        cmd.extend(["--motion-reference", settings["motion_reference"]])
+    _append_optional_arg(cmd, "--vsharp-grid-spacing", settings["vsharp_isotropic_spacing"])
     # Auto-enable the generation flags for any derivative the user selected in
     # sendoutputs; otherwise the map is requested but never produced by QSMxT.
     selected = _selected_output_ids(settings["send_outputs"])
@@ -789,9 +886,21 @@ def _run_qsmxt(bids_dir, output_dir, settings):
         cmd.append("--do-r2starmap")
     if do_smwi:
         cmd.append("--do-smwi")
-    if not settings["inhomogeneity_correction"]:
+    homogeneity = HOMOGENEITY_PROFILES[settings["inhomogeneity_correction"]]
+    if homogeneity is None:
         cmd.append("--no-inhomogeneity-correction")
+    else:
+        cmd.extend([
+            "--inhomogeneity-correction",
+            "--homogeneity-sigma-mm", str(homogeneity.sigma_mm),
+            "--homogeneity-nbox", str(homogeneity.nbox),
+        ])
 
+    return cmd
+
+
+def _run_qsmxt(bids_dir, output_dir, settings):
+    cmd = _qsmxt_command(bids_dir, output_dir, settings)
     logging.info("Running QSMxT: %s", " ".join(cmd))
     started_at = time.monotonic()
     result = subprocess.run(
@@ -838,7 +947,7 @@ def _find_qsmxt_outputs(output_dir, conversion, settings):
                 for candidate in derivative_anat_dir.glob(f"*_{suffix}.nii*")
                 if output_id != "qsm" or not any(
                     f"_desc-{descriptor}_" in candidate.name
-                    for descriptor in ("paramagnetic", "diamagnetic", "total")
+                    for descriptor in ("paramagnetic", "diamagnetic", "total", "singlepass")
                 )
             }
         )
@@ -930,6 +1039,8 @@ def _build_original_passthrough_images(input_images, reserved_images=None):
 
     output_images = []
     for group_index, group_images in enumerate(_passthrough_source_groups(input_images)):
+        if _source_product_reason(_source_series_name(group_images[0])):
+            continue
         series_index = _reserve_series_index(
             used_series,
             ORIGINAL_SERIES_START + group_index,
@@ -1782,6 +1893,28 @@ def _b0_dir_from_affine(affine):
     return tuple(float(value) for value in image_b0)
 
 
+def _homogeneity_profile(params):
+    value = params.get("inhomogeneitycorrection")
+    if value is None:
+        return DEFAULT_HOMOGENEITY_PROFILE
+    if isinstance(value, (bool, int, float)):
+        return "standard" if value else "off"
+    if isinstance(value, str):
+        choice = value.strip().lower()
+        if not choice:
+            return DEFAULT_HOMOGENEITY_PROFILE
+        if choice in HOMOGENEITY_PROFILES:
+            return choice
+        if choice in {"1", "true", "yes", "y", "on"}:
+            return "standard"
+        if choice in {"0", "false", "no", "n"}:
+            return "off"
+    choices = ", ".join(HOMOGENEITY_PROFILES)
+    raise ValueError(
+        f"unknown inhomogeneitycorrection {value!r}; expected {choices}"
+    )
+
+
 def _settings_from_config(config, metadata=None):
     params = _config_parameters(config)
     input_series = _config_text(
@@ -1843,7 +1976,11 @@ def _settings_from_config(config, metadata=None):
         "b0_dir_override": configured_b0_dir,
         "b0_dir_source": b0_dir_source,
         "phase_wrap": _config_float(params, "phasewrap", 4096.0),
-        "qsmxt_binary": _config_text(params, "qsmxtbinary", ""),
+        "qsmxt_binary": (
+            _config_text(params, "qsmxtbinary", "")
+            or os.environ.get("QSMXT_BINARY")
+            or DEFAULT_QSMXT_BINARY
+        ),
         "pipeline_preset": pipeline_preset,
         **algorithm_settings,
         "mask_preset": (
@@ -1892,15 +2029,66 @@ def _settings_from_config(config, metadata=None):
             0,
             _config_int(params, "maskerode", mask_cleanup_defaults["erode"]),
         ),
-        "qsm_reference": _optional_choice(params, "qsmreference"),
+        "qsm_reference": _reference_spec(params),
+        "two_pass": _config_bool(params, "twopass", False),
+        "motion_correction": _config_bool(params, "motioncorrection", False),
+        "motion_reference": _motion_reference(params),
+        "vsharp_grid": _validated_choice(
+            params, "vsharpgrid", "native", ("native", "finest", "isotropic"),
+        ),
+        "vsharp_isotropic_spacing": _positive_optional_float(params, "vsharpisotropicspacing"),
+        "swi_unwrapping": _validated_choice(
+            params, "swiunwrapping", "laplacian", ("laplacian", "laplacian-slice", "romeo"),
+        ),
+        "ignore_slice_gap": _config_bool(params, "ignoreslicegap", False),
+        "slice_thickness_mm": _positive_optional_float(params, "slicethicknessmm"),
+        "acquisition_type": _validated_choice(
+            params, "acquisitiontype", "", ("", "2d", "3d"),
+        ).upper(),
         "no_qsm": no_qsm,
         "do_swi": _config_bool(params, "doswi", False),
         "do_t2starmap": _config_bool(params, "dot2starmap", False),
         "do_r2starmap": _config_bool(params, "dor2starmap", False),
-        "inhomogeneity_correction": _config_bool(params, "inhomogeneitycorrection", True),
+        "inhomogeneity_correction": _homogeneity_profile(params),
         "ep3d_dual_polarity": _config_bool(params, "ep3ddualpolarity", False),
         "ep3d_denoise": _config_bool(params, "ep3ddenoise", False),
     }
+
+
+def _validated_choice(params, key, default, choices):
+    value = _config_text(params, key, default).lower()
+    if value not in choices:
+        raise ValueError(f"unknown {key} {value!r}; expected {', '.join(choices)}")
+    return value
+
+
+def _positive_optional_float(params, key):
+    if params.get(key) in (None, ""):
+        return None
+    try:
+        value = float(params[key])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{key} must be a positive finite number") from error
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{key} must be a positive finite number")
+    return value
+
+
+def _motion_reference(params):
+    value = _config_text(params, "motionreference", "first").lower()
+    if value not in ("first", "last") and not (value.isdecimal() and int(value) > 0):
+        raise ValueError("motionreference must be first, last, or a positive echo number")
+    return value
+
+
+def _reference_spec(params):
+    value = _config_text(params, "qsmreference", "mean").lower()
+    tokens = [token.strip() for token in value.split(",")]
+    if any(not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", token) for token in tokens):
+        raise ValueError("qsmreference requires a region name, label id, or comma-separated union")
+    if len(tokens) > 1 and any(token in ("mean", "none") for token in tokens):
+        raise ValueError("qsmreference mean and none cannot be combined with regions")
+    return ",".join(tokens)
 
 
 def _algorithm_settings(params):
@@ -1945,12 +2133,14 @@ def _mask_sections(settings):
     refinement_suffix = "" if not refinements else "," + ",".join(refinements)
 
     preset = settings["mask_preset"]
-    if preset not in {"bet", "robust-threshold", "combined"}:
+    if preset not in MASK_PRESETS:
         raise ValueError(
-            f"unknown maskpreset {preset!r}; expected bet, robust-threshold, or combined"
+            f"unknown maskpreset {preset!r}; expected {', '.join(MASK_PRESETS)}"
         )
 
     sections = []
+    if preset == "hd-bet":
+        sections.append(f"magnitude,hd-bet{refinement_suffix}")
     if preset in {"bet", "combined"}:
         bet_fraction = _format_display_number(
             settings["bet_fractional_intensity"]
@@ -2092,6 +2282,10 @@ def _input_variant_from_series_name(name):
     return DISTORTION_CORRECTED
 
 
+class _MissingInputSeries(ValueError):
+    pass
+
+
 def _select_magnitude_phase_pairs(groups, selection):
     if selection not in INPUT_SERIES_CHOICES:
         choices = ", ".join(INPUT_SERIES_CHOICES)
@@ -2099,22 +2293,34 @@ def _select_magnitude_phase_pairs(groups, selection):
             f"unknown inputseries {selection!r}; expected {choices}"
         )
 
-    requested_variants = (
+    candidate_variants = (
         [DISTORTION_CORRECTED, NON_DISTORTION_CORRECTED]
-        if selection == "both"
+        if selection in ("both", DISTORTION_CORRECTED)
         else [selection]
     )
     pairs = []
-    for variant in requested_variants:
+    missing_preferred = None
+    for variant in candidate_variants:
         variant_groups = [
             group
             for group in groups
             if _input_variant_from_series_name(group["name"]) == variant
         ]
-        magnitude_group, phase_group = _select_magnitude_phase_groups(
-            variant_groups,
-            variant,
-        )
+        try:
+            magnitude_group, phase_group = _select_magnitude_phase_groups(
+                variant_groups, variant,
+            )
+        except _MissingInputSeries as error:
+            if selection != DISTORTION_CORRECTED or variant != DISTORTION_CORRECTED:
+                raise
+            missing_preferred = error
+            continue
+        if missing_preferred is not None:
+            logging.warning(
+                "%s; falling back to non-distortion-corrected input: "
+                "magnitude=%r, phase=%r",
+                missing_preferred, magnitude_group["name"], phase_group["name"],
+            )
         pairs.append(
             {
                 "variant": variant,
@@ -2124,17 +2330,56 @@ def _select_magnitude_phase_pairs(groups, selection):
                 "groups": (magnitude_group, phase_group),
             }
         )
+        if selection != "both":
+            break
     return pairs
 
 
-def _select_magnitude_phase_groups(groups, variant):
-    magnitude_groups = [group for group in groups if group["kind"] == "magnitude"]
-    phase_groups = [group for group in groups if group["kind"] == "phase"]
+def _source_name_tokens(name):
+    tokens = tuple(
+        token for token in re.split(r"[_\\\s-]+", str(name or "").lower()) if token
+    )
+    return tokens[:-1] if tokens and tokens[-1] in ("nd", "dc") else tokens
 
-    if not phase_groups and len(groups) == 2:
-        sorted_groups = sorted(groups, key=_series_signal_range)
-        sorted_groups[0]["kind"] = "phase"
-        sorted_groups[1]["kind"] = "magnitude"
+
+def _source_product_reason(name):
+    tokens = _source_name_tokens(name)
+    for suffix in (
+        ("romeo", "p"), ("romeo", "mask"), ("romeo", "b0"),
+        ("sensitivity", "corrected", "mag"),
+        ("clear", "swi"), ("clear", "swi", "mip"),
+    ):
+        if tokens[-len(suffix):] == suffix:
+            return "_".join(suffix)
+    return None
+
+
+def _source_family(group):
+    tokens = _source_name_tokens(group["name"])
+    markers = (
+        ("m", "mag", "magnitude")
+        if group["kind"] == "magnitude" else ("p", "pha", "phase")
+    )
+    if tokens and tokens[-1] in markers:
+        tokens = tokens[:-1]
+    return tokens or None
+
+
+def _select_magnitude_phase_groups(groups, variant):
+    eligible = []
+    for group in groups:
+        reason = _source_product_reason(group["name"])
+        if reason:
+            logging.info(
+                "Excluding processed QSMxT input series %r (%s)", group["name"], reason,
+            )
+        else:
+            eligible.append(group)
+    magnitude_groups = [group for group in eligible if group["kind"] == "magnitude"]
+    phase_groups = [group for group in eligible if group["kind"] == "phase"]
+
+    if not phase_groups and len(eligible) == 2:
+        sorted_groups = sorted(eligible, key=_series_signal_range)
         phase_groups = [sorted_groups[0]]
         magnitude_groups = [sorted_groups[1]]
         logging.warning(
@@ -2145,23 +2390,86 @@ def _select_magnitude_phase_groups(groups, variant):
         )
 
     if not magnitude_groups:
-        raise ValueError(
+        raise _MissingInputSeries(
             f"No magnitude image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )
     if not phase_groups:
-        raise ValueError(
+        raise _MissingInputSeries(
             f"No phase image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )
-    if len(magnitude_groups) != 1 or len(phase_groups) != 1:
-        raise ValueError(
-            f"Ambiguous {variant} input: found {len(magnitude_groups)} "
-            f"magnitude and {len(phase_groups)} phase series; available series: "
-            f"{_available_series_summary(groups)}"
-        )
+    if len(magnitude_groups) == 1 and len(phase_groups) == 1:
+        return magnitude_groups[0], phase_groups[0]
 
-    return magnitude_groups[0], phase_groups[0]
+    matches = [
+        (magnitude, phase)
+        for magnitude in magnitude_groups
+        for phase in phase_groups
+        if _source_family(magnitude)
+        and _source_family(magnitude) == _source_family(phase)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    raise ValueError(
+        f"Ambiguous {variant} input: found {len(magnitude_groups)} "
+        f"magnitude and {len(phase_groups)} phase series with "
+        f"{len(matches)} matching source pairs; available series: "
+        f"{_available_series_summary(groups)}"
+    )
+
+
+def _echo_group_identities(groups, name, namespace):
+    values = [
+        {
+            _source_echo_number(image) if namespace == "EchoNumber"
+            else int(getattr(image.getHead(), "contrast", 0))
+            for image in group
+        }
+        for group in groups
+    ]
+    present = {value for group in values for value in group if value is not None}
+    if not present or (namespace == "contrast" and len(present) == 1):
+        return None
+    if any(None in group or len(group) != 1 for group in values):
+        raise ValueError(
+            f"Incomplete or mixed echo {namespace} identities in {name!r}: {values}"
+        )
+    identities = [next(iter(group)) for group in values]
+    if len(set(identities)) != len(identities):
+        raise ValueError(f"Duplicate echo {namespace} identities in {name!r}: {identities}")
+    return identities
+
+
+def _align_source_echo_groups(magnitude, phase, magnitude_name, phase_name):
+    if not magnitude or len(magnitude) != len(phase):
+        raise ValueError(
+            f"Magnitude/phase echo count mismatch: {magnitude_name!r} has "
+            f"{len(magnitude)}, {phase_name!r} has {len(phase)}"
+        )
+    namespace = "EchoNumber"
+    magnitude_ids = _echo_group_identities(magnitude, magnitude_name, namespace)
+    phase_ids = _echo_group_identities(phase, phase_name, namespace)
+    if magnitude_ids is None or phase_ids is None:
+        namespace = "contrast"
+        magnitude_ids = _echo_group_identities(magnitude, magnitude_name, namespace)
+        phase_ids = _echo_group_identities(phase, phase_name, namespace)
+    if magnitude_ids is None or phase_ids is None:
+        logging.info(
+            "No shared explicit echo identity namespace for %r and %r; "
+            "using positional pairing",
+            magnitude_name, phase_name,
+        )
+        return magnitude, phase
+    if set(magnitude_ids) != set(phase_ids):
+        raise ValueError(
+            f"Magnitude/phase echo {namespace} mismatch: {magnitude_name!r} "
+            f"has {magnitude_ids}, {phase_name!r} has {phase_ids}"
+        )
+    return (
+        [group for _, group in sorted(zip(magnitude_ids, magnitude))],
+        [group for _, group in sorted(zip(phase_ids, phase))],
+    )
 
 
 def _available_series_summary(groups):
@@ -2927,6 +3235,29 @@ def _coerce_bool(value, default=False):
 def _append_optional_arg(cmd, flag, value):
     if value:
         cmd.extend([flag, str(value)])
+
+
+def _settings_for_echo_count(settings, n_echoes):
+    resolved = settings.copy()
+    if n_echoes >= 3:
+        return resolved
+    selected = _selected_output_ids(settings["send_outputs"])
+    all_outputs = str(settings["send_outputs"] or "qsm").strip().lower() == "all"
+    explicit = [
+        output for output in ("t2star", "r2star")
+        if settings[f"do_{output}map"] or (not all_outputs and output in selected)
+    ]
+    if explicit:
+        raise ValueError(
+            f"Requested {', '.join(explicit)} requires at least 3 echoes; "
+            f"this pair has {n_echoes} selected echo(s). "
+            "Choose qsm, swi, or smwi and disable dot2starmap/dor2starmap."
+        )
+    if all_outputs:
+        resolved["send_outputs"] = ",".join(
+            output for output in selected if output not in {"t2star", "r2star"}
+        )
+    return resolved
 
 
 def _selected_output_ids(value):

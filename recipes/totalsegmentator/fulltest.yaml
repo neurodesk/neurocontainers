@@ -38,3 +38,73 @@ tests:
     print("Default private cache and explicit configuration override work without HOME")
     PYTEST
   expected_output_contains: Default private cache and explicit configuration override work without HOME
+- name: Trained CPU segmentation matches the official reference
+  description: Run the documented public3mm model on the complete upstream CT fixture and retain its mean multilabel Dice greater than0.99 contract, physical grid and immutable input/model checks.
+  command: |
+    set -eu
+    python -u - <<'PYTHON'
+    from pathlib import Path
+    import hashlib,json,os,signal,subprocess,tempfile,time,urllib.request
+    import numpy as np
+    import nibabel as nib
+    from totalsegmentator.map_tasks_config import TASK_ID_WEIGHTS_CONFIGS
+    from totalsegmentator.map_to_binary import class_map
+
+    def digest(path):
+     h=hashlib.sha256()
+     with path.open('rb') as f:
+      for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
+     return h.hexdigest()
+
+    with tempfile.TemporaryDirectory(prefix='totalseg-proof-') as tmp:
+     root=Path(tmp);cache=root/'cache';cache.mkdir(mode=0o700)
+     env={**os.environ,'HOME':'/proc/totalseg-no-home','TOTALSEG_HOME_DIR':str(cache),'TOTALSEG_WEIGHTS_PATH':str(root/'weights'),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2','OPENBLAS_NUM_THREADS':'2','CUDA_VISIBLE_DEVICES':'','MPLCONFIGDIR':str(root/'mpl'),'XDG_CACHE_HOME':str(root/'xdg')}
+     source='https://raw.githubusercontent.com/wasserth/TotalSegmentator/184fa4765456492b2ab81a981cc387465906b003/tests/reference_files/'
+     hashes={'example_ct_sm.nii.gz':'e50c00b2914e2cac0aaee8e7f3b5f57d44d9f21bfd5c0577271c54c0cb49e9fb','example_seg_fast.nii.gz':'353a7c65c9ff5d5b9b331f811130f0ebbaedb509df74587d3bd0d1ad5ebc3910'}
+     for name,want in hashes.items():
+      with urllib.request.urlopen(source+name,timeout=120) as response:(root/name).write_bytes(response.read())
+      assert digest(root/name)==want,(name,'Fixture checksum mismatch')
+     for task in (297,298):
+      model=TASK_ID_WEIGHTS_CONFIGS[task]
+      assert model['version']=='v2.0.0-weights' and model['foldername'].startswith(f'Dataset{task}_')
+     log_path=root/'inference.log';start=time.monotonic()
+     def run(command,limit):
+      with log_path.open('a') as log:
+       proc=subprocess.Popen(command,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+       try:
+        try:proc.wait(timeout=limit)
+        except subprocess.TimeoutExpired:raise AssertionError(f'Actual TotalSegmentator command exceeded{limit}s: {command[0]}')
+        assert proc.returncode==0,log_path.read_text(errors='replace')[-16000:]
+       finally:
+        try:os.killpg(proc.pid,signal.SIGTERM)
+        except ProcessLookupError:pass
+        if proc.poll() is None:
+         try:proc.wait(timeout=15)
+         except subprocess.TimeoutExpired:os.killpg(proc.pid,signal.SIGKILL);proc.wait(timeout=10)
+     run(['totalseg_download_weights','-t','total_fast'],1800)
+     weights=sorted(p for p in (root/'weights').rglob('*') if p.is_file())
+     checkpoints=[p for p in weights if p.suffix=='.pth'];assert len(checkpoints)>=2 and all(p.stat().st_size>1000000 for p in checkpoints)
+     before={str(p):digest(p) for p in weights}
+     config=json.loads((cache/'config.json').read_text());config['send_usage_stats']=False;(cache/'config.json').write_text(json.dumps(config))
+     output=root/'prediction.nii.gz'
+     run(['TotalSegmentator','-i',str(root/'example_ct_sm.nii.gz'),'-o',str(output),'--fast','--ml','-d','cpu','-nr','2','-ns','2'],5400)
+     image=nib.load(root/'example_ct_sm.nii.gz');reference=nib.load(root/'example_seg_fast.nii.gz');prediction=nib.load(output)
+     actual=prediction.get_fdata();expected=reference.get_fdata()
+     assert actual.shape==expected.shape==image.shape and np.isfinite(actual).all()
+     assert np.isin(actual,[0,*class_map['total']]).all() and np.count_nonzero(actual)>0
+     np.testing.assert_allclose(prediction.affine,image.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(image.affine).max(),1))
+     np.testing.assert_allclose(reference.affine,image.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(image.affine).max(),1))
+     scores=[]
+     for label in np.unique(expected):
+      if label==0:continue
+      truth=expected==label;observed=actual==label
+      score=2*np.count_nonzero(truth&observed)/(np.count_nonzero(truth)+np.count_nonzero(observed)+1e-6)
+      scores.append(score)
+     assert scores and float(np.mean(scores))>.99,('Original upstream mean-Dice >0.99 contract failed',scores)
+     assert {str(p):digest(p) for p in weights}==before,'Inference modified downloaded model assets'
+     assert all(digest(root/name)==want for name,want in hashes.items()),'Inference changed official input/reference'
+     print(f'Actual TotalSegmentator public3mm CPU trained inference verified: {len(scores)} reference classes, mean Dice{np.mean(scores):.9f} >0.99, full{image.shape} geometry and hashes preserved, {time.monotonic()-start:.1f}s')
+    PYTHON
+  expected_exit_code: 0
+  expected_output_contains: "Actual TotalSegmentator public3mm CPU trained inference verified"
+  timeout: 7500

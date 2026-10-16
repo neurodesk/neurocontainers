@@ -4,3 +4,78 @@ tests:
 - name: QSMbly launcher and WebAssembly assets
   command: command -v qsmbly && test -s /opt/qsmbly/dist/index.html && test -s /opt/qsmbly/dist/wasm/qsm_wasm_bg.wasm
   expected_output_contains: qsmbly
+- name: Analytical dipole inversion in both actual WASM bundles
+  command: |
+    set -eu
+    node --input-type=module <<'JS'
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs/promises';
+    import {createHash} from 'node:crypto';
+    import {pathToFileURL} from 'node:url';
+    const root='/opt/qsmbly/dist/wasm';
+    const n=16,total=n*n*n,mask=new Uint8Array(total).fill(1);
+    const field=new Float64Array(total),expected=new Float64Array(total);
+    for(let z=0;z<n;z++) for(let y=0;y<n;y++) for(let x=0;x<n;x++) {
+      const i=x+n*(y+n*z);
+      const a=.06*Math.cos(2*Math.PI*x/n),b=.03*Math.cos(2*Math.PI*z/n),c=.02*Math.cos(2*Math.PI*(x+2*y)/n);
+      expected[i]=a+b+c;
+      field[i]=(a+c)/3-2*b/3;
+    }
+    const hash=a=>createHash('sha256').update(Buffer.from(a.buffer,a.byteOffset,a.byteLength)).digest('hex');
+    const hashes=[hash(field),hash(mask)];
+    // Three independently known Fourier modes, each away from the dipole null cone.
+    // The4096-point double-precision FFT roundoff allowance is4096eps times total amplitude.
+    const tolerance=4096*Number.EPSILON*(.06+.03+.02);
+    for(const bundle of ['qsm_wasm','qsm_wasm_dl']) {
+      const bytes=await fs.readFile(`${root}/${bundle}_bg.wasm`);
+      assert.equal(bytes.subarray(0,4).toString('hex'),'0061736d');
+      const module=await import(pathToFileURL(`${root}/${bundle}.js`));
+      module.initSync({module:bytes});
+      for(const method of ['tkd_wasm','tsvd_wasm']) {
+        const actual=module[method](field,mask,n,n,n,1,1,1,0,0,1,.1,0);
+        assert.equal(actual.length,total);
+        let maxError=0;
+        for(let i=0;i<total;i++) { assert.ok(Number.isFinite(actual[i]));maxError=Math.max(maxError,Math.abs(actual[i]-expected[i])); }
+        assert.ok(maxError<=tolerance,`${bundle}/${method} maxError${maxError} exceeds documented double FFT roundoff${tolerance}`);
+        assert.deepEqual([hash(field),hash(mask)],hashes);
+        console.log(`${bundle}/${method}: all4096 analytical susceptibility values verified; maxError=${maxError}`);
+      }
+    }
+    console.log('Actual QSMbly base and DL WebAssembly TKD/TSVD numerical operations verified');
+    JS
+  expected_exit_code: 0
+  expected_output_contains: "Actual QSMbly base and DL WebAssembly TKD/TSVD numerical operations verified"
+  timeout: 120
+- name: Actual web launcher and exact served assets
+  command: |
+    set -eu
+    node --input-type=module <<'JS'
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs/promises';
+    import net from 'node:net';
+    import {spawn} from 'node:child_process';
+    const socket=net.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));
+    const child=spawn('qsmbly',['start'],{env:{...process.env,NEURODESK_WEBAPP_PORT:String(port)},detached:true,stdio:['ignore','pipe','pipe']});
+    let log='';child.stdout.on('data',b=>{log=(log+b).slice(-16000)});child.stderr.on('data',b=>{log=(log+b).slice(-16000)});
+    const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    try {
+     let ready=false;
+     for(let i=0;i<100;i++) { if(child.exitCode!==null) throw Error(`Real web launcher exited${child.exitCode}: ${log}`);try { const r=await fetch(`http://127.0.0.1:${port}/`,{signal:AbortSignal.timeout(1000)});if(r.status===200){ready=true;break;} }catch{}await delay(100); }
+     assert.ok(ready,`Server not ready: ${log}`);
+     for(const path of ['index.html','js/app/config.js','wasm/qsm_wasm.js','wasm/qsm_wasm_bg.wasm','wasm/qsm_wasm_dl.js','wasm/qsm_wasm_dl_bg.wasm','coi-serviceworker.js','icon.svg']) {
+      const expected=await fs.readFile(`/opt/qsmbly/dist/${path}`);assert.ok(expected.length>0);
+      const response=await fetch(`http://127.0.0.1:${port}/${path}`);assert.equal(response.status,200,path);
+      const actual=Buffer.from(await response.arrayBuffer());assert.ok(actual.equals(expected),`Actual served${path} bytes differ`);
+      if(path.endsWith('.wasm')) assert.match(response.headers.get('content-type'),/application\/wasm/);
+      if(path==='js/app/config.js') assert.ok(actual.toString().includes("export const VERSION = '${version}'"));
+     }
+     console.log('Actual QSMbly launcher served exact versioned web assets and both compiled WebAssembly bundles');
+    } finally {
+     try {process.kill(-child.pid,'SIGTERM');}catch(e){if(e.code!=='ESRCH')throw e;}
+     for(let i=0;i<50 && child.exitCode===null && child.signalCode===null;i++)await delay(100);
+     if(child.exitCode===null && child.signalCode===null){try{process.kill(-child.pid,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;}}
+    }
+    JS
+  expected_exit_code: 0
+  expected_output_contains: "Actual QSMbly launcher served exact versioned web assets"
+  timeout: 60

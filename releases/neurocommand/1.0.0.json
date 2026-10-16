@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "neurocommand 1.0.0": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": [
+        "--bind",
+        "/dev/fuse"
+      ]
+    }
+  },
+  "categories": [
+    "workflows",
+    "programming"
+  ]
+}

@@ -300,3 +300,36 @@ def test_observation_failure_keeps_recipe_and_runtime_suite_unchanged(
     with pytest.raises(ValueError, match="expected one release asset"):
         plan_sources(path, github)
     assert (path.read_text(), suite.read_text()) == before
+
+
+def test_versioned_asset_name_resolves_from_the_selected_release(upstream):
+    github, public = upstream
+    config = {
+        "method": "github_release_asset",
+        "repo": "example/tool",
+        "asset": "tool-{version}-linux.zip",
+    }
+    tagged = (
+        "https://github.com/example/tool/releases/download/v2.0.0/tool-2.0.0-linux.zip"
+    )
+    github.asset_overrides = {"name": "tool-2.0.0-linux.zip"}
+    public.get = lambda url, **kwargs: (
+        public.urls.append(url) or Response(data=public.payload, url=url)
+    )
+    validate_source(config)
+    result = observe_source(config, github)
+    assert result.value == tagged
+    assert result.metadata["sha256"] == hashlib.sha256(public.payload).hexdigest()
+    assert public.urls == [tagged]
+
+    github.asset_overrides = {"name": "tool-1.0.0-linux.zip"}
+    with pytest.raises(ValueError, match="tool-2.0.0-linux.zip"):
+        observe_source(config, github)
+
+
+@pytest.mark.parametrize(
+    "asset", ["tool-{version}-{version}.zip", "tool-{tag}.zip", "{version}/tool.zip"]
+)
+def test_only_one_version_placeholder_in_a_plain_filename_is_accepted(asset):
+    with pytest.raises(ValueError, match="exact asset filename"):
+        validate_source({**CONFIG, "asset": asset})

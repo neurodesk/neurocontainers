@@ -1,13 +1,14 @@
 {
   "apps": {
-    "dicompare 0.1.2": {
-      "version": "20260127",
+    "mricron 1.2.20211006": {
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "quality control",
+    "visualization",
+    "structural imaging",
     "data organisation"
   ]
 }

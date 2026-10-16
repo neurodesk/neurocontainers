@@ -7,20 +7,47 @@ For scanner setup and usage, see the [user guide](OpenReconREADME.md).
 
 This OpenRecon adapter receives reconstructed ISMRMRD image messages, separates
 the magnitude and phase series, writes a temporary BIDS MEGRE dataset, runs the
-QSMxT v9 Rust binary, and sends selected derivatives back as derived MRD image
+QSMxT v10.0.0 Rust binary, and sends selected derivatives back as derived MRD image
 series.
 
-The **Input images** control selects distortion-corrected images, images marked
-`ND` (not distortion corrected), or both. Distortion-corrected input is the
-default. **Both** runs QSMxT once per magnitude/phase pair and returns distinct
+The **Input images** control defaults to **Prefer distortion corrected**.
+It selects the preferred magnitude and phase pair, or a complete `ND` pair when
+a preferred component is missing. Explicit ND selection remains strict.
+**Both** runs QSMxT once per magnitude/phase pair and returns distinct
 `DC` and `ND` output series. It takes roughly twice as long as processing one
 pair.
 
 The wrapper classifies phase data from MRD image type metadata, DICOM image type
 metadata, or source series names such as `phase`, `pha`, or `_Pha`. It recognizes
 `ND` only as a separate, case-insensitive name token, so magnitude and phase are
-always paired within the same distortion-correction variant. A missing or
-ambiguous requested pair fails explicitly instead of selecting by arrival order.
+always paired within the same distortion-correction variant. Unmarked series use
+the preferred slot; names do not verify physical correction. Only missing
+components permit default selection to fall back, after processed-product
+filtering and phase inference. Ambiguity, echo alignment, geometry, and native
+reconstruction errors propagate without retry. Both requires both complete
+pairs. A successful fallback logs the missing component and selected ND source
+names, and returns ND-labelled results without changing the requested setting.
+
+Within each correction variant, source selection excludes the known processed
+series suffixes `Romeo_Mask`, `Romeo_P`, `Romeo_B0`,
+`sensitivity_corrected_mag`, `CLEAR-SWI`, and `CLEAR-SWI_mIP`. Matching is
+case-insensitive and uses complete suffix tokens. A terminal `ND` or `DC` token
+does not prevent product detection. The DICOM `DERIVED` flag alone does not
+exclude an input, because coil-combined source images can carry that flag.
+
+A single eligible magnitude and phase pair remains valid regardless of its
+series names. When several candidates remain, the wrapper selects a pair only
+if their normalized source family identifies exactly one magnitude and phase
+match. For example, `Aspire_M` and `Aspire_P` share the `Aspire` family.
+Multiple complete families or duplicate candidates fail with an ambiguity.
+Original passthrough applies the same processed-series exclusions and retains
+all genuine sources, including correction variants not selected for QSM.
+
+Before applying `maxechoes`, the BIDS writer requires equal echo counts and
+checks source echo identities when both components provide them. It aligns
+explicit echo identities and validates the converted magnitude and phase
+volume shapes and affines before saving each echo. Incompatible input fails
+before QSMxT starts.
 
 For each derived magnitude/phase echo group the wrapper writes:
 
@@ -38,10 +65,24 @@ debugging, but they are not shown in the scanner UI. Voxel geometry comes from
 the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
-QSMxT derivatives that exist after the run. The original magnitude and phase
-series are always sent back before the derived output. There is no
-`sendoriginal` control; an older configuration containing that key cannot
-disable original image return.
+compatible QSMxT derivatives that exist after the run. Below three selected
+echoes, All omits implicit T2*/R2* requests and logs the count. GRE uses aligned
+echo groups after `maxechoes`. EPI repetitions yield one averaged echo. Each
+DC or ND pair resolves independently. Explicit `t2star` or `r2star` selections,
+or `dot2starmap=true` or `dor2starmap=true`, fail below three echoes before
+reconstruction or EPI preprocessing, including when combined with All. False
+advanced flags do not cancel an explicit map selection.
+
+The original magnitude and phase
+source series are sent back before the derived output, including unselected DC
+and ND variants. The same source-name filter excludes ROMEO phase, mask, and B0,
+sensitivity-corrected magnitude, CLEAR-SWI, and CLEAR-SWI mIP companions from
+both reconstruction input and original image return. Original pixels, physical
+geometry, and echo identities are preserved while return series and instance
+identities are reassigned. All incoming series identities remain reserved,
+including excluded companions. Original metadata validation remains strict for
+eligible sources. There is no `sendoriginal` control; an older configuration
+containing that key cannot disable original image return.
 
 Derived outputs are converted to unsigned 12-bit display values in the valid
 `0..4095` range. Binary masks use `0` and `4095`. QSM storage scaling preserves
@@ -85,9 +126,9 @@ retain the conversion to the source arbitrary units. Source NIfTI values do not
 change.
 
 QSMxT computes T2* from multi-echo magnitude data inside its reconstruction mask.
-The [v9.22.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v9.22.0/src/pipeline/runner.rs)
+The [v10.0.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v10.0.0/src/pipeline/runner.rs)
 requires at least three echoes and calls the
-[QSM.rs v0.38.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/utils/r2star.rs),
+[QSM.rs v0.39.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.39.0/src/utils/r2star.rs),
 with a log-linear fallback for rejected estimates. The ARLO calculation assumes
 equally spaced echo times. The pipeline writes R2* in inverse seconds and takes
 `T2* = 1 / R2*` for positive rates inside the mask, otherwise zero. Small positive
@@ -109,25 +150,26 @@ adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
 unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
 sequence instead, and enable both phase and magnitude reconstruction.
 
-OpenRecon selects HD-QSM with ROMEO and iSMV explicitly:
+OpenRecon selects RTS with ROMEO and V-SHARP explicitly:
 
 ```text
-qsmxt run <bids_dir> --qsm-algorithm hdqsm --unwrapping-algorithm romeo --bf-algorithm ismv
+qsmxt run <bids_dir> --qsm-algorithm rts --unwrapping-algorithm romeo --bf-algorithm vsharp --mask magnitude,threshold:otsu,close:1,fill-holes:0
 ```
 
 The OpenRecon wrapper also supplies the output directory and resource settings.
-Its custom-pipeline defaults are ROMEO phase unwrapping, iSMV background-field
-removal, HD-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
-intensity threshold, closing radius 1, and automatic hole filling. This differs
-from the upstream QSMxT inversion default, which is RTS. The QSM map is the only
+Its custom-pipeline defaults are ROMEO phase unwrapping, V-SHARP background-field
+removal, RTS inversion, and robust-threshold magnitude masking with Otsu,
+closing radius 1, and automatic hole filling. The adapter adds no signal erosion. The QSM map is the only
 derived output returned by default. The source magnitude and phase series
 are always stored alongside it.
 
-The default prioritizes speed while retaining good similarity in the QSM-CI
-in silico 2019 benchmark: ROMEO + iSMV + HD-QSM achieved xSIM 0.361 in about
-1.4 minutes. The matching WH-QSM combination scored 0.388 but took about
-3.6 minutes. These are benchmark measurements, not scanner runtime guarantees.
-See the linked full-pipeline results below.
+The current [QSM-CI ROMEO + HARPERELLA + WH-QSM phantom run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~harperella-qsmrs~whqsm-qsmrs-cmp)
+reports xSIM 0.3843, NRMSE 73.73%, and runtime 344.3 seconds, about 5.7 minutes.
+This is phantom evidence, not scanner or clinical validation. In that CI run,
+HARPERELLA jointly unwraps and removes the background field from wrapped phase.
+The OpenRecon adapter calls the packaged `qsmxt run` command with the flags above.
+These benchmark results do not establish equivalent processing or runtime for
+the adapter.
 
 ### GRE source separation
 
@@ -177,13 +219,14 @@ within the 16-character DICOM limit.
 
 ## Pipeline presets
 
-The **Pipeline preset** selection box contains ten scanner-tested combinations
-and six complete-method presets. A pipeline preset overrides **QSM algorithm**,
-**Unwrap**, and **Background**. Select **Custom algorithm controls** to use those
-three selection boxes. The custom default is ROMEO, iSMV, and HD-QSM.
+The scanner **Pipeline preset** control exposes Custom, ten historically measured
+combinations, and six complete-method presets. Advanced `pipelinepreset` uses the
+same choices. Named presets override **Unwrap**, **Background**, and **Dipole
+inversion**. Custom uses those stage controls independently, with defaults ROMEO,
+V-SHARP, and RTS.
 
-Treat these measurements as results from the scanner test used for this adapter,
-not as universal rankings. Lower inter-scanner error and runtime are better.
+These historical measurements are not validation of QSMxT 10 or the current
+scanner package. Lower inter-scanner error and runtime are better.
 Inter-scanner error measures disagreement between the tested scanner outputs.
 Higher [XSIM](https://doi.org/10.1002/mrm.30271), a structural-similarity metric
 tuned for QSM, is better. Runtime will vary with the acquisition and host
@@ -251,9 +294,9 @@ phase jumps, background-field removal isolates the local tissue field, and QSM
 inversion estimates susceptibility from that field. The mask defines which
 voxels enter those calculations.
 
-| QSM algorithm | Method |
+| Dipole inversion | Method |
 | --- | --- |
-| `default` | Use the OpenRecon default, HD-QSM. |
+| `default` | Use the OpenRecon default, RTS. |
 | `whqsm` | Weak-Harmonic QSM. |
 | `hdqsm` | Hybrid data-fidelity QSM. |
 | `rts` | Rapid Two-Step inversion. |
@@ -294,7 +337,7 @@ voxels enter those calculations.
 
 | Background algorithm | Method |
 | --- | --- |
-| `default` | Use the OpenRecon default, iSMV. |
+| `default` | Use the OpenRecon default, V-SHARP. |
 | `vsharp` | Variable-kernel SHARP. |
 | `pdf` | Projection onto Dipole Fields. |
 | `lbv` | Laplacian Boundary Value. |
@@ -308,20 +351,48 @@ voxels enter those calculations.
 
 | Mask preset | Method |
 | --- | --- |
-| `bet` | Brain Extraction Tool masking of magnitude. This is the OpenRecon default. |
-| `robust-threshold` | Otsu or percentile thresholding of the selected magnitude or phase-quality input. |
+| `hd-bet` | HD-BET extraction from magnitude using the packaged model. |
+| `bet` | Brain Extraction Tool masking of magnitude. |
+| `robust-threshold` | Otsu or percentile thresholding of the selected magnitude or phase-quality input. This is the OpenRecon default. |
 | `combined` | Union of independently generated BET and threshold masks. |
 
 The mask preset remains active when an algorithm pipeline preset is selected;
 the pipeline preset only overrides unwrapping, background removal, and QSM
-inversion. Mask controls expose the threshold input and method, BET fractional
-intensity, percentile cutoff, and a cleanup preset. **Mask percentile**
-(`maskthresholdpercentile`) defaults to 65% and applies when **Threshold method**
-is Percentile.
+inversion. Advanced `maskinginput` defaults to `magnitude`, `maskthresholdmethod`
+to `otsu`, and `betfractionalintensity` to 0.5. `maskthresholdpercentile` defaults
+to 65% and applies when `maskthresholdmethod` is `percentile`.
 Magnitude thresholding is the safer choice for single-echo data because a
-single echo provides no inter-echo phase-coherence information. Closing and
-hole filling run before erosion; erosion defaults to zero so repaired gaps are
-not reopened.
+single echo provides no inter-echo phase-coherence information. Each mask section
+closes gaps with radius 1 and fills all holes by default (`close:1,fill-holes:0`).
+Dilation and erosion default to zero. Mask cleanup is no longer a scanner control.
+Historical cleanup presets and numeric refinement overrides remain supported.
+As before, `maskcleanup: none` selects the default close-and-fill behavior.
+Numeric overrides can disable individual refinements.
+
+### Homogeneity correction
+
+The scanner control **Homogeneity correction** (`inhomogeneitycorrection`) selects
+one profile for magnitude intensity correction.
+
+| Profile | Smoothing sigma | Tissue-estimation boxes per axis |
+| --- | --- | --- |
+| `standard` (default) | 7 mm | 3 |
+| `fine` | 7 mm | 15 |
+| `off` | Correction disabled | None |
+
+Enabled profiles pass `--inhomogeneity-correction`, `--homogeneity-sigma-mm 7`, and
+`--homogeneity-nbox 3` or `--homogeneity-nbox 15` to QSMxT.
+Off passes only `--no-inhomogeneity-correction`, without numeric homogeneity flags.
+These settings affect masking, combined magnitude, and SMWI. Version 10 CLEAR-SWI
+reads individual echo magnitudes and applies its own receive-sensitivity correction
+independently of this profile, including when the profile is Off.
+The box count controls tissue estimation, not smoothing passes. Fine provides a
+comparison setting. Fine has not been shown to improve 7 T reconstruction quality.
+Its effect on a particular acquisition requires image review.
+Historical Boolean values and Boolean strings map true to Standard and false to
+Off. Numeric Boolean inputs keep their previous true/false interpretation.
+Missing, null, and blank values select Standard. Profile IDs ignore case and
+surrounding whitespace. Unknown nonblank values raise a configuration error.
 
 <!-- BEGIN QSM-CI benchmarks -->
 
@@ -427,12 +498,68 @@ ROMEO and Laplacian rows measure field mapping, including echo handling,
 rather than unwrapping alone. HARPERELLA, iHARPERELLA, and iQFM benchmark
 joint unwrapping/background removal. QSMART refers to QSM.rs, not MATLAB.
 
-TFI is benchmarked from the true total field. The packaged QSMxT `run` dispatcher
-still applies the selected background-removal stage before TFI; its GUI
-selection therefore does not reproduce that isolated TFI benchmark.
+TFI is benchmarked from the true total field. QSMxT 10 also supplies the total
+field to TFI. These tables are a historical benchmark snapshot; they do not
+measure the packaged QSMxT 10 pipeline or its new defaults.
 
 Regenerate these tables with `python3 recipes/qsmxt/update_benchmarks.py`.
 Use `--refresh` to fetch new results or `--check` to check the committed
 tables against `qsmci-in-silico-2019.json`. The snapshot records source hashes.
 
 <!-- END QSM-CI benchmarks -->
+
+## Native version 10 controls
+
+The scanner label retains 14 controls. **Pipeline preset** defaults to Custom.
+**Config** offers standard GRE, standard GRE + echo motion alignment, and the two
+EPI modes. The GRE alignment module copies parsed parameters and forces
+`motioncorrection: true`, including when the caller supplies false. It preserves
+`motionreference` and unrelated advanced options without changing caller data.
+Standard GRE still accepts advanced `motioncorrection`, which defaults to false.
+`twopass` is a scanner boolean with default false. `qsmreference` is a string with default `mean`. `vsharpgrid` accepts `native`, `finest`, or `isotropic`, with default `native`. `swiunwrapping` accepts `laplacian`, `laplacian-slice`, or `romeo`, with default `laplacian`.
+
+Advanced `motionreference` accepts `first`, `last`, or a positive 1-based echo index. Advanced `vsharpisotropicspacing` is a positive spacing in millimeters passed as `--vsharp-grid-spacing`. The native reliable-pass mask remains unfilled. Ordinary close/fill mask refinements do not apply to that mask. Main QSM output discovery excludes `desc-singlepass` alongside source-separation maps.
+
+The adapter passes explicit ROMEO, V-SHARP, and RTS choices. Native version 10 uses Laplacian SWI unwrapping and the native V-SHARP grid by default. Slice-wise Laplacian is a SWI option, not a general QSM unwrapping option. Native echo motion correction registers magnitude and resamples complex magnitude/phase pairs. It intersects echo coverage before reconstruction.
+
+### Anatomical reference regions
+
+Every non-background SynthSeg v1 label is available by id or slug. Bilateral slugs select both sides. Prefix a bilateral slug with `left-` or `right-` to select one side.
+
+| Bilateral or unsided slug | Left or unsided id | Right id |
+| --- | --- | --- |
+| `cerebral-white-matter` | 2 | 41 |
+| `cerebral-cortex` | 3 | 42 |
+| `lateral-ventricle` | 4 | 43 |
+| `inferior-lateral-ventricle` | 5 | 44 |
+| `cerebellum-white-matter` | 7 | 46 |
+| `cerebellum-cortex` | 8 | 47 |
+| `thalamus` | 10 | 49 |
+| `caudate` | 11 | 50 |
+| `putamen` | 12 | 51 |
+| `pallidum` | 13 | 52 |
+| `3rd-ventricle` | 14 | |
+| `4th-ventricle` | 15 | |
+| `brain-stem` | 16 | |
+| `hippocampus` | 17 | 53 |
+| `amygdala` | 18 | 54 |
+| `accumbens-area` | 26 | 58 |
+| `ventral-dc` | 28 | 60 |
+
+`ventricles` is the union `4,5,14,15,43,44`. Other unions use comma-separated terms, such as `thalamus,caudate`, `left-thalamus,right-caudate`, or `4,43`. Duplicate terms are deduplicated by the native resolver. Background id 0 and unknown ids are invalid. `mean` and `none` cannot be mixed with region terms.
+
+Region selection enables SynthSeg on combined GRE magnitude anatomy. The offset is the ROI mean within defined reconstruction support. QSMxT subtracts this offset over the whole support and keeps unsupported voxels at zero. Empty intersections fail. Fewer than 50 supported ROI voxels produce a warning. Native reference summaries record the offset and voxel count. `csf` is label 24 in SynthSeg v2, distinct from `ventricles`. Public v2 weights are unavailable. This recipe packages the pinned v1 model.
+
+### Acquired slice geometry
+
+Image metadata or MRD `userParameterDouble` and `userParameterString` entries named `SliceThickness` and `MRAcquisitionType` supply independent acquired geometry. Thickness must be finite and positive, and metadata must agree across the acquisition. Acquisition type accepts `2D` or `3D`. The NIfTI stack axis is declared as `SliceEncodingDirection: k`.
+
+Advanced `slicethicknessmm` and `acquisitiontype` override those metadata values explicitly. Unknown thickness stays absent and produces an actionable warning. The adapter never derives acquired thickness from affine pitch, volume field of view, or packed 3D partition spacing. A 2D stack with nonuniform scanner positions fails because one NIfTI affine cannot represent it. Actual stack spacing remains in the affine.
+
+QSMxT compares thickness with slice pitch and refuses gapped QSM acquisitions by default. Advanced `ignoreslicegap: true` passes the explicit native override. The result then carries the native unreliability warning. Synthetic contiguous/gapped stack tests prove the integration contract, not scanner-specific 2D quality.
+
+### Runtime verification scope
+
+`verify_v10_runtime.py` runs actual native iLSQR, two-pass, displaced echo registration, anisotropic V-SHARP, slice-wise SWI, gap refusal, and ROI arithmetic on deterministic synthetic fixtures. The two-pass check verifies ordinary-pass fallback outside the reliable mask. It does not assess scientific accuracy of the second pass. Named ventricular, numeric-union, and sided reference arithmetic use a supplied dseg to isolate that operation.
+
+A separate smoke test executes the packaged SynthSeg model on MNI magnitude anatomy with a 128-voxel crop and flip averaging disabled. It checks all 32 v1 labels, ventricular voxels, lookup names, and acquired geometry while Internet sockets are denied. This proves offline model compatibility. It does not establish full-volume segmentation quality or scanner validation.
