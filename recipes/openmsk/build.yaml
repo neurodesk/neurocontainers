@@ -10,7 +10,7 @@ variables:
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.15.0"
-  kneepipeline_commit: "5ec9bd962d66486edc5ec5b061bd66cc41bf99c2"
+  kneepipeline_commit: "d6c9d2ba40902a6da2c387a4346522ad95285b5b"
   dosma_sagittal_model_url: https://huggingface.co/aagatti/dosma_bones/resolve/{{ context.dosma_models_commit }}/sagittal_best_model.h5
   dosma_coronal_model_url: https://huggingface.co/aagatti/dosma_bones/resolve/{{ context.dosma_models_commit }}/coronal_best_model.h5
   dosma_axial_model_url: https://huggingface.co/aagatti/dosma_bones/resolve/{{ context.dosma_models_commit }}/axial_best_model.h5
