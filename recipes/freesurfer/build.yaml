@@ -1,40 +1,54 @@
-name: freesurfer
-version: 8.2.0
-# https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/
-
+name: freesurfer6
+version: 6.0.0
 
 copyright:
-  - name: freesurfer license
-    url: https://github.com/freesurfer/freesurfer/blob/dev/LICENSE.txt
+  - name: FreeSurfer Software License Agreement
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
 
 architectures:
   - x86_64
 
 variables:
-  freesurfer_version: "8.2.0"
-  virtualgl_version: "3.1.5"
-  virtualgl_sha256: df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e
+  upstream_version: 6.0.0
+  # Published checksum from EasyBuild's archived FreeSurfer 6.0.0 recipe:
+  # https://github.com/easybuilders/easybuild-easyconfigs/blob/fad15f942d964eb9593d4cc74e25c8aa2e4a913d/easybuild/easyconfigs/f/FreeSurfer/FreeSurfer-6.0.0-centos6_x86_64.eb
+  freesurfer_sha256: 9e68ee3fbdb80ab73d097b9c8e99f82bf4674397a1e59593f42bb78f1c1ad449
+  matlab_runtime_version: R2012b
+  matlab_runtime_sha256: 42e8bea39bc039d767257ab62469018003411de2e3e7fbfad88a75cb58f3a6e7
+  install_path: /opt/freesurfer-{{ context.upstream_version }}
 
 auto_update:
   method: sources
-  container_version: freesurfer
+  container_version: {variable: upstream_version}
+  frozen: true
+  reason: >-
+    This recipe preserves FreeSurfer 6.0.0 for workflows that require this
+    historical release. Newer releases are provided by the freesurfer recipe.
   sources:
     - id: freesurfer
       method: github_tags
       repo: freesurfer/freesurfer
+      version_regex: 'v(?P<version>6\.0\.0)'
       target:
-        variable: freesurfer_version
-    - id: virtualgl
-      dependency: true
+        variable: upstream_version
+        value: version
+        fulltest_variable: upstream_version
+    - id: freesurfer_archive
       method: http_digest
-      url: https://github.com/VirtualGL/virtualgl/releases/download/3.1.5/virtualgl_3.1.5_amd64.deb
+      url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/6.0.0/freesurfer-Linux-centos6_x86_64-stable-pub-v6.0.0.tar.gz
       target:
-        variable: virtualgl_sha256
+        variable: freesurfer_sha256
+    - id: matlab_runtime
+      method: http_digest
+      dependency: true
+      url: https://ssd.mathworks.com/supportfiles/MCR_Runtime/R2012b/MCR_R2012b_glnxa64_installer.zip
+      target:
+        variable: matlab_runtime_sha256
 
 build:
   kind: neurodocker
-
-  base-image: ubuntu:22.04
+  # Python 2 and Qt 4 support the original CentOS 6 binaries and scripts.
+  base-image: ubuntu:16.04
   pkg-manager: apt
 
   directives:
@@ -42,458 +56,113 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
-        - octave
-        - wget
-        - language-pack-en
-        - binutils
-        - libx11-dev
-        - gettext
-        - xterm
-        - x11-apps
-        - perl
-        - make
-        - csh
-        - tcsh
-        - tcl
-        - file
         - bc
-        - python-is-python3
-        - xorg
-        - xorg-dev
-        - xserver-xorg-video-intel
-        - libncurses5
-        - libbsd0
-        - libegl1
-        - libexpat1
-        - libfontconfig1
-        - libfreetype6
-        - libgl1
-        - libglib2.0-0
-        - libglu1-mesa
-        - libglvnd0
-        - libglx0
+        - binutils
+        - ca-certificates
+        - file
         - libgomp1
-        - libice6
-        - libicu70
         - libjpeg62
-        - libmd0
-        - libopengl0
-        - libpcre2-16-0
-        - libpng16-16
-        - libquadmath0
+        - libncurses5
+        - libqt4-network
+        - libqt4-opengl
+        - libqt4-svg
+        - libqtgui4
+        - libglu1-mesa
         - libsm6
-        - libx11-6
-        - libx11-xcb1
-        - libxau6
-        - libxcb-icccm4
-        - libxcb-image0
-        - libxcb-keysyms1
-        - libxcb-randr0
-        - libxcb-render-util0
-        - libxcb-render0
-        - libxcb-shape0
-        - libxcb-shm0
-        - libxcb-sync1
-        - libxcb-util1
-        - libxcb-xfixes0
-        - libxcb-xinerama0
-        - libxcb-xinput0
-        - libxcb-xkb1
-        - libxcb1
-        - libxdmcp6
         - libxext6
         - libxft2
-        - libxi6
-        - libxkbcommon-x11-0
-        - libxkbcommon0
-        - libqt5core5a
-        - libqt5dbus5
-        - libqt5gui5
-        - libqt5network5
-        - libqt5widgets5
-        - libqt5xml5
-        - libqt5x11extras5
         - libxmu6
         - libxrender1
         - libxss1
         - libxt6
-        - mesa-utils
+        - locales
+        - perl
+        - psmisc
+        - python
+        - tar
+        - tcsh
         - unzip
-        - libncurses5
-        - libgomp1
-        - default-jdk
-        - xvfb
         - xauth
+        - xvfb
 
     - run:
-        - apt-get update -qq
-        - apt-get install -y -q --no-install-recommends {{ get_file("freesurfer_deb") }}
-        - apt-get install -y -q --no-install-recommends {{ get_file("virtualgl_deb") }}
-        - rm -rf /var/lib/apt/lists/*
-
-    - workdir: /opt/freesurfer-{{ context.version }}
-
-    - environment:
-        LD_LIBRARY_PATH: ""
-
-    - template:
-        name: matlabmcr
-        install_path: /opt/MCR2014a
-        version: 2014a
+        - locale-gen en_US.UTF-8
+        - mkdir -p {{ context.install_path }}
+        - tar -xzf {{ get_file("freesurfer_archive") }} -C {{ context.install_path }} --strip-components=1 --no-same-owner
 
     - run:
-        - ln -s /opt/MCR2014a/v83/ /opt/freesurfer-{{ context.version }}/MCRv83
-
-    - template:
-        name: matlabmcr
-        install_path: /opt/MCR2019b
-        version: 2019b
-
-    - run:
-        - ln -s /opt/MCR2019b/v97/ /opt/freesurfer-{{ context.version }}/MCRv97
-
-    # Remove MCR's bundled Qt5 libraries that conflict with the system Qt5
-    # needed by freeview_bin_real. Without this, any LD_LIBRARY_PATH that
-    # includes MCRv97/bin/glnxa64 (e.g. for MATLAB-compiled tools) will
-    # cause freeview to pick up the wrong, version-less Qt5 and crash.
-    - run:
-        - rm -f /opt/MCR2019b/v97/bin/glnxa64/libQt5*.so*
-
-    - environment:
-        FIX_VERTEX_AREA: ""
-        FMRI_ANALYSIS_DIR: /opt/freesurfer-{{ context.version }}/fsfast
-        FREESURFER_HOME: /opt/freesurfer-{{ context.version }}
-        FSFAST_HOME: /opt/freesurfer-{{ context.version }}/fsfast
-        FSF_OUTPUT_FORMAT: nii.gz
-        FS_MCRROOT: /opt/MCR2019b/v97/
-        FS_OCTAVE_BIN: /usr/bin/octave
-        FS_OCTAVE_LIB: /usr/lib/x86_64-linux-gnu/octave/6.4.0
-        FS_OVERRIDE: "0"
-        FS_USE_OCTAVE: "1"
-        FUNCTIONALS_DIR: /opt/freesurfer-{{ context.version }}/sessions
-        LOCAL_DIR: /opt/freesurfer-{{ context.version }}/local
-        MINC_BIN_DIR: /opt/freesurfer-{{ context.version }}/mni/bin
-        MINC_LIB_DIR: /opt/freesurfer-{{ context.version }}/mni/lib
-        MNI_DATAPATH: /opt/freesurfer-{{ context.version }}/mni/data
-        MNI_DIR: /opt/freesurfer-{{ context.version }}/mni
-        MNI_PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
-        OS: Linux
-        PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
-        SHLVL: "1"
-        SUBJECTS_DIR: ~/freesurfer-subjects-dir
-        TERM: xterm
-
-    - workdir: /opt/workbench/
-
-    - run:
-        - unzip {{ get_file("workbench_zip") }}
-
-    - environment:
-        DEPLOY_TEST_MAX_PATH_FILES: "60"
-        # Set FREESURFER_HOME on `module load` to the host-visible path inside the
-        # unpacked container, so host-side tools (MATLAB toolbox, luts, fsaverage,
-        # SetUpFreeSurfer.sh) resolve without exec-ing into the container. BASEPATH
-        # is substituted by transparent-singularity to the container's .simg dir.
-        # This adds, in LUA:
-        # setenv("FREESURFER_HOME", "/cvmfs/neurodesk.ardc.edu.au/containers/freesurfer_8.2.0_20260331/freesurfer_8.2.0_20260331.simg/opt/freesurfer-8.2.0")
-        DEPLOY_ENV_FREESURFER_HOME: "BASEPATH/opt/freesurfer-{{ context.version }}"
-        FREESURFER: /opt/freesurfer-{{ context.version }}
-        LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}/lib/qt/lib:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib:/usr/local/freesurfer/lib/qt/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
-        PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
-
-    - run:
-        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
-        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
-
-    - run:
-        - echo "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" > /etc/ld.so.conf.d/freesurfer-qt.conf
-        - ldconfig
-
-    # Fix libQt5Core.so.5 for runtime compatibility across host stacks:
-    # 1) glibc 2.37+ rejects dlopen on shared objects that carry PT_INTERP.
-    # 2) Older host kernels (for example 3.10) reject binaries that advertise
-    #    .note.ABI-tag Linux 3.17.0, surfacing as "cannot open shared object file".
-    # We patch PT_INTERP/.interp in the ELF binary and strip .note.ABI-tag.
-    # NEEDED ld-linux is left intact (harmless). We do NOT use patchelf
-    # --remove-needed as it can corrupt the binary.
-    - run:
-        - QT5CORE_LIB=/usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
-        - python3 {{ get_file("fix_qt5core_pie") }} "$QT5CORE_LIB"
-        - if readelf -n "$QT5CORE_LIB" | grep -q '\.note.ABI-tag'; then strip --remove-section=.note.ABI-tag "$QT5CORE_LIB"; fi
-        - ldconfig
-
-    - run:
-        - mv /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin_real
-
-    - copy:
-        - freeview
-        - /opt/freesurfer-{{ context.version }}/bin/freeview
-
-    - copy:
-        - freeview_bin
-        - /opt/freesurfer-{{ context.version }}/bin/freeview_bin
-
-    - copy:
-        - freeview-vgl
-        - /opt/freesurfer-{{ context.version }}/bin/freeview-vgl
-
-    - run:
-        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin
-        - chmod 0755 /opt/freesurfer-{{ context.version }}/bin/freeview-vgl
-        - ln -s /opt/VirtualGL/bin/eglinfo /usr/local/bin/vgl-eglinfo
-        - ln -s /opt/VirtualGL/bin/glxspheres64 /usr/local/bin/vgl-glxspheres64
-        - ldconfig
-
-    - workdir: /opt/freesurfer-{{ context.version }}/bin/
-
-    - run:
-        - cp {{ get_file("segmentNuclei_1") }} segmentNuclei_mcr97
-        - chmod a+rwx segmentNuclei_mcr97
-
-    - copy:
-        - segmentNuclei
-        - /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
-
-    - run:
-        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
+        - mkdir -p /tmp/mcr-installer
+        - unzip -q {{ get_file("matlab_runtime") }} -d /tmp/mcr-installer
+        - /tmp/mcr-installer/install -mode silent -agreeToLicense yes -destinationFolder /opt/matlab-runtime
+        - ln -s /opt/matlab-runtime/v80 {{ context.install_path }}/MCRv80
+        - rm -rf /tmp/mcr-installer
 
     - copy:
         - license.txt
-        - /opt/freesurfer-{{ context.version }}/license.txt
+        - "{{ context.install_path }}/license.txt"
+
+    - copy:
+        - run_mcr.sh
+        - /tmp/run_mcr.sh
+
+    - run:
+        - >-
+          for launcher in run_SegmentSubject.sh run_SegmentSubfieldsT1Longitudinal.sh
+          run_segmentSubjectT1_autoEstimateAlveusML.sh
+          run_segmentSubjectT1T2_autoEstimateAlveusML.sh
+          run_segmentSubjectT2_autoEstimateAlveusML.sh; do
+          test -f "{{ context.install_path }}/bin/$launcher" &&
+          install -m 0755 /tmp/run_mcr.sh "{{ context.install_path }}/bin/$launcher" || exit 1;
+          done
+        - rm /tmp/run_mcr.sh
+
+    - environment:
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        OS: Linux
+        FREESURFER_HOME: "{{ context.install_path }}"
+        FREESURFER: "{{ context.install_path }}"
+        FS_LICENSE: "{{ context.install_path }}/license.txt"
+        SUBJECTS_DIR: "{{ context.install_path }}/subjects"
+        LOCAL_DIR: "{{ context.install_path }}/local"
+        FSFAST_HOME: "{{ context.install_path }}/fsfast"
+        FMRI_ANALYSIS_DIR: "{{ context.install_path }}/fsfast"
+        FUNCTIONALS_DIR: "{{ context.install_path }}/sessions"
+        FS_OVERRIDE: "0"
+        FIX_VERTEX_AREA: ""
+        FSF_OUTPUT_FORMAT: nii.gz
+        FS_MCRROOT: "{{ context.install_path }}/MCRv80"
+        MNI_DIR: "{{ context.install_path }}/mni"
+        MINC_BIN_DIR: "{{ context.install_path }}/mni/bin"
+        MINC_LIB_DIR: "{{ context.install_path }}/mni/lib"
+        MNI_DATAPATH: "{{ context.install_path }}/mni/data"
+        MNI_PERL5LIB: "{{ context.install_path }}/mni/share/perl5"
+        PERL5LIB: "{{ context.install_path }}/mni/share/perl5"
+        PATH: "{{ context.install_path }}/bin:{{ context.install_path }}/fsfast/bin:{{ context.install_path }}/tktools:{{ context.install_path }}/mni/bin:$PATH"
+        LD_LIBRARY_PATH: "{{ context.install_path }}/lib/qt/lib:{{ context.install_path }}/lib/vtk/lib/vtk-5.6:$LD_LIBRARY_PATH"
+        QT_X11_NO_MITSHM: "1"
+        DEPLOY_ENV_FREESURFER_HOME: "BASEPATH{{ context.install_path }}"
+        DEPLOY_TEST_MAX_PATH_FILES: "60"
+
+    - workdir: /data
 
 deploy:
   path:
-    - /opt/freesurfer-{{ context.version }}/bin/
-    - /opt/freesurfer-{{ context.version }}/fsfast/bin/
+    - "{{ context.install_path }}/bin"
+    - "{{ context.install_path }}/fsfast/bin"
   bins:
     - recon-all
     - freeview
-    - freeview-vgl
-    - vglrun
-    - vgl-eglinfo
-    - vgl-glxspheres64
-
-readme: |-
-  ----------------------------------
-  ## freesurfer/{{ context.version }} ##
-  FreeSurfer contains a set of programs with a common focus of analyzing magnetic resonance imaging scans of brain tissue. It is an important tool in functional brain mapping and contains tools to conduct both volume based and surface based analysis.
-
-  Example:
-  ```
-  # start freesurfer from application menu or load freesurfer via module load command
-  mkdir ~/freesurfer_output
-  export SUBJECTS_DIR=~/freesurfer_output
-  export SINGULARITYENV_SUBJECTS_DIR=$SUBJECTS_DIR
-  recon-all -subject subjectname -i invol1.nii.gz -all
-  ```
-
-
-  More documentation can be found here: https://surfer.nmr.mgh.harvard.edu/fswiki/recon-all
-
-  To run container outside of this environment: ml freesurfer/{{ context.version }}
-
-  VirtualGL {{ context.virtualgl_version }} is included for GPU rendering on HPC.
-  In a GPU allocation with a working remote X display, run:
-  ```bash
-  apptainer exec --nv /path/to/freesurfer.simg /opt/VirtualGL/bin/eglinfo -e
-  apptainer exec --nv --bind /path/to/data:/data /path/to/freesurfer.simg freeview-vgl -v /data/volume.nii.gz
-  ```
-  `freeview-vgl` defaults to `VGL_DISPLAY=egl0` and `VGL_COMPRESS=proxy`.
-  Select the allocated device from `eglinfo -e`, for example with
-  `apptainer exec --nv --env VGL_DISPLAY=egl1 /path/to/freesurfer.simg freeview-vgl`.
-  Keep the remote session's DISPLAY and X authentication available inside the
-  container. The image requires compatible host graphics drivers; ordinary
-  `freeview` remains available for launches without VirtualGL.
-
-  Citation: see https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferMethodsCitation
-
-  License: Custom License https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
-  ----------------------------------
 
 files:
-  - name: fix_qt5core_pie
-    contents: |-
-      #!/usr/bin/env python3
-      """Strip PT_INTERP from libQt5Core so glibc 2.37+ will dlopen it.
-
-      Qt builds libQt5Core as both a shared library and an executable, adding a
-      PT_INTERP program header and .interp section. glibc 2.37+ refuses to
-      dlopen shared objects that carry PT_INTERP. This script patches:
-        1. PT_INTERP program header -> PT_NULL
-        2. .interp section header type -> SHT_NULL
-        3. .interp section data -> zeroed
-      The NEEDED ld-linux-x86-64.so.2 entry is left intact (harmless).
-      """
-      import struct, sys
-
-      path = sys.argv[1]
-      with open(path, 'r+b') as f:
-          f.seek(0)
-          assert f.read(4) == b'\x7fELF', f'{path}: not an ELF file'
-          assert f.read(1) == b'\x02', f'{path}: not 64-bit ELF'
-
-          f.seek(32)
-          e_phoff = struct.unpack('<Q', f.read(8))[0]
-          f.seek(40)
-          e_shoff = struct.unpack('<Q', f.read(8))[0]
-          f.seek(54)
-          e_phentsize = struct.unpack('<H', f.read(2))[0]
-          e_phnum = struct.unpack('<H', f.read(2))[0]
-          f.seek(58)
-          e_shentsize = struct.unpack('<H', f.read(2))[0]
-          e_shnum = struct.unpack('<H', f.read(2))[0]
-          e_shstrndx = struct.unpack('<H', f.read(2))[0]
-
-          # 1. PT_INTERP -> PT_NULL and zero .interp data
-          for i in range(e_phnum):
-              off = e_phoff + i * e_phentsize
-              f.seek(off)
-              p_type = struct.unpack('<I', f.read(4))[0]
-              if p_type == 3:  # PT_INTERP
-                  f.seek(off + 8)
-                  p_offset = struct.unpack('<Q', f.read(8))[0]
-                  f.seek(off + 32)
-                  p_filesz = struct.unpack('<Q', f.read(8))[0]
-                  f.seek(p_offset)
-                  f.write(b'\x00' * p_filesz)
-                  f.seek(off)
-                  f.write(struct.pack('<I', 0))  # PT_NULL
-                  print(f'Cleared PT_INTERP phdr[{i}], zeroed {p_filesz}B at offset {p_offset}')
-                  break
-          else:
-              print(f'No PT_INTERP in {path}')
-
-          # 2. .interp section header -> SHT_NULL
-          sh_strtab_off = e_shoff + e_shstrndx * e_shentsize + 24
-          f.seek(sh_strtab_off)
-          strtab_offset = struct.unpack('<Q', f.read(8))[0]
-          strtab_size = struct.unpack('<Q', f.read(8))[0]
-          f.seek(strtab_offset)
-          strtab = f.read(strtab_size)
-          for i in range(e_shnum):
-              sh_off = e_shoff + i * e_shentsize
-              f.seek(sh_off)
-              nm_idx = struct.unpack('<I', f.read(4))[0]
-              nm_end = strtab.index(b'\x00', nm_idx)
-              if strtab[nm_idx:nm_end] == b'.interp':
-                  f.seek(sh_off + 4)
-                  f.write(struct.pack('<I', 0))  # SHT_NULL
-                  print(f'Changed .interp shdr[{i}] to SHT_NULL')
-                  break
-
-      print(f'Done: {path}')
-
-  - name: segmentNuclei_1
-    url: https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
-  - name: freesurfer_deb
-    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.freesurfer_version }}/freesurfer_ubuntu22-{{ context.freesurfer_version }}_amd64.deb
-
-  - name: virtualgl_deb
-    url: https://github.com/VirtualGL/virtualgl/releases/download/{{ context.virtualgl_version }}/virtualgl_{{ context.virtualgl_version }}_amd64.deb
-    sha256: "{{ context.virtualgl_sha256 }}"
-
-  - name: workbench_zip
-    url: https://humanconnectome.org/storage/app/media/workbench/workbench-linux64-v2.0.1.zip
-
-  - name: segmentNuclei
-    contents: |-
-      #!/usr/bin/env bash
-      LD_LIBRARY_PATH=/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64 segmentNuclei_mcr97 "$@"
-
-  - name: freeview-vgl
-    contents: |-
-      #!/usr/bin/env bash
-      set -e
-
-      exec /opt/VirtualGL/bin/vglrun \
-        -d "${VGL_DISPLAY:-egl0}" -c "${VGL_COMPRESS:-proxy}" \
-        /opt/freesurfer-{{ context.version }}/bin/freeview "$@"
-
-  - name: freeview
-    contents: |-
-      #!/usr/bin/env bash
-      set -e
-
-      FREEVIEW_BIN=""
-      for candidate in \
-        "/opt/freesurfer-{{ context.version }}/bin/freeview_bin" \
-        "/usr/local/freesurfer/{{ context.version }}/bin/freeview_bin" \
-        "/usr/local/freesurfer/{{ context.version }}-1/bin/freeview_bin" \
-        "/usr/local/freesurfer/bin/freeview_bin"; do
-        if [ -x "$candidate" ]; then
-          FREEVIEW_BIN="$candidate"
-          break
-        fi
-      done
-
-      if [ -z "$FREEVIEW_BIN" ]; then
-        echo "freeview wrapper: unable to locate freeview_bin executable." >&2
-        exit 127
-      fi
-
-      exec "$FREEVIEW_BIN" "$@"
-
-  - name: freeview_bin
-    contents: |-
-      #!/usr/bin/env bash
-      set -e
-
-      FREEVIEW_BIN_REAL=""
-      for candidate in \
-        "/opt/freesurfer-{{ context.version }}/bin/freeview_bin_real" \
-        "/usr/local/freesurfer/{{ context.version }}/bin/freeview_bin_real" \
-        "/usr/local/freesurfer/{{ context.version }}-1/bin/freeview_bin_real" \
-        "/usr/local/freesurfer/bin/freeview_bin_real"; do
-        if [ -x "$candidate" ]; then
-          FREEVIEW_BIN_REAL="$candidate"
-          break
-        fi
-      done
-
-      if [ -z "$FREEVIEW_BIN_REAL" ]; then
-        echo "freeview_bin wrapper: unable to locate freeview_bin_real executable." >&2
-        exit 127
-      fi
-
-      RESOLVED_LD=""
-      for libdir in \
-        "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" \
-        "/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib" \
-        "/usr/local/freesurfer/lib/qt/lib" \
-        "/opt/freesurfer-{{ context.version }}/lib/qt/lib" \
-        "/usr/lib/x86_64-linux-gnu" \
-        "/lib/x86_64-linux-gnu"; do
-        if [ -d "$libdir" ]; then
-          if [ -z "$RESOLVED_LD" ]; then
-            RESOLVED_LD="$libdir"
-          else
-            RESOLVED_LD="${RESOLVED_LD}:$libdir"
-          fi
-        fi
-      done
-
-      if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-        OLD_IFS="$IFS"
-        IFS=':'
-        for libdir in $LD_LIBRARY_PATH; do
-          if [ -z "$libdir" ]; then
-            continue
-          fi
-          case "$libdir" in
-            *"/MCRv83/"*|*"/MCRv97/"*)
-              continue
-              ;;
-          esac
-          if [ -z "$RESOLVED_LD" ]; then
-            RESOLVED_LD="$libdir"
-          else
-            RESOLVED_LD="${RESOLVED_LD}:$libdir"
-          fi
-        done
-        IFS="$OLD_IFS"
-      fi
-
-      LD_LIBRARY_PATH="$RESOLVED_LD" exec "$FREEVIEW_BIN_REAL" "$@"
+  - name: run_mcr.sh
+    filename: run_mcr.sh
+  - name: freesurfer_archive
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.upstream_version }}/freesurfer-Linux-centos6_x86_64-stable-pub-v{{ context.upstream_version }}.tar.gz
+    sha256: "{{ context.freesurfer_sha256 }}"
+  - name: matlab_runtime
+    url: https://ssd.mathworks.com/supportfiles/MCR_Runtime/{{ context.matlab_runtime_version }}/MCR_{{ context.matlab_runtime_version }}_glnxa64_installer.zip
+    sha256: "{{ context.matlab_runtime_sha256 }}"
 
   - name: license.txt
     contents: |-
@@ -503,10 +172,44 @@ files:
        FSVt2Z862iDJk
 
 categories:
-  - "image segmentation"
-  - "structural imaging"
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAqCAYAAAADBl3iAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFF2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjUgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyMS0wOS0xNVQyMDozNDozMCsxMDowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjEtMDktMjlUMDg6MzE6MzYrMTA6MDAiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjEtMDktMjlUMDg6MzE6MzYrMTA6MDAiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIiBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6OTRjN2ZlMDMtYmE5NS1lYzRjLTgwN2MtNTc5N2RmNjRlMGRhIiB4bXBNTTpEb2N1bWVudElEPSJ4bXAuZGlkOjk0YzdmZTAzLWJhOTUtZWM0Yy04MDdjLTU3OTdkZjY0ZTBkYSIgeG1wTU06T3JpZ2luYWxEb2N1bWVudElEPSJ4bXAuZGlkOjk0YzdmZTAzLWJhOTUtZWM0Yy04MDdjLTU3OTdkZjY0ZTBkYSI+IDx4bXBNTTpIaXN0b3J5PiA8cmRmOlNlcT4gPHJkZjpsaSBzdEV2dDphY3Rpb249ImNyZWF0ZWQiIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6OTRjN2ZlMDMtYmE5NS1lYzRjLTgwN2MtNTc5N2RmNjRlMGRhIiBzdEV2dDp3aGVuPSIyMDIxLTA5LTE1VDIwOjM0OjMwKzEwOjAwIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjIuNSAoV2luZG93cykiLz4gPC9yZGY6U2VxPiA8L3htcE1NOkhpc3Rvcnk+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+2x4ZbgAAE0dJREFUaIHFWmmMXNWV/u7b69W+dHV1l9vGNm68ABkSGBs7EAcT22RYxFiCZEZEEKSJRpORIIkSZRkCjEKiLJqMEpKZJBNl04REIhIeMhiMjTMwhLZjQ5tg4W733lXdVV3bq6q3v/ve/MD3pbpjwCaO5khX9dp+yz3nfuec75x7yeOPP46VQggBpRSWZSEWiwEAKpUKDMMAIQSu68JxHMzOzqJWq6HVam2o1WrX5nK59+i6DsMw+h3H6VdVVeQ4LiVJUrtcLn87lUr95/vf/351dHT0B5VK5a/y+TxkWUa73QYA6vv+XBAEjuM4Nc/zSoSQtuM40xzHPSkIwiTHcQAA3/cRBAGCIAAhJBymaYLneciyDN/3/0ivc4lwXncBCIIA8Xgcpmni5MmTcqlUusNxnB1BEFyjquqVO3bsEEqlEnieRyQSgWma2LhxIyzLQrlcxubNm68dGxt7NZFIvEYp/XA6ncZll12GZrMJAFBVFYSQtOM4ME0Tnueh0+mAUgpK6YOGYfxSFMUnJEl6qneh/lR5WwP4vo9IJIJ8Po9Dhw5hfHz885TSOy655JIr4/E4FEWBYRgQBAGpVArZbBaWZYHneSiKAp7nMTk5id27d8O27Y2PPfbYqWw2a99///3yCy+8gJmZGSQSCZimiSAI3piUIEBVVQiCgCAI4HleWtO0j1mW9THTNA8SQr4RiUSe9TyPMlRcdAMwePX19WFhYQGPP/74Xl3XP7V169ZdqqrCsiwYhgFd16EoClzXRT6fB6UUpmnCsixomoZIJIJ0Oo0TJ04gm82eTCaTW0VRlF3XDV3K9314ngfgD6vK/uZ5HqIoQhAEuK6LZrP5Add1P2Db9qumaX4hHo/v53k+NN4FGyASiSxTmlKKIAggSRKi0Sief/75S48cOfLVSy+99Pbbb78dpVIJ9Xod2WwWa9asAQA4jgPbtqFpGnRdD/2Tocf3fUxNTb3O8/zpvr6+L2/YsAGNRgOnT59m0MebKeH7PnzfB8dxEAQB8Xgcoiii1WpdYVnWE4ZhPKQoyoOSJL0zA8zMzITKcxwHRVGgqio4jsP+/ftvaDabP9u3b9+Aoig4efIkMpkM9u7dC57nUa1WYZomfN+Hbdth8AmCAK7rIp1OY25uDmfOnEGxWPyMJEkolUofuuKKK7Bp0yY0m00UCoXzmiibXzQaBc/zME0T8Xgcvu9/sdvt7gBwD4D5C40LwtjYWPgBURRRKBTg+z6eeeaZnYVC4el9+/YJ4+PjWFpawvbt21EsFqFpGkzThCRJ4Qqx1fN9H5RS+L4PSZJw/PhxrFq16kwmk9kP4DZCyCWSJGF6ehqRSASEkPDZ3uu3MoTv+4hGo5AkCZ7ngRByo+d5xyil9/A8f4AQgvONDYKiKOHEZVnGwMAAjhw58t5oNHpw3759wuHDh5HJZLBz504QQtDtdsHzPCRJCv2XGYBdU0ohSRJqtRqazSY2bNjwUCQSwdDQ0Nds28aVV16Jxx57DNFoNPT5C/Fh3/chiiJkWYZhGMxtCxzHPeU4zpdardYXgiAIg+hbGoBdMPgfO3ZsT7Va3X/TTTcJBw8exODgIK6++mp0u11wHBeuEsdxYYDqVZxSCtd1EYlE8PLLL8O27Waj0fjZ8PDwXkLIhjvuuAOtVgtzc3Po6+s773x9LiOwGCMIAkzThOu6IIR83vf9qK7r94ui+Lbv4ZhSiUQCY2Njl4+Ojh7YunWrNDc3h3Q6jfXr12NxcRGO48BxHLiuGwZKBjVmiN6RyWQwNzcHx3GeKhaLsG37XwFg69atOHbsWBj8/tRcTimFIAiIRqOIxWKQZRmxWOw+WZb/2fM8iKL4lu7AtVotmKaJ2dlZsVQq/fTaa6+FYRiQZRmDg4Oo1WqwbRumacK2bbiuC9d14XleuHocx4VRmud5DAwMYGZmBqOjo8hms4/ecMMNnyaEDN944404evQoJiYmkEwmw0n8qUbwfR+EEKRSKUiShGq1CkVRvqAoSsEwDHieB1mWIcsyJElaNjjP82BZFiYmJh4pFot/wXJ6JpNBs9mEaZrQdR2maYbDtu0QDb2GAEJGh+9973sIguCRW2+99UVCyD9u3rwZu3btwlNPPRUarBcBK38vVHoDabPZxKpVqxrRaNSjlCKRSCAejyMajSISiSwbgiAIKJVK6xRF+eTAwADq9TrS6fSyYCeKIlzXhSAIISnheT5UgPEHSimy2Syee+45zMzMYPfu3d9OJBLXOI6z6q677sLIyAimpqaQy+XgOM5FobJMmDvOz88jl8tBUZQHTNOs9ff3QxTFMEivDIpcuVxGo9G4N5VKkXa7DY7jYFkWOp1OyPR0XUe32w0H+zeGCMuyQkRwHIeZmRkMDQ1ZqVSqPjMzc/2ePXuQy+Vw+PBhJJPJc678xRCG5lwuN3f69OlHeZ5HLBa7HsB7WMxaKUK32+XS6fTdiqIgCALYtg1KabjqLKgJgrAMAaIoguf5EMrAG77YbrexsLCAvr6+aY7jnMHBQWd2dhaVSgXtdhvxeByWZV00pZmwlCzLMpaWlg5RSjE0NPSDVqt1L8/zoJQ+GgTBx3vJGgAI8Xj8I5TSwUqlgkKhAM/zQt7d+9s7mPIrXQEADMPA0tISyuXy7O7duzE4OOjNzs5ieHgYkUgEuq6/bfRnmYW5F4sx54JwrzAGGgSBnsvlbjUM495CoQCe51GpVP6h2+0qHMd9jBBC2buFZrN5S7VaxTXXXAPXdWHbdqggU54p23vNfnsDGs/z8H0fnU4H+Xy+JQgCdF2PxONxcBwXMkfm/xzHMSYX1g9nVwudTge2bYf1PZtT771sMKM5jgPP8xCNRmu2be/asmULNmzYgFOnTsGyLCQSiXvb7XbE87y/zWQyb+hXq9WKW7ZsQTqdxvz8/DKiwybIoN6rPBvsPvb/uq4jGo0in8+bmqZhcHBw9MCBA1haWoLjOBAEAY7jhG7WqxwAdLtdlMtlmKZZ5Xn+dVEUo7IsbwmCQInFYkilUsvmwObLGiumaSIWi70kiuKthUIB09PTME0TiqLAsiyIovg3lmUdM03zmwAg5PP5vmKxyEhLyOx6FWPK9V6vVJ4hQJZlJJNJRCIR9YUXXgCl9NDc3Nz1kUjkpqWlpWa3213kOI7yPM+LojhMCBkmhBR4nl/nOI6gadqEIAi/SCaTP+R5Xj+7uknbtt/X7XZv6Xa77wVwqSAIAktlsiwjCAJMT0+DENIWRfGIJEm3uK6LTqcDnucxNDSEsbExRCIR8Dz/L5VK5RfJZHJBiEQife12G7quQxCEEJIMoky5lQZZqTwhBJlMBu12G/Pz89A0ba5SqSCRSCAajT6vKEo8mUxetWrVqm2iKJqappVt254KguAkpdSklA5SSmP5fN5OJpN9hmF8lVJalCTJJISMCoLwHMdxn3Icx6eUFm3bLjiOs6PRaPylIAibbdtOa5rWHRgY+PsgCCyO4/ayeoXVJsViEUtLS1AUBYqiPGLb9j0Cz/OcbdvLihqmEGNYb2YQFshEUUQikcDk5CQOHToEx3H+RxCET77rXe8qbtu27aMTExP3vvjii2u2b9+OVCqFcrkMwzCQSqVgGAbtdDpVSZL0aDQqyrK8ynVdPpVKIRqNMuL1Ic/zQCmdEwThKMdxryiKcoxS+itK6XcJIf2EkFQqlTrteV7D87xb0un0OkbqCCFwHAfJZBKGYaBarSKVSt3daDS+JjSbzUBV1TDa9ubnldeMU/desybF8ePH8dvf/haJROKhjRs3Pthqtf6OEPLwiRMn+tPpNL7zne/guuuuw7e+9S1YloVIJIIgCKCqKt/f3z8QiUTCGiMejwMAbNtGs9kMuYmu60OiKA7Ztr0PAEPta6IoNhVFIeVy+dOZTOZFAHfHYrGwUcMqXtu2kcvlUKvV4LouEonEp4R6vS6uXbs2TDO96WmlEVg66kVFNBrF7373Oxw/fhzr16//bD6f/0qlUnlk7dq1n/3EJz6B9evXg+M4tFotfP3rX8fRo0fDbMCKFUJIyD84jkOn00G32w2JFctAmUwGsizjLBqgqipEUdzi+z5KpRIopVt5nh81DGN3Pp9Hp9NZpg+lNIxRi4uLyOVy7xYsyzoVBMFVLO31Qnsle2LXHMchCALEYjFMTU3h+PHj2Lx58+ei0ehXFhcXfzg8PHzPww8/jKGhITz77LM4cOAATp06BY7jkM1m4bpu+D7btmFZ1jLj+74fBlkA4f29KVQURWSzWei6jrm5OTQajeey2ew35+fnf7Bp06ZYLpfDyMgIeltlrKWfTqdRqVRACFkniKI4YZrmVbIsw7btMK2cywgs57Luka7rGBkZwVVXXbVfUZQvl0qlhy655JJ77rzzToyOjuK+++6DpmnIZrPo7+8Pn12Zv3t/AYQpcaXh2TVjcxMTExgfHweA/y4UCre5rvu5VCr10e3bt6NcLsO2baiquuxdDDmxWAytVosIHMfVa7UaEonEshvfjnGJooiTJ09CluVuJBK5c2Fh4SNr16594Oabb0alUsETTzwBnuexevXqZRsZ53r3hXSDZFlGp9PBa6+9Btu2aTqd/kwikfiG4zgPOY7zwAc/+EF0u12cOXMGvQ3f3m9xHIdYLIZGoxFwiqL8W6lUwtLSEnoD0VsNnuehaRrm5+dRLBZ/3mq1kr7v/2h4eBimaeLpp5+GKIqIxWLnfF/vZC5EeUEQYFkWXn75ZfA8P79u3bp3p1KpbxiG8WNK6QN79uxBJpPBiRMnQpZ6LgmCINyz4ERRfIXjuB8ztsT8e+UDvUMQBCwsLCAejyObzf6k0Wjclc/niaqqeOmll+B5HhRF+SPl36niAEK/n5ychKqqdGhoaKemaScNw3h9zZo1H9mzZw+SySRGRkbCe9/sG4zhOo7DcUEQoK+v73Ou6xqLi4uhz7zVBAkhMAwDqqq+2u12XxRF8baNGzfCMAy02+2QmZ3L8u90AwN4w38dx4EkSRNLS0sTQRDcMjg4eNmOHTtgmiZGRkZgGAai0eiy4q2XukuSBEEQWFc6KsiyDJ7ny67r3rawsHAwkUhAlmVWVS0zRm/+P2vBgxzH5XO53LWiKGJpaSnk571KXyxhjdt6ve4NDg4iCIJIMplErVbDmTNnwp4g61cQQsLqlRAS7ja9/vrrMAwDl19++c8Flt9VVX3WMIyb5+bmnkwkEmHPrJf1Mf9fWFhAo9FAMpl8WhTFy1VV5dmW2Llc6GII+/7Z/YgqAPi+v431KGOxGGzbxuTkJDRNA8dxCzzPL3Icd7kkSaJt25AkCbZtQ9d1fdOmTT/SNO3jQi/Z4Xn+177v76lWq98FsI7n+ZCsiKIY9gLr9Toymcz/xuPxQ57nPSjLMgCEtPPPIdFoFKVSCa1WCwMDAz/xPO89hJD7C4UC6vU6Tp06hU6n4wN4pb+///uiKP6KUqoRQq7yPG91PB4n+Xx+c71ef75YLI4TQmba7TYERiwIIcw/nvE8b6+iKI+mUqkPAG/AuN1us47L6Q0bNhywbfuLnufReDy+8+xqhATmYghLV8xnq9Uqfv/730NV1WPxePyXtm3/OpVKoVQq4ZVXXgHHcYvpdPqfIpHIT3met3uq1ZckSXqJ1RXMtVmZLziOs2yj42zNP65p2l8nEokP79mzZ1er1eLGxsbGJyYmDnueN1mr1aZ0Xce2bdv62+32pawRcrGgTwgBa9E1m01Uq1WWdaay2eyHKKWCIAjvO9s7OJFMJv8rGo0+7jjOq61WC2cD+7Kgy+gzMy5D6jIXYA9wHAfbtrtjY2Pfj8fj3x8ZGUGr1QqrqVgshjVr1kBRlKvL5XJhcHAQuq6/Y2WZ8YE/0Ox6vY7p6WlYloV0Oo1CofBTVVU/63leyff9iOd591BKO7Is7yeEuJZlhaX8haDwnOcDmBHO7rJAVVUYhhEehli1ahX6+vrQbrddx3HCLfHz9X8WTBlZMU0TmqaFR280TUO73UYul8P69et/YxjGlxqNxkHbthmsTd/3f8RgvLIveSFyXkdk2AqxMzixWAzNZhP9/f1+EARoNBooFovodrvn9VFWCpdKJTSbzbAIE0URlFKLUnqmWCz+Rpbl/xgfH39Z13Wk0+k/YnYXY2vtvM8Iua4LVVWxa9curF69Gt1uF9lstnXmzJmwD/hWMYCVtaIoolKpsCIGsVjMkWX53yVJelaW5aZhGA2e56ds2zZKpRIjPue93X2hckEGGBwcBM/zmJiYQBAE0DTtRCwWO1KtVncyKv1mXSTHcdDpdLC4uIjJyUkMDw+jWCz+eHZ29puO47zCGqWapoUHNCRJuiDX+rMZgFKKZDKJbDaL6enp3k1RX5blu4MgODE9PZ3J5XLQdT1sj58lHdA0LezMuK6L6667Tuc47t6ZmZlfzM/PI5vNQpblECUXA9rnK+dlAFb+sm5Mb5eIUjoTj8f3tlqtJ7vdbt627bDJwU6OxeNxpNPpMVmWj0iSdLJSqfx6ampqulAohJup/19y3i7ADkAAy/n9Wd885nne9bIsP9Lf33+l53n5dDqNvr6+hVardXhxcfHJarX6XL1eN5PJZHg2sOeQ5P+b/B8bSkh8N4UTHwAAAABJRU5ErkJggg==
+  - structural imaging
+  - image segmentation
 
 gui_apps:
-  - name: "freeviewGUI"
-    exec: "freeview"
+  - name: Freeview (FreeSurfer 6)
+    exec: freeview
+
+readme: |
+  ## freesurfer6/{{ context.version }}
+
+  FreeSurfer {{ context.upstream_version }} provides tools for volume and surface
+  analysis of brain MRI, including recon-all, Freeview, FSFAST, hippocampal
+  subfield segmentation, and brainstem segmentation. MATLAB Runtime
+  {{ context.matlab_runtime_version }} (MCRv80) is included for the compiled
+  segmentation tools. This recipe preserves the original 6.0.0 release without
+  later algorithm patches; use the freesurfer recipe for newer releases.
+  The five MATLAB launchers include a packaging fix to preserve application
+  exit codes, quoted arguments, and temporary-cache cleanup. Scientific binaries,
+  model files, and reconstruction defaults remain those of the original release.
+
+  Set SUBJECTS_DIR to a writable output directory before processing:
+
+  ```bash
+  module load freesurfer6/{{ context.version }}
+  mkdir -p /data/freesurfer-subjects
+  export SUBJECTS_DIR=/data/freesurfer-subjects
+  export SINGULARITYENV_SUBJECTS_DIR=$SUBJECTS_DIR
+  export APPTAINERENV_SUBJECTS_DIR=$SUBJECTS_DIR
+  recon-all -subject subjectname -i /data/T1w.nii.gz -all
+  ```
+
+  The bundled subjects directory contains the reference templates. The existing
+  NeuroContainers FreeSurfer license is included; FS_LICENSE can select another
+  license file when needed.
+
+  Documentation: https://surfer.nmr.mgh.harvard.edu/fswiki/rel6downloads
+  Runtime: https://surfer.nmr.mgh.harvard.edu/fswiki/MatlabRuntime
+  Citation: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferMethodsCitation
+  License: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAqCAYAAAADBl3iAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFF2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjUgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyMS0wOS0xNVQyMDozNDozMCsxMDowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjEtMDktMjlUMDg6MzE6MzYrMTA6MDAiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjEtMDktMjlUMDg6MzE6MzYrMTA6MDAiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIiBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6OTRjN2ZlMDMtYmE5NS1l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
