@@ -101,6 +101,21 @@ build:
         - license.txt
         - "{{ context.install_path }}/license.txt"
 
+    - copy:
+        - run_mcr.sh
+        - /tmp/run_mcr.sh
+
+    - run:
+        - >-
+          for launcher in run_SegmentSubject.sh run_SegmentSubfieldsT1Longitudinal.sh
+          run_segmentSubjectT1_autoEstimateAlveusML.sh
+          run_segmentSubjectT1T2_autoEstimateAlveusML.sh
+          run_segmentSubjectT2_autoEstimateAlveusML.sh; do
+          test -f "{{ context.install_path }}/bin/$launcher" &&
+          install -m 0755 /tmp/run_mcr.sh "{{ context.install_path }}/bin/$launcher" || exit 1;
+          done
+        - rm /tmp/run_mcr.sh
+
     - environment:
         LANG: en_US.UTF-8
         LC_ALL: en_US.UTF-8
@@ -140,6 +155,8 @@ deploy:
     - freeview
 
 files:
+  - name: run_mcr.sh
+    filename: run_mcr.sh
   - name: freesurfer_archive
     url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.upstream_version }}/freesurfer-Linux-centos6_x86_64-stable-pub-v{{ context.upstream_version }}.tar.gz
     sha256: "{{ context.freesurfer_sha256 }}"
@@ -170,7 +187,10 @@ readme: |
   subfield segmentation, and brainstem segmentation. MATLAB Runtime
   {{ context.matlab_runtime_version }} (MCRv80) is included for the compiled
   segmentation tools. This recipe preserves the original 6.0.0 release without
-  later patches; use the freesurfer recipe for newer releases.
+  later algorithm patches; use the freesurfer recipe for newer releases.
+  The five MATLAB launchers include a packaging fix to preserve application
+  exit codes, quoted arguments, and temporary-cache cleanup. Scientific binaries,
+  model files, and reconstruction defaults remain those of the original release.
 
   Set SUBJECTS_DIR to a writable output directory before processing:
 
