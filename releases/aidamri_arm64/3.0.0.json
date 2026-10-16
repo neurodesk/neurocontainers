@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "aidamri_arm64 3.0.0": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "rodent imaging",
+    "structural imaging",
+    "diffusion imaging",
+    "functional imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "aidamri"
+}

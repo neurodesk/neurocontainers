@@ -91,6 +91,54 @@ def test_valid_complex_recipe():
     assert isinstance(result.gui_apps[0], GUIApp)
 
 
+NESTED_TEST = {"test": {"name": "smoke", "script": "tool --version"}}
+
+
+@pytest.mark.parametrize(
+    "directives",
+    [[NESTED_TEST], [{"group": [{"install": ["curl"]}, NESTED_TEST]}]],
+    ids=["top-level", "inside-group"],
+)
+def test_nested_test_directive_is_rejected(directives):
+    """The builder never ran nested tests, so a recipe must not declare one."""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["fetal imaging"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": directives,
+        },
+    }
+
+    with pytest.raises(ValueError, match="fulltest.yaml"):
+        validate_recipe_dict(recipe)
+
+
+def test_top_level_tests_remain_valid_for_the_embedded_fallback():
+    """container_tester still reads top-level tests from an image's /build.yaml."""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["fetal imaging"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [{"install": ["curl"]}],
+        },
+        "tests": [{"name": "smoke", "script": "tool --version"}],
+    }
+
+    assert validate_recipe_dict(recipe).tests[0].script == "tool --version"
+
+
 def test_invalid_recipe_missing_required_fields():
     """Test validation fails for recipe missing required fields"""
     recipe = {

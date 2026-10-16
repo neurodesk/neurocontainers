@@ -1,7 +1,7 @@
 {
   "apps": {
     "pals 2.0.1": {
-      "version": "20260518",
+      "version": "20261014",
       "exec": "",
       "apptainer_args": []
     }

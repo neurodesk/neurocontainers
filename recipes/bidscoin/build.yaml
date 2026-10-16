@@ -72,12 +72,6 @@ build:
           - spec2nii
           - bids-validator
 
-    - test:
-        name: Basic integration test
-        script: |
-          bidscoin -t   # NB: Requires a graphical display
-          pngappend     # Test FSL tool
-
 # Test image with:
 # sudo docker run --rm -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix bidscoin_${toolVersion}:TAG bidscoin -t
 # sudo docker run -it -v /root:/root --entrypoint /bin/bash -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix bidscoin_${toolVersion}:TAG

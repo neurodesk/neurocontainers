@@ -152,13 +152,16 @@ icon: "data:image/png;base64,..."   # Required - base64 data URI
 | `file` | Declare a build-context file inline, alongside top-level `files:` |
 | `deploy` | Add `bins`/`path` entries from within the directive list |
 | `boutique` | Emit a Boutiques descriptor |
-| `test` | Attach a builtin test to the recipe |
 
 Every directive also accepts a `condition:` key for architecture- or
 variant-specific behaviour.
 
-`fulltest.yaml` is the only supported recipe test format. `test.yaml`, `test.sh`,
-and `tests:` blocks embedded in `build.yaml` are legacy and are read by nothing.
+`fulltest.yaml` is the only supported recipe test format. A `test` directive
+inside `build.directives` is rejected: the builder never ran it. `test.yaml` and
+`test.sh` are read by nothing. A top-level `tests:` block in `build.yaml` is
+legacy: release and candidate testing ignore it, and only
+`workflows/container_tester.py` run without `--test-config` reads it from the
+image's embedded `/build.yaml`. Do not add new ones.
 
 ### Release Test Format (fulltest.yaml)
 

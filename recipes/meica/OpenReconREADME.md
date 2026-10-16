@@ -34,6 +34,24 @@ incoming reconstructed echo images before the two derived series. Disable
 Originals include reference, noise, and phase images and are sent before
 ME-ICA input conversion, so they remain available if processing fails.
 
+Series names begin with the output role so the scanner list shows it even when
+the source sequence name is long:
+
+| Output | Series name prefix |
+| --- | --- |
+| Original magnitude echo | `MEICA original magnitude te1`, `te2`, or `te3` |
+| Original phase echo | `MEICA original phase te1`, `te2`, or `te3` |
+| Original reference echo | `MEICA original SBRef magnitude te1` or `MEICA original SBRef phase te1` |
+| Original noise echo | `MEICA original noise magnitude te1` or `MEICA original noise phase te1` |
+| Denoised BOLD-like apparent dR2* | `MEICA denoised BOLD dR2*` |
+| T2* map | `MEICA T2* map` |
+
+Reference and noise labels also use the corresponding echo number. Original
+names append the source description, truncated to reserve space for the scanner's
+`_openrecon` suffix within the 64-character DICOM limit. The adapter synchronizes
+MRD names and scanner minihead names, and assigns separate groups for each echo,
+image component, and processing role.
+
 Derived results are stored as 12-bit `uint16` pixels with DICOM
 `RescaleSlope` and `RescaleIntercept`, so viewers that apply DICOM rescaling
 show physical values: dR2* in `s^-1` and T2* in `ms`. The stored step is a

@@ -153,9 +153,6 @@ build:
     # harness runs that file against the built container. Noted because
     # build.yaml having only the deploy check below reads as though functional
     # testing was skipped.
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 
 files:
   - name: fla-o_best.tar

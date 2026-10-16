@@ -1,0 +1,67 @@
+name: Prune Nectar registry
+
+# Deletes Nectar Harbor artifacts that neurocommand's apps.json no longer
+# serves, freeing the ssdsorg project's storage quota. Dry run by default; the
+# plan is uploaded as an artifact so it can be reviewed before applying.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete the planned artifacts (otherwise only report them)
+        type: boolean
+        default: false
+      plan_hash:
+        description: Plan hash printed by the reviewed dry run (required to apply)
+        type: string
+        default: ""
+      min_age_days:
+        description: Keep artifacts pushed within this many days
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prune:
+    # Run only main's reviewed copy of the script with registry credentials.
+    if: github.repository == 'neurodesk/neurocontainers' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      # The promotion finalizer re-tags existing Nectar digests under this
+      # group; sharing it keeps a tag from being attached mid-prune.
+      group: promote-container-and-metadata
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Plan and prune
+        env:
+          APPLY: ${{ inputs.apply }}
+          PLAN_HASH: ${{ inputs.plan_hash }}
+          MIN_AGE_DAYS: ${{ inputs.min_age_days }}
+          NECTAR_REGISTRY_USERNAME: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
+          NECTAR_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
+        run: |
+          args=(--min-age-days "${MIN_AGE_DAYS}" --report nectar-prune-plan.json)
+          if [ "${APPLY}" = "true" ]; then
+            args+=(--apply --expect-plan "${PLAN_HASH}")
+          fi
+          python tools/prune_nectar_registry.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload plan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nectar-prune-plan
+          path: nectar-prune-plan.json
+          if-no-files-found: ignore

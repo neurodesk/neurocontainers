@@ -3,6 +3,8 @@ version: 0.0.4
 # Substitutions available to tests come from top-level scalars here, not
 # from build.yaml, so the bundled weights version is declared again.
 weights_version: "1.0.2"
+upstream_version: "0.0.4"
+arm_torch_version: "2.6.0"
 
 tests:
   - name: package imports
@@ -13,7 +15,7 @@ tests:
   - name: reports the packaged version
     description: Guards against the venv resolving a different release than the recipe pins.
     command: python -c "import importlib.metadata as md; print(md.version('gliomoda'))"
-    expected_output_contains: "${version}"
+    expected_output_contains: "${upstream_version}"
 
   - name: runs outside HOME
     description: $HOME does not exist at container runtime; caches must point somewhere writable.
@@ -154,3 +156,141 @@ tests:
       PATH, shadowing their own interpreter for the rest of the shell.
     command: bash -c 'echo "deploy-bins=$DEPLOY_BINS"'
     expected_output_contains: "deploy-bins=gliomoda"
+
+  - name: Native CPU model dependency closure
+    description: Exercise Torch matrix multiplication, Blosc compression and installed dependency consistency; ARM must use the declared CPU wheel.
+    timeout: 300
+    command: |
+      python - <<'PY'
+      import importlib.metadata as md
+      import platform
+      import subprocess
+      import sys
+      import blosc2
+      import numpy as np
+      import torch
+      assert md.version('gliomoda') == '${upstream_version}'
+      assert md.version('nnunetv2') == '2.5.2'
+      assert not torch.cuda.is_available()
+      if platform.machine() == 'aarch64':
+          assert torch.__version__ == '${arm_torch_version}+cpu', torch.__version__
+          assert torch.version.cuda is None, torch.version.cuda
+      torch.set_num_threads(2)
+      x = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+      np.testing.assert_array_equal((x @ x.T).numpy(), np.arange(12, dtype=np.float32).reshape(3, 4) @ np.arange(12, dtype=np.float32).reshape(3, 4).T)
+      data = np.arange(1024, dtype=np.int32)
+      np.testing.assert_array_equal(blosc2.unpack_array(blosc2.pack_array(data)), data)
+      subprocess.run([sys.executable, '-m', 'pip', 'check'], check=True)
+      print('CPU model dependency closure passed', torch.__version__, md.version('nnunetv2'), blosc2.__version__)
+      PY
+    expected_exit_code: 0
+    expected_output_contains: CPU model dependency closure passed
+
+  - name: Full trained four modality glioma MRI inference
+    description: Run the default bundled model on all complete official BraTS MRI modalities without resizing or replacing checkpoints. Assert valid nonempty labels, full physical grid and unchanged inputs and bundled weights. This is CPU runtime evidence, not clinical accuracy or GPU verification.
+    timeout: 11000
+    command: |
+      python - <<'PY'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import signal
+      import subprocess
+      import tempfile
+      import time
+      import urllib.request
+
+      import gliomoda
+      import nibabel as nib
+      import numpy as np
+
+
+      def digest(path):
+          h = hashlib.sha256()
+          with path.open('rb') as handle:
+              for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                  h.update(chunk)
+          return h.hexdigest()
+
+
+      fixtures = [{'modality': 't1c', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t1c.nii.gz', 'sha256': '4399faadcc45c8a4541313cdf88aced7d835ed59ac3078d950e0eac293d603f5'}, {'modality': 't2f', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t2f.nii.gz', 'sha256': '82aed8546af5e6d8d94fd91c56227abdcf6120130390d1556c4342a208980604'}, {'modality': 't1n', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t1n.nii.gz', 'sha256': 'e860924b936e301ddeba20409fbb59dde322475cb49328f1b46a9235c792e73e'}, {'modality': 't2w', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t2w.nii.gz', 'sha256': '4cd389cc57d12134a30a898c66532228126b9a7d0600ee578e82a32144528b51'}]
+      weights = Path(gliomoda.__file__).parent / 'weights' / 'weights_v${weights_version}'
+      model = weights / 't1c-t2f-t1n-t2w'
+      for relative in ('dataset.json', 'plans.json', 'fold_all/checkpoint_final.pth'):
+          assert (model / relative).is_file(), relative
+      before_weights = {str(p.relative_to(weights)): digest(p)
+                        for p in weights.rglob('*') if p.is_file()}
+      assert sum(p.stat().st_size for p in weights.rglob('*') if p.is_file()) > 2_000_000_000
+
+      with tempfile.TemporaryDirectory(prefix='gliomoda-real-mri-') as directory:
+          root = Path(directory)
+          inputs = {}
+          for item in fixtures:
+              path = root / (item['modality'] + '.nii.gz')
+              with urllib.request.urlopen(item['url'], timeout=120) as response, path.open('wb') as handle:
+                  while chunk := response.read(1024 * 1024):
+                      handle.write(chunk)
+              assert digest(path) == item['sha256'], item['modality']
+              image = nib.load(path)
+              assert image.shape == (240, 240, 155), image.shape
+              np.testing.assert_array_equal(image.header.get_zooms(), (1, 1, 1))
+              data = np.asarray(image.dataobj)
+              assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+              inputs[item['modality']] = path
+          reference = nib.load(inputs['t1c'])
+          for path in inputs.values():
+              np.testing.assert_array_equal(nib.load(path).affine, reference.affine)
+          before_inputs = {k: digest(p) for k, p in inputs.items()}
+          output = root / 'segmentation.nii.gz'
+          command = ['gliomoda', '--device', 'cpu', '--threads', '2']
+          for modality, path in inputs.items():
+              command.extend(['--' + modality, str(path)])
+          command.extend(['--output', str(output)])
+          env = dict(os.environ)
+          for variable in ('HOME', 'XDG_CACHE_HOME', 'MPLCONFIGDIR'):
+              target = root / variable.lower()
+              target.mkdir()
+              env[variable] = str(target)
+          env.update(OMP_NUM_THREADS='2', MKL_NUM_THREADS='2', OPENBLAS_NUM_THREADS='2')
+          started = time.monotonic()
+          process = subprocess.Popen(command, env=env, start_new_session=True)
+          try:
+              code = process.wait(timeout=10800)
+          except subprocess.TimeoutExpired:
+              os.killpg(process.pid, signal.SIGTERM)
+              try:
+                  process.wait(timeout=20)
+              except subprocess.TimeoutExpired:
+                  os.killpg(process.pid, signal.SIGKILL)
+                  process.wait()
+              raise
+          assert code == 0, code
+          assert output.is_file() and output.stat().st_size > 0
+          result = nib.load(output)
+          assert result.shape == reference.shape, (result.shape, reference.shape)
+          # NIfTI stores its spatial transform in float32. This bound derives from
+          # that storage precision; it is not a segmentation accuracy tolerance.
+          spatial_bound = 8 * np.finfo(np.float32).eps * max(1, np.abs(reference.affine).max())
+          np.testing.assert_allclose(result.affine, reference.affine, rtol=0, atol=spatial_bound)
+          np.testing.assert_array_equal(result.header.get_zooms(), reference.header.get_zooms())
+          labels = np.asarray(result.dataobj)
+          assert np.isfinite(labels).all()
+          np.testing.assert_array_equal(labels, labels.astype(np.uint8))
+          values, counts = np.unique(labels, return_counts=True)
+          assert set(values.tolist()) <= {0, 1, 2, 3}, values
+          foreground = int(np.count_nonzero(labels))
+          assert 0 < foreground < labels.size, foreground
+          assert before_inputs == {k: digest(p) for k, p in inputs.items()}
+          assert before_weights == {str(p.relative_to(weights)): digest(p)
+                                    for p in weights.rglob('*') if p.is_file()}
+          print('full glioma MRI inference passed', json.dumps({
+              'shape': list(result.shape), 'labels': values.tolist(),
+              'label_counts': counts.tolist(), 'foreground_voxels': foreground,
+              'seconds': round(time.monotonic() - started, 2),
+              'input_sha256': before_inputs, 'unchanged_weight_files': len(before_weights),
+              'mode': 't1c-t2f-t1n-t2w', 'weights_version': '${weights_version}',
+          }, sort_keys=True))
+      PY
+    expected_exit_code: 0
+    expected_output_contains: full glioma MRI inference passed
