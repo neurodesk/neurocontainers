@@ -13,7 +13,7 @@
 # compute resources. This test suite focuses on component tools and quick checks.
 
 name: fmriprep
-version: 25.2.6
+version: 25.2.7
 
 required_files:
   - dataset: ds000001
