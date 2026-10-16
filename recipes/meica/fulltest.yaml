@@ -467,14 +467,22 @@ tests:
           meta["SequenceDescription"] = (
               "multi_echo_epi_SBRef" if role == "reference" else "multi_echo_epi"
           )
+          # The scanner stamps every echo of one acquisition with one series UID.
+          source_series_uid = f"1.2.826.0.1.{header.image_series_index // 10}"
+          source_sop_uid = f"{source_series_uid}.{header.image_index}"
+          meta["SeriesInstanceUID"] = source_series_uid
+          meta["SOPInstanceUID"] = source_sop_uid
+          meta["MultiFrameSOPInstanceUID"] = f"{source_series_uid}.0"
           if role == "noise":
-              minihead = '''<ParamArray."ImageTypeValue4">
-              {
+              minihead = f'''<ParamArray."ImageTypeValue4">
+              {{
                   <DefaultSize> 4
-                  <Default> <ParamString."">{ }
-                  { "MB" }{ "TE3" }{ "NOISE" }{ "DIS2D" }
-              }
-              <ParamLong."AcquisitionNumber">{ 3 }
+                  <Default> <ParamString."">{{ }}
+                  {{ "MB" }}{{ "TE3" }}{{ "NOISE" }}{{ "DIS2D" }}
+              }}
+              <ParamLong."AcquisitionNumber">{{ 3 }}
+              <ParamString."SOPInstanceUID">{{ "{source_sop_uid}" }}
+              <ParamString."SeriesInstanceUID">{{ "{source_series_uid}" }}
               '''
               meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
           image.attribute_string = meta.serialize()
@@ -620,6 +628,39 @@ tests:
           for image in scanner.sent[0]
       }
       assert len(scanner_groups) == 18
+
+      # Each relabelled series needs its own UIDs, or the scanner DicomWriter
+      # joins frames of different series to one multi-frame parent and aborts.
+      source_uids = set()
+      for source in scanner_images:
+          source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          source_uids.update(
+              {source_meta["SeriesInstanceUID"], source_meta["SOPInstanceUID"]}
+          )
+      series_uids = {}
+      sop_uids = set()
+      for image in scanner.sent[0]:
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          assert "MultiFrameSOPInstanceUID" not in meta, meta
+          series_uids.setdefault(meta["SeriesNumberRangeNameUID"], set()).add(
+              meta["SeriesInstanceUID"]
+          )
+          sop_uids.add(meta["SOPInstanceUID"])
+          if "IceMiniHead" in meta:
+              minihead = base64.b64decode(meta["IceMiniHead"]).decode()
+              for key in ("SeriesInstanceUID", "SOPInstanceUID"):
+                  values = re.findall(
+                      rf'<ParamString\."{key}">\s*\{{\s*"([^"]*)"', minihead
+                  )
+                  assert values == [meta[key]], (key, values, meta[key])
+      assert all(len(uids) == 1 for uids in series_uids.values()), series_uids
+      all_series_uids = set().union(*series_uids.values())
+      assert len(all_series_uids) == len(scanner_groups)
+      assert len(sop_uids) == len(scanner_images)
+      assert not (all_series_uids | sop_uids) & source_uids
+      assert all(re.fullmatch(r"2\.25\.\d{1,39}", uid) for uid in all_series_uids | sop_uids)
+      repeated = meica._original_passthrough(scanner_images[0], Metadata())
+      assert repeated.attribute_string == scanner.sent[0][0].attribute_string
 
       # Echo identity remains explicit when contrast counters are absent.
       long_source_name = "func-bold_task-motor_acq-cmrr2d3echo2mm_run-1"
