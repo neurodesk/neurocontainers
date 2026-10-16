@@ -112,16 +112,121 @@ tests:
       guaranteed crash into a working call. A crude head-like phantom is
       enough; what is being checked is that inference runs and returns a
       non-empty binary mask, not that the mask is anatomically right.
+      Temporary ARM diagnostic for PR 3610. Records the unchanged inference
+      within the existing timeout and deliberately fails on ARM even if it
+      completes, pending diagnosis and removal of the instrumentation.
     command: |
-      python -c "
+      python -u <<'PYTHON'
+      import faulthandler
+      import hashlib
+      import importlib.metadata as md
+      import json
+      import os
+      import platform
+      import resource
+      import threading
+      import time
+
+      faulthandler.dump_traceback_later(120, repeat=True)
+      started = time.perf_counter()
+      print('[DEBUG-synthstrip-3610] importing inference packages', flush=True)
       import numpy as np, nibabel as nib, tempfile, pathlib
+      import torch
       from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
+      from brainles_preprocessing.utils.zenodo import SYNTHSTRIP_FOLDER
+
+      def report(event, **details):
+          usage = resource.getrusage(resource.RUSAGE_SELF)
+          print('[DEBUG-synthstrip-3610]', json.dumps(dict(
+              event=event, elapsed_s=time.perf_counter() - started,
+              user_s=usage.ru_utime, system_s=usage.ru_stime,
+              maxrss_kib=usage.ru_maxrss, major_faults=usage.ru_majflt,
+              torch_threads=torch.get_num_threads(), **details,
+          )), flush=True)
+
+      def resources():
+          paths = ['cpu.max', 'cpu.stat', 'memory.max', 'memory.current',
+                   'memory.events', 'memory.swap.current', 'memory.pressure']
+          counters = {}
+          for name in paths:
+              path = pathlib.Path('/sys/fs/cgroup') / name
+              if path.is_file():
+                  counters[name] = path.read_text().strip()
+          process = [line for line in pathlib.Path('/proc/self/status').read_text().splitlines()
+                     if line.startswith(('VmRSS:', 'VmSwap:', 'Threads:', 'Cpus_allowed_list:'))]
+          memory = [line for line in pathlib.Path('/proc/meminfo').read_text().splitlines()
+                    if line.startswith(('MemTotal:', 'MemAvailable:', 'SwapTotal:', 'SwapFree:'))]
+          report('resources', load=os.getloadavg(), cgroup=counters, process=process,
+                 memory=memory, cgroup_path=pathlib.Path('/proc/self/cgroup').read_text().strip())
+
+      finished = threading.Event()
+      def heartbeat():
+          while not finished.wait(60):
+              resources()
+
+      threading.Thread(target=heartbeat, daemon=True).start()
+      report('runtime', machine=platform.machine(), affinity=sorted(os.sched_getaffinity(0)),
+             interop_threads=torch.get_num_interop_threads(),
+             versions={p: md.version(p) for p in ['brainles-preprocessing',
+                       'nipreps-synthstrip', 'torch', 'numpy', 'nibabel', 'nitransforms', 'scipy']},
+             thread_env={k: os.environ.get(k) for k in ['OMP_NUM_THREADS',
+                         'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS']},
+             torch_config=torch.__config__.show())
+      resources()
+      weights = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                 for p in SYNTHSTRIP_FOLDER.rglob('*.pt')}
+      report('bundled_weights', sha256=weights)
+
+      class DiagnosticExtractor(SynthStripExtractor):
+          def _setup_model(self, device):
+              report('model_setup_start', device=str(device))
+              model = super()._setup_model(device)
+              report('model_setup_done')
+              names = {module: name for name, module in model.named_modules()}
+              conv_started = {}
+
+              def before_conv(module, args):
+                  tensor = args[0]
+                  try:
+                      backend = str(torch._C._select_conv_backend(
+                          tensor, module.weight, module.bias, module.stride,
+                          module.padding, module.dilation, False, [0, 0, 0], module.groups))
+                  except (AttributeError, RuntimeError, TypeError) as error:
+                      backend = str(error)
+                  conv_started[module] = time.perf_counter()
+                  report('conv_start', layer=names[module], shape=list(tensor.shape),
+                         stride=list(tensor.stride()), dtype=str(tensor.dtype),
+                         backend=backend)
+
+              def after_conv(module, args, output):
+                  report('conv_done', layer=names[module], shape=list(output.shape),
+                         duration_s=time.perf_counter() - conv_started.pop(module))
+
+              for module in names:
+                  if isinstance(module, torch.nn.Conv3d):
+                      module.register_forward_pre_hook(before_conv)
+                      module.register_forward_hook(after_conv)
+              return model
+
+          def _conform(self, image):
+              report('conform_start', shape=image.shape, affine=image.affine.tolist())
+              conformed = super()._conform(image)
+              report('conform_done', shape=conformed.shape, affine=conformed.affine.tolist())
+              return conformed
+
+          def _resample_like(self, image, target, **kwargs):
+              report('resample_start', shape=image.shape)
+              result = super()._resample_like(image, target, **kwargs)
+              report('resample_done', shape=result.shape)
+              return result
+
       d = pathlib.Path(tempfile.mkdtemp())
       g = np.mgrid[:96, :96, :96].astype(float)
       r = np.sqrt(((g - 48) ** 2).sum(0))
       vol = np.where(r < 34, 800.0, 0.0) + np.where((r >= 34) & (r < 40), 300.0, 0.0)
       nib.save(nib.Nifti1Image(vol.astype(np.float32), np.eye(4)), d / 'in.nii.gz')
-      SynthStripExtractor().extract(
+      source_digest = hashlib.sha256((d / 'in.nii.gz').read_bytes()).hexdigest()
+      DiagnosticExtractor().extract(
           input_image_path=str(d / 'in.nii.gz'),
           masked_image_path=str(d / 'brain.nii.gz'),
           brain_mask_path=str(d / 'mask.nii.gz'),
@@ -130,8 +235,23 @@ tests:
       m = np.asanyarray(nib.load(d / 'mask.nii.gz').dataobj)
       assert (m > 0).sum() > 0, 'empty mask'
       assert set(np.unique(m)) <= {0, 1}, np.unique(m)
+      for name in ['brain.nii.gz', 'mask.nii.gz']:
+          image = nib.load(d / name)
+          assert image.shape == vol.shape, image.shape
+          np.testing.assert_array_equal(image.affine, np.eye(4))
+          assert np.isfinite(image.get_fdata()).all()
+      np.testing.assert_array_equal(nib.load(d / 'brain.nii.gz').get_fdata(), vol * m)
+      assert hashlib.sha256((d / 'in.nii.gz').read_bytes()).hexdigest() == source_digest
+      assert {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in SYNTHSTRIP_FOLDER.rglob('*.pt')} == weights
+      report('inference_and_assertions_done', mask_voxels=int((m > 0).sum()))
+      resources()
+      finished.set()
+      faulthandler.cancel_dump_traceback_later()
       print('synthstrip-cpu-run ok', int((m > 0).sum()), 'voxels')
-      "
+      if platform.machine() == 'aarch64':
+          raise SystemExit('ARM diagnostic only: review the measurements before removing this gate')
+      PYTHON
     expected_output_contains: "synthstrip-cpu-run ok"
     # Model load plus inference does not fit the suite's default 120 s budget,
     # and a timeout kill is indistinguishable from a real failure in the report
