@@ -729,7 +729,7 @@ def process_runtime(monkeypatch, tmp_path):
     import nibabel as nib
     import scipy.ndimage as ndi
 
-    helpers = _output_helpers({'process_image'})
+    helpers = _output_helpers({'process_image', '_build_original_output_images'})
     helpers.update(ismrmrd=ismrmrd, nib=nib, ndi=ndi, logging=logging,
                    shutil=shutil, traceback=traceback, debugFolder=str(tmp_path))
     helpers['mrdhelper'] = types.SimpleNamespace(
@@ -792,6 +792,12 @@ def process_runtime(monkeypatch, tmp_path):
     return helpers, images, maps
 
 
+def _session_outputs(helpers, sources, config, metadata):
+    """What one series returns: the originals sent up front, then the processed outputs."""
+    originals = helpers['_build_original_output_images'](sources, config)
+    return originals + helpers['process_image'](sources, None, config, metadata)
+
+
 @pytest.mark.parametrize('choice,products', [
     ('none', ['synthseg']), ('desikan', ['synthseg', 'desikan']),
     ('glasser', ['synthseg', 'glasser_approx']),
@@ -805,7 +811,7 @@ def test_process_image_returns_base_and_selected_products(process_runtime, choic
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc=choice,
                                  sendoriginal=extras, sssegmentheader=segment_header,
                                  ssreslicesagittal=extras, ssreslicecoronal=extras)}
-    outputs = helpers['process_image'](sources, None, config, None)
+    outputs = _session_outputs(helpers, sources, config, None)
     series = {}
     for image in outputs:
         series.setdefault(image.getHead().image_series_index, []).append(image)
@@ -851,7 +857,7 @@ def test_process_image_rejects_missing_required_product(process_runtime, missing
     helpers['_run_synthseg_command'] = incomplete_inference
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='desikan')}
     with pytest.raises(FileNotFoundError, match=missing_name):
-        helpers['process_image'](sources, None, config, None)
+        _session_outputs(helpers, sources, config, None)
 
 
 @pytest.mark.parametrize('invalid', ['shape', 'fractional', 'overflow'])
@@ -874,7 +880,7 @@ def test_process_image_rejects_invalid_label_product(process_runtime, invalid):
     helpers['_run_synthseg_command'] = invalid_inference
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='desikan')}
     with pytest.raises(ValueError, match='Label product'):
-        helpers['process_image'](sources, None, config, None)
+        _session_outputs(helpers, sources, config, None)
 
 
 def test_missing_source_type_uses_each_product_identity(process_runtime):
@@ -887,7 +893,7 @@ def test_missing_source_type_uses_each_product_identity(process_runtime):
         source.attribute_string = meta.serialize()
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='both', sendoriginal=False,
                                  sssegmentheader=False)}
-    outputs = helpers['process_image'](sources, None, config, None)
+    outputs = _session_outputs(helpers, sources, config, None)
     for image in outputs:
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
         product = meta['LabelProduct']
@@ -923,7 +929,7 @@ def test_brainquant_reference_follows_scanner_field_strength(process_runtime, ca
     helpers, sources, _ = process_runtime
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
     with caplog.at_level(logging.INFO):
-        outputs = helpers['process_image'](sources, None, config, _mrd_header(field_strength=field_strength))
+        outputs = _session_outputs(helpers, sources, config, _mrd_header(field_strength=field_strength))
     assert _series_by_index(outputs)[max(_series_by_index(outputs))][1]['SeriesDescription'] == 't1w_brainquant'
     assert f'report reference: {cohort} ' in caplog.text
     assert f'chosen because {reason}' in caplog.text
@@ -936,7 +942,7 @@ def test_brainquant_report_is_the_last_distinct_series(process_runtime, caplog, 
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssparc='desikan',
                                  sendoriginal=extras, ssreslicesagittal=extras)}
     with caplog.at_level(logging.INFO):
-        outputs = helpers['process_image'](sources, None, config, _mrd_header())
+        outputs = _session_outputs(helpers, sources, config, _mrd_header())
     series = _series_by_index(outputs)
     last_index = max(series)
     images, meta = series[last_index]
@@ -967,7 +973,7 @@ def test_brainquant_report_is_the_last_distinct_series(process_runtime, caplog, 
 def test_brainquant_off_leaves_outputs_and_command_unchanged(process_runtime):
     helpers, sources, _ = process_runtime
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssquantage=40)}
-    outputs = helpers['process_image'](sources, None, config, _mrd_header())
+    outputs = _session_outputs(helpers, sources, config, _mrd_header())
     series = _series_by_index(outputs)
     assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
     assert '--vol' not in helpers['inference_commands'][-1]
@@ -978,7 +984,7 @@ def test_brainquant_is_skipped_with_synthseg_v1(process_runtime, caplog):
     helpers, sources, _ = process_runtime
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssmodel='v1')}
     with caplog.at_level(logging.WARNING):
-        outputs = helpers['process_image'](sources, None, config, None)
+        outputs = _session_outputs(helpers, sources, config, None)
     series = _series_by_index(outputs)
     assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
     assert 'brain volume report is skipped' in caplog.text
@@ -999,7 +1005,7 @@ def test_brainquant_report_rejected_by_output_contract_keeps_other_outputs(proce
     helpers['_build_brainquant_report_image'] = report_reusing_source_series
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
     with caplog.at_level(logging.ERROR):
-        outputs = helpers['process_image'](sources, None, config, _mrd_header())
+        outputs = _session_outputs(helpers, sources, config, _mrd_header())
     series = _series_by_index(outputs)
     assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
     assert 'omitting the report series' in caplog.text
@@ -1012,7 +1018,117 @@ def test_brainquant_failure_omits_only_the_report(process_runtime, tmp_path, cap
     brainquant.NORMS_PATH = tmp_path / 'missing_norms.json'
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
     with caplog.at_level(logging.ERROR):
-        outputs = helpers['process_image'](sources, None, config, None)
+        outputs = _session_outputs(helpers, sources, config, None)
     series = _series_by_index(outputs)
     assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
     assert 'omitting the report series' in caplog.text
+
+
+def _import_synthseg(monkeypatch):
+    """Import the adapter, standing in for the MRD server modules outside its image."""
+    import importlib
+    import sys
+    import types
+
+    stubs = {
+        "constants": types.SimpleNamespace(MRD_LOGGING_INFO=1, MRD_LOGGING_ERROR=4),
+        "mrdhelper": types.SimpleNamespace(
+            get_json_config_param=lambda config, key, default=None, **kwargs: (
+                config["parameters"].get(key, default)
+            ),
+        ),
+    }
+    for name, stub in stubs.items():
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            monkeypatch.setitem(sys.modules, name, stub)
+    monkeypatch.delitem(sys.modules, "synthseg", raising=False)
+    monkeypatch.syspath_prepend(str(RECIPE_DIR))
+    return importlib.import_module("synthseg")
+
+
+def _mrd_series(series_index, description, slices=2):
+    import ismrmrd
+
+    images = []
+    for index in range(slices):
+        image = ismrmrd.Image.from_array(np.ones((1, 1, 4, 4), dtype=np.int16), transpose=False)
+        head = image.getHead()
+        head.field_of_view = (4.0, 4.0, 1.0)
+        head.position = (0.0, 0.0, float(index))
+        head.read_dir, head.phase_dir, head.slice_dir = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+        head.image_series_index, head.image_index, head.slice = series_index, index + 1, index
+        image.setHead(head)
+        meta = ismrmrd.Meta()
+        meta["SeriesDescription"] = description
+        meta["SeriesNumberRangeNameUID"] = f"{description}_group"
+        meta["SeriesInstanceUID"] = f"1.2.3.{series_index}"
+        meta["ImageType"], meta["ImageTypeValue4"] = "ORIGINAL\\PRIMARY\\M\\ND", "ND"
+        image.attribute_string = meta.serialize()
+        images.append(image)
+    return images
+
+
+class _RecordingConnection:
+    def __init__(self, images):
+        self.images = images
+        self.sent = []
+        self.logs = []
+        self.closed = False
+
+    def __iter__(self):
+        yield from self.images
+        yield None
+
+    def send_image(self, images):
+        self.sent.append(list(images))
+
+    def send_logging(self, level, text):
+        self.logs.append((level, text))
+
+    def send_close(self):
+        self.closed = True
+
+
+def _sent_series(connection):
+    import ismrmrd
+
+    return {
+        int(batch[0].getHead().image_series_index): ismrmrd.Meta.deserialize(
+            batch[0].attribute_string
+        )["SeriesDescription"]
+        for batch in connection.sent
+    }
+
+
+def test_originals_of_every_series_are_sent_before_synthseg_and_survive_its_failure(monkeypatch):
+    adapter = _import_synthseg(monkeypatch)
+    connection = _RecordingConnection(_mrd_series(1, "first") + _mrd_series(5, "second"))
+    sent_before_run = []
+
+    def failing_process_image(images, connection_, config, metadata):
+        sent_before_run.append(_sent_series(connection))
+        raise RuntimeError("SynthSeg failed")
+
+    monkeypatch.setattr(adapter, "process_image", failing_process_image)
+    adapter.process(connection, {"parameters": {}}, None)
+
+    assert connection.closed
+    assert sent_before_run == [{2: "first_original", 6: "second_original"}]
+    assert _sent_series(connection) == {2: "first_original", 6: "second_original"}
+    assert [len(batch) for batch in connection.sent] == [2, 2]
+    assert "SynthSeg failed" in connection.logs[-1][1]
+
+
+def test_without_sendoriginal_a_synthseg_failure_returns_nothing(monkeypatch):
+    adapter = _import_synthseg(monkeypatch)
+    connection = _RecordingConnection(_mrd_series(1, "first"))
+    monkeypatch.setattr(
+        adapter, "process_image", lambda *args: (_ for _ in ()).throw(RuntimeError("SynthSeg failed")),
+    )
+    adapter.process(connection, {"parameters": {"sendoriginal": False}}, None)
+
+    assert connection.closed
+    assert connection.sent == []
+    assert "SynthSeg failed" in connection.logs[-1][1]

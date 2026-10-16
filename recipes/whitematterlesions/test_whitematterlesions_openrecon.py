@@ -189,9 +189,9 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
         self.assertEqual(
             [level for level, _ in connection.logs], [constants.MRD_LOGGING_INFO]
         )
-        self.assertIn("4 lesions, 1.25 ml", connection.logs[0][1])
+        self.assertIn("12 lesions, 1.21 ml", connection.logs[0][1])
         series = connection.series()
-        self.assertEqual(sorted(series), [4, 5, 6, 7])
+        self.assertEqual(sorted(series), [4, 5, 6, 7, 8])
         descriptions = {
             index: ismrmrd.Meta.deserialize(images[0].attribute_string)["SeriesDescription"]
             for index, images in series.items()
@@ -201,6 +201,7 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             5: "t2_flair_tra_lesion_overlay",
             6: "t2_flair_tra_lesions",
             7: "t2_flair_tra_lesion_probability",
+            8: "t2_flair_tra_lesion_metrics",
         })
 
         source_at = images_by_position(sources)
@@ -308,7 +309,9 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
         connection = RecordingConnection(nifti_to_mrd_images(phantom(), oblique_affine()))
         with mock.patch.object(wml, "run_flames", FakeFlames()):
             wml.process(connection, {}, None)
-        self.assertEqual(sorted(connection.series()), [4, 5, 6])
+        self.assertEqual(sorted(connection.series()), [4, 5, 6, 7])
+        meta = ismrmrd.Meta.deserialize(connection.series()[7][0].attribute_string)
+        self.assertEqual(meta["SeriesDescription"], "t2_flair_tra_lesion_metrics")
 
     def test_flames_failure_is_reported_to_the_scanner(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -337,7 +340,132 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
 
         with mock.patch.object(wml, "run_flames", flames):
             wml.process(connection, {}, None)
+        self.assertEqual(sorted(connection.series()), [4, 5, 6, 7])
+
+    def test_metrics_measure_26_connected_lesions_in_ras_coordinates(self):
+        mask = np.zeros((8, 8, 4), dtype=bool)
+        mask[1, 2, 0] = mask[2, 3, 1] = True
+        mask[5:7, 5:7, 2:4] = True
+        affine = np.diag([2.0, 3.0, 4.0, 1.0])
+        affine[:3, 3] = (10, -20, 30)
+        rows = wml.lesion_metrics(mask, affine)
+        self.assertEqual([row.lesion for row in rows], [1, 2])
+        self.assertEqual([row.voxels for row in rows], [2, 8])
+        np.testing.assert_allclose([row.volume_ml for row in rows], [0.048, 0.192])
+        np.testing.assert_allclose(
+            [row.centroid_ras_mm for row in rows], [(13, -12.5, 32), (21, -3.5, 40)]
+        )
+        oblique_rows = wml.lesion_metrics(mask, oblique_affine())
+        np.testing.assert_allclose(
+            oblique_rows[0].centroid_ras_mm,
+            oblique_affine()[:3, :3] @ [1.5, 2.5, 0.5] + oblique_affine()[:3, 3],
+        )
+
+    def test_metrics_report_uses_explicit_page_geometry_and_fresh_identity(self):
+        source = nifti_to_mrd_images(phantom(), oblique_affine())[3]
+        meta = ismrmrd.Meta.deserialize(source.attribute_string)
+        meta.update({
+            "IceMiniHead": "source scanner geometry",
+            "DicomEngineDimString": "source dimensions",
+            "MFInstanceNumber": "4",
+            "ReferencedImageSequenceSOPInstanceUID": "1.2.3.4",
+            "ReferencedGSPSInstanceUID": "1.2.3.5",
+            "SeriesInstanceUID": "1.2.3.6",
+            "StudyInstanceUID": "1.2.3.7",
+            "ImageRowDir": ["0", "1", "0"],
+            "ImageColumnDir": ["1", "0", "0"],
+            "slice_count": "6",
+            "NumberInSeries": "4",
+        })
+        source.attribute_string = meta.serialize()
+        rows = [wml.LesionMetric(1, 10, 0.01, (10, 20, 30))]
+        pages = [np.full((768, 768), value, dtype=np.uint16) for value in (123, 456)]
+        with mock.patch.object(wml, "render_metrics_report_pages", return_value=pages):
+            image, = wml.metrics_report_series(rows, source, 8, "1 lesions, 0.01 ml")
+        header = image.getHead()
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        self.assertEqual(list(header.matrix_size), [768, 768, 2])
+        self.assertEqual(list(header.field_of_view), [768, 768, 2])
+        self.assertEqual(list(header.position), [0, 0, 0])
+        self.assertEqual(list(header.read_dir), [1, 0, 0])
+        self.assertEqual(list(header.phase_dir), [0, 1, 0])
+        self.assertEqual(list(header.slice_dir), [0, 0, 1])
+        self.assertEqual((header.image_series_index, header.image_index, header.slice), (8, 1, 0))
+        np.testing.assert_array_equal(image.data[0], np.stack(pages))
+        self.assertEqual(meta["SeriesDescription"], "t2_flair_tra_lesion_metrics")
+        self.assertEqual(meta["DataRole"], "Segmentation")
+        self.assertEqual(meta["Keep_image_geometry"], "0")
+        self.assertEqual(meta["ImageRowDir"], [f"{v:.18f}" for v in (1, 0, 0)])
+        self.assertEqual(meta["ImageColumnDir"], [f"{v:.18f}" for v in (0, 1, 0)])
+        self.assertEqual(meta["ImageSliceNormDir"], [f"{v:.18f}" for v in (0, 0, 1)])
+        self.assertEqual(meta["SlicePosLightMarker"], [f"{v:.18f}" for v in (0, 0, 0)])
+        for key in ("slice_count", "NumberOfSlices", "ImagesInAcquisition"):
+            self.assertEqual(meta[key], "2")
+        self.assertEqual(meta["LesionMetricsRows"], "1")
+        self.assertEqual(meta["NumberInSeries"], "1")
+        self.assertEqual((meta["WindowCenter"], meta["WindowWidth"]), ("2040", "4080"))
+        self.assertNotEqual(meta["SeriesInstanceUID"], "1.2.3.6")
+        self.assertNotEqual(meta["SOPInstanceUID"], "1.2.3.3")
+        self.assertEqual(meta["StudyInstanceUID"], "1.2.3.7")
+        for key in (
+            "IceMiniHead", "DicomEngineDimString", "MFInstanceNumber",
+            "ReferencedImageSequenceSOPInstanceUID", "ReferencedGSPSInstanceUID",
+            "RescaleSlope", "RescaleIntercept",
+        ):
+            self.assertNotIn(key, meta)
+        self.assertEqual(meta["ImageComments"], "1 lesions, 0.01 ml")
+
+    def test_metrics_renderer_paginates_without_losing_rows(self):
+        rows = [wml.LesionMetric(i, 10, 0.012345, (-12.5, 23.5, 34.5)) for i in range(1, 81)]
+        text = []
+        original_text = wml.ImageDraw.ImageDraw.text
+
+        def record_text(draw, xy, value, *args, **kwargs):
+            text.append((xy, value))
+            return original_text(draw, xy, value, *args, **kwargs)
+
+        with mock.patch.object(wml.ImageDraw.ImageDraw, "text", record_text):
+            pages = wml.render_metrics_report_pages(rows)
+        self.assertEqual(len(pages), 4)
+        self.assertEqual([value for (x, y), value in text if x == 32 and y > 228],
+                         [str(i) for i in range(1, 81)])
+        values = [value for _, value in text]
+        self.assertEqual(values.count("0.012345"), 80)
+        self.assertEqual(values.count("-12.50"), 80)
+        self.assertIn("Page 4/4    Lesions 79-80 of 80", values)
+        for page in pages:
+            self.assertEqual(page.shape, (1024, 1024))
+            self.assertEqual(page.dtype, np.dtype(np.uint16))
+            self.assertGreater(np.count_nonzero(page), 1000)
+            upright = np.rot90(page, 2)
+            self.assertGreater(np.count_nonzero(upright[32:60, 32:700]), 100)
+
+    def test_empty_mask_returns_a_zero_lesion_metrics_page(self):
+        volume = np.zeros((20, 16, 6), dtype=np.int16)
+        connection = RecordingConnection(nifti_to_mrd_images(volume, oblique_affine()))
+        with mock.patch.object(wml, "run_flames", FakeFlames()):
+            wml.process(connection, {"parameters": {"sendoriginal": False}}, None)
         self.assertEqual(sorted(connection.series()), [4, 5, 6])
+        report, = connection.series()[6]
+        meta = ismrmrd.Meta.deserialize(report.attribute_string)
+        self.assertEqual(meta["LesionMetricsRows"], "0")
+        self.assertEqual(meta["slice_count"], "1")
+        self.assertIn("0 lesions, 0.00 ml", meta["ImageComments"])
+        self.assertEqual(report.data.shape, (1, 1, 1024, 1024))
+        self.assertGreater(np.count_nonzero(report.data), 1000)
+
+    def test_multiple_source_series_have_separate_metrics_series(self):
+        sources = nifti_to_mrd_images(phantom(), oblique_affine(), series_index=3)
+        sources += nifti_to_mrd_images(phantom(), oblique_affine(), series_index=7)
+        connection = RecordingConnection(sources)
+        with mock.patch.object(wml, "run_flames", FakeFlames()):
+            wml.process(connection, {}, None)
+        series = connection.series()
+        self.assertEqual(sorted(series), list(range(8, 16)))
+        reports = [series[12][0], series[15][0]]
+        metas = [ismrmrd.Meta.deserialize(image.attribute_string) for image in reports]
+        self.assertEqual([meta["LesionMetricsRows"] for meta in metas], ["12", "12"])
+        self.assertNotEqual(metas[0]["SeriesInstanceUID"], metas[1]["SeriesInstanceUID"])
 
     def test_without_sendoriginal_a_failure_returns_nothing(self):
         def flames(*args):
@@ -373,6 +501,15 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
         print(f"scanner path against direct flames: Dice {agreement:.5f}, "
               f"{int(expected.sum())} reference voxels")
         self.assertGreaterEqual(agreement, 0.998)
+        report, = connection.series()[6]
+        report_meta = ismrmrd.Meta.deserialize(report.attribute_string)
+        metrics = wml.lesion_metrics(mask_xyz > 0, affine)
+        self.assertEqual(report_meta["LesionMetricsRows"], str(len(metrics)))
+        self.assertIn(
+            f"{len(metrics)} lesions, {sum(row.volume_ml for row in metrics):.2f} ml",
+            report_meta["ImageComments"],
+        )
+        self.assertGreater(np.count_nonzero(report.data), 1000)
 
 
 if __name__ == "__main__":

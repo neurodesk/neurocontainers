@@ -75,7 +75,7 @@ Use **Output maps** to select what returns to the scanner database:
 
 **All available** omits T2* and R2* when a selected input pair has fewer than three echoes. Other compatible maps still return. GRE echo limits apply before this check, and EPI repetitions produce one averaged echo. Selecting T2* or R2* explicitly with fewer than three echoes stops that pair before reconstruction or EPI preprocessing.
 
-Combined magnitude is currently not returned by this adapter, including with **All available**. See [issue #3631](https://github.com/neurodesk/neurocontainers/issues/3631). Original magnitude and phase images are always returned before the selected output maps.
+Combined magnitude is currently not returned by this adapter, including with **All available**. See [issue #3631](https://github.com/neurodesk/neurocontainers/issues/3631). Original magnitude and phase images are always returned before QSMxT runs, so the scanner keeps them when reconstruction fails.
 
 **SMWI** returns **QSMxT SMWI paramagnetic**, which darkens paramagnetic sources such as veins,
 iron, and microbleeds, and **QSMxT SMWI diamagnetic**, which darkens diamagnetic sources such
