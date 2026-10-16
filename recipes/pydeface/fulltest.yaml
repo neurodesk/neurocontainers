@@ -482,10 +482,12 @@ tests:
       set -euo pipefail
       case "$(uname -m)" in
         aarch64) expected="${fsl_arm64_version}" ;;
-        x86_64) expected=6.0.3 ;;
+        x86_64) expected="${fsl_x86_version}" ;;
         *) exit 1 ;;
       esac
-      test "$(cat "$FSLDIR/etc/fslversion")" = "$expected"
+      actual="$(cat "$FSLDIR/etc/fslversion")"
+      printf 'FSL runtime at %s reports %s; expected %s\n' "$FSLDIR" "$actual" "$expected"
+      test "$actual" = "$expected"
       python -m pip check
       python - <<'PYTHON'
       from importlib.metadata import version
@@ -555,4 +557,5 @@ cleanup:
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
 fsl_arm64_version: "6.0.7.23"
+fsl_x86_version: "6.0.3:b862cdd5"
 pydeface_version: "2.1.0"
