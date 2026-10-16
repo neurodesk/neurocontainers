@@ -1,5 +1,9 @@
 name: spm25
 version: 26.10.01
+variables:
+  upstream_version: "26.10.01"
+  spm_major: "26"
+  matlab_runtime: R2026a
 copyright:
   - license: GPL-2.0-or-later
     url: https://github.com/spm/spm?tab=GPL-2.0-1-ov-file#readme
@@ -14,7 +18,7 @@ structured_readme:
     # Example usage
 
     ```bash
-     run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
+     run_spm{{ context.spm_major }}.sh /usr/local/MATLAB/MATLAB_Runtime/{{ context.matlab_runtime }}/
     ```
   documentation: https://github.com/spm
   citation: |
@@ -32,7 +36,7 @@ readme: |-
   # Example usage
 
   ```bash
-   run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
+   run_spm{{ context.spm_major }}.sh /usr/local/MATLAB/MATLAB_Runtime/{{ context.matlab_runtime }}/
   ```
   ```
 
@@ -47,24 +51,36 @@ readme: |-
 
   ----------------------------------
 auto_update:
-  method: github_release
-  repo: spm/spm
+  method: sources
+  container_version: spm
+  sources:
+    - id: spm
+      method: oci
+      url: https://ghcr.io/v2/spm/spm-docker/tags/list
+      version_regex: 'docker-matlab-(?P<version>\d+\.\d+(?:\.\d+)?)'
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
 
 build:
   kind: neurodocker
-  base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.version }}
+  base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.upstream_version }}
   pkg-manager: apt
   directives:
+    - user: root
+    - workdir: /opt/spm
     - run:
         - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/spm25-entrypoint
         - chmod +x /usr/local/bin/spm25-entrypoint
+    - user: spm
     - entrypoint: /usr/local/bin/spm25-entrypoint
     - environment:
           PATH: ${PATH}:/opt/spm
     - deploy:
         bins:
-          - spm25
-          - run_spm25.sh
+          - spm
+          - spm{{ context.spm_major }}
+          - run_spm{{ context.spm_major }}.sh
   add-default-template: false
 categories:
   - functional imaging
