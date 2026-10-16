@@ -182,33 +182,43 @@ tests:
           if not member.is_absolute() or '..' in member.parts or '\x00' in str(member):
               return dict(result, status='unresolved_membership_namespace_path')
           candidates = []
+          mounts = {}
           unsupported = 0
           for line in mountinfo['raw'].splitlines():
               before, separator, after = line.partition(' - ')
               filesystem = after.split()
-              if not separator or not filesystem or filesystem[0] != 'cgroup2':
-                  continue
               fields = before.split()
-              if len(fields) < 6 or len(filesystem) < 3:
-                  return dict(result, status='malformed_v2_mountinfo')
+              if not separator or len(fields) < 6 or len(filesystem) < 3:
+                  return dict(result, status='malformed_v2_mountinfo' if filesystem[:1] == ['cgroup2']
+                              else 'malformed_mountinfo')
+              if not fields[0].isdigit() or not fields[1].isdigit() or fields[0] in mounts:
+                  return dict(result, status='unresolved_mount_visibility',
+                              reason='invalid_or_duplicate_mount_id', mount_id=fields[0])
               root, point = [pathlib.PurePosixPath(re.sub(
                   r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)) for value in fields[3:5]]
-              if len(result['v2_mounts']) < 8:
-                  result['v2_mounts'].append(dict(id=fields[0], root=str(root), point=str(point)))
-              else:
-                  result['mounts_capped'] = True
+              mount = dict(id=fields[0], parent=fields[1], root=str(root),
+                           point=str(point), filesystem=filesystem[0])
+              mounts[fields[0]] = mount
+              if filesystem[0] == 'cgroup2':
+                  if len(result['v2_mounts']) < 8:
+                      result['v2_mounts'].append(mount)
+                  else:
+                      result['mounts_capped'] = True
               if any(not p.is_absolute() or '..' in p.parts or '\x00' in str(p) for p in [root, point]):
                   unsupported += 1
+                  result['unresolved_path_mount'] = mount
                   continue
-              if member == root or root in member.parents:
+              if filesystem[0] == 'cgroup2' and (member == root or root in member.parents):
                   candidates.append((root, point, fields[0]))
           result['unsupported_mount_paths'] = unsupported
           result['matching_mounts'] = len(candidates)
           if not candidates:
               return dict(result, status='unresolved_v2_mount_or_namespace')
+          if unsupported:
+              return dict(result, status='unresolved_mount_visibility', reason='unsupported_mount_path')
           root, point, mount_id = min(candidates, key=lambda m: (len(m[0].parts), str(m[1])))
           result['mount'] = dict(id=mount_id, root=str(root), point=str(point),
-                                 selection='widest matching visible root')
+                                 selection='widest matching root; visibility checked before counter reads')
           current = point / member.relative_to(root)
           result['leaf'] = str(current)
           counters = ['cpu.max', 'cpu.stat', 'cpu.pressure', 'cpuset.cpus',
@@ -216,6 +226,37 @@ tests:
                       'memory.high', 'memory.current', 'memory.events',
                       'memory.events.local', 'memory.swap.max', 'memory.swap.current',
                       'memory.pressure']
+          ancestors = set()
+          mount = mounts[mount_id]
+          while True:
+              ancestors.add(mount['id'])
+              if mount['parent'] == mount['id'] and mount['point'] == '/':
+                  result['parent_chain'] = 'namespace_root'
+                  break
+              parent = mounts.get(mount['parent'])
+              if parent is None:
+                  result['parent_chain'] = 'unlisted_parent; visibility checked only within process root'
+                  result['unlisted_parent_id'] = mount['parent']
+                  break
+              parent_point = pathlib.PurePosixPath(parent['point'])
+              if parent['id'] in ancestors or parent_point not in pathlib.PurePosixPath(mount['point']).parents:
+                  return dict(result, status='unresolved_mount_visibility',
+                              reason='stacked_or_inconsistent_parent_chain', unresolved_mount=mount)
+              mount = parent
+          paths = []
+          for _ in range(result['max_levels']):
+              paths.extend(current / name for name in counters)
+              if current == point:
+                  break
+              current = current.parent
+          for mount in mounts.values():
+              if mount['id'] in ancestors:
+                  continue
+              mounted_at = pathlib.PurePosixPath(mount['point'])
+              if any(mounted_at == path or mounted_at in path.parents for path in paths):
+                  return dict(result, status='unresolved_mount_visibility',
+                              reason='mount_obscures_sample_path', unresolved_mount=mount)
+          current = point / member.relative_to(root)
           for _ in range(result['max_levels']):
               result['levels'].append(dict(path=str(current), counters={
                   name: telemetry_read(current / name) for name in counters}))
