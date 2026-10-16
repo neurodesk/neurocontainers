@@ -109,7 +109,9 @@ for header in (False, True):
             ssreslicesagittal=True, ssreslicecoronal=True,
         )}
         before = len(inferences)
-        outputs = synthseg.process_image(images, None, config, None)
+        # process() sends the originals before SynthSeg runs; together they are one series' output.
+        outputs = synthseg._build_original_output_images(images, config)
+        outputs += synthseg.process_image(images, None, config, None)
         assert len(inferences) == before + 1
         connection = Connection()
         synthseg._send_images_by_series(connection, outputs, 'both segmentation and parcellation probe')
