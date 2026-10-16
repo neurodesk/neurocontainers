@@ -28,6 +28,10 @@ on:
         description: Validate signing in isolated staging without finalizing a release
         default: false
         type: boolean
+      staged_run_id:
+        description: Failed push promotion with all publish jobs successful; reuse staged metadata only
+        default: 0
+        type: number
       runner:
         description: Runner pool for publishing the tested candidate
         default: neurodesk-syd-arcrunner-neurocontainers
@@ -184,9 +188,62 @@ jobs:
         uses: actions/github-script@v7
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
+          STAGED_RUN_ID: ${{ inputs.staged_run_id || 0 }}
+          SIGNING_ACCEPTANCE: ${{ inputs.signing_acceptance || false }}
         with:
           script: |
             const headSha = process.env.HEAD_SHA;
+            const stagedRunId = Number(process.env.STAGED_RUN_ID || 0);
+            if (stagedRunId !== 0) {
+              if (!Number.isSafeInteger(stagedRunId) || stagedRunId < 1 ||
+                  context.eventName !== 'workflow_dispatch' ||
+                  process.env.SIGNING_ACCEPTANCE === 'true') {
+                throw new Error('Invalid staged recovery request');
+              }
+              const {data: run} = await github.rest.actions.getWorkflowRun({
+                ...context.repo, run_id: stagedRunId,
+              });
+              const repository = `${context.repo.owner}/${context.repo.repo}`;
+              if (run.repository.full_name !== repository ||
+                  run.head_repository.full_name !== repository ||
+                  run.path !== '.github/workflows/promote-container-candidate.yml' ||
+                  run.event !== 'push' || run.head_branch !== 'main' ||
+                  run.head_sha !== process.env.MERGE_SHA ||
+                  run.status !== 'completed' || run.conclusion !== 'failure') {
+                throw new Error('Recovery requires a failed trusted main push for this merge');
+              }
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                ...context.repo, run_id: stagedRunId, filter: 'latest', per_page: 100,
+              });
+              const published = jobs.filter(job => job.name.startsWith('publish ('));
+              if (!published.length || published.some(job => job.conclusion !== 'success') ||
+                  !jobs.some(job => job.name === 'finalize' && job.conclusion === 'failure')) {
+                throw new Error('Recovery requires every publish job to succeed and finalize to fail');
+              }
+              const suffix = `-${headSha})`;
+              const expected = published.map(job => {
+                if (!job.name.startsWith('publish (candidate-') || !job.name.endsWith(suffix)) {
+                  throw new Error('Published job does not match the merged PR head');
+                }
+                const container = job.name.slice('publish (candidate-'.length, -suffix.length);
+                if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(container)) {
+                  throw new Error('Invalid published container identity');
+                }
+                return `promotion-metadata-${container}-${headSha}`;
+              });
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                ...context.repo, run_id: stagedRunId, per_page: 100,
+              });
+              const metadata = artifacts.filter(item => item.name.startsWith('promotion-metadata-'));
+              if (new Set(expected).size !== expected.length || metadata.length !== expected.length ||
+                  metadata.some(item => item.expired || !expected.includes(item.name)) ||
+                  new Set(metadata.map(item => item.name)).size !== expected.length) {
+                throw new Error('Recovery metadata is missing, expired, duplicated, or unexpected');
+              }
+              core.setOutput('artifacts', JSON.stringify(metadata.map(item => ({id: item.id, name: item.name}))));
+              return;
+            }
             const workflows = await github.rest.actions.listRepoWorkflows({
               owner: context.repo.owner, repo: context.repo.repo,
             });
@@ -437,6 +494,7 @@ jobs:
     needs: [resolve, await_candidate]
     if: >-
       !inputs.signing_acceptance &&
+      !inputs.staged_run_id &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: ${{ inputs.runner == 'blacksmith-8vcpu-ubuntu-2404' && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers' }}
@@ -736,11 +794,17 @@ jobs:
   finalize:
     needs: [resolve, await_candidate, publish]
     if: >-
+      !cancelled() &&
       !inputs.signing_acceptance &&
+      needs.await_candidate.result == 'success' &&
+      (needs.publish.result == 'success' ||
+        (inputs.staged_run_id && needs.publish.result == 'skipped')) &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      containers: ${{ steps.select.outputs.containers }}
     concurrency:
       # Reuse the former workflow-wide group so rollout cannot overlap a
       # promotion run that started with the old workflow definition.
@@ -784,38 +848,44 @@ jobs:
           pattern: promotion-metadata-*-${{ needs.resolve.outputs.head_sha }}
           path: promotion-metadata
           merge-multiple: true
+          run-id: ${{ inputs.staged_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Revalidate and combine published manifests
+        id: select
         env:
           ARTIFACTS: ${{ needs.await_candidate.outputs.artifacts }}
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
-          jq -s 'add' promotion-metadata/verified-manifest-*.json > verified-manifests.json
+          jq -s 'add' promotion-metadata/verified-manifest-*.json > published-manifests.json
           expected="$(echo "${ARTIFACTS}" | jq 'length')"
-          actual="$(jq 'length' verified-manifests.json)"
+          actual="$(jq 'length' published-manifests.json)"
           if [ "${actual}" -ne "${expected}" ]; then
             echo "Expected ${expected} published manifests, found ${actual}" >&2
             exit 1
           fi
-          python tools/one_pr_release.py verify-metadata \
+          python tools/one_pr_release.py select-current-metadata \
             --bundle promotion-metadata/release-previews \
-            --manifests verified-manifests.json \
+            --manifests published-manifests.json --output verified-manifests.json \
             --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
             --pr-number "${PR_NUMBER}"
       - name: Log in to GHCR
+        if: steps.select.outputs.containers != '[]'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Log in to Docker Hub
+        if: steps.select.outputs.containers != '[]'
         continue-on-error: true
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - name: Log in to Nectar registry
+        if: steps.select.outputs.containers != '[]'
         continue-on-error: true
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
@@ -823,12 +893,14 @@ jobs:
           username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
           password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
       - name: Log in to Quay
+        if: steps.select.outputs.containers != '[]'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
       - name: Finalize public Docker tags from staged manifests
+        if: steps.select.outputs.containers != '[]'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
@@ -881,11 +953,13 @@ jobs:
             python -m tools.v2_registry finalize "${quay}" "${version}" "${build_date}" --apply
           done
       - name: Configure AWS credentials
+        if: steps.select.outputs.containers != '[]'
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708  # v5.1.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
       - name: Finalize public SIF object names with server-side copies
+        if: steps.select.outputs.containers != '[]'
         env:
           OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
           OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
@@ -915,6 +989,7 @@ jobs:
       # a GitHub App installation token's one-hour lifetime. Mint the
       # ruleset-authorized token only when the metadata is ready to be pushed.
       - name: Create fresh release token for metadata push
+        if: steps.select.outputs.containers != '[]'
         id: metadata-token
         uses: actions/create-github-app-token@v2
         with:
@@ -922,6 +997,7 @@ jobs:
           private-key: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
       - name: Commit generated release metadata directly to main
+        if: steps.select.outputs.containers != '[]'
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
@@ -964,6 +1040,8 @@ jobs:
   sync_openrecon:
     needs: [resolve, finalize]
     if: >-
+      !cancelled() && needs.finalize.result == 'success' &&
+      needs.finalize.outputs.containers != '[]' &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: ubuntu-latest
@@ -988,14 +1066,18 @@ jobs:
           pattern: promotion-metadata-*-${{ needs.resolve.outputs.head_sha }}
           path: promotion-metadata
           merge-multiple: true
+          run-id: ${{ inputs.staged_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Sync OpenRecon metadata
         env:
           GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+          FINALIZED_CONTAINERS: ${{ needs.finalize.outputs.containers }}
         run: |
           set -euo pipefail
           gh auth setup-git
           jq -s 'add' promotion-metadata/verified-manifest-*.json > verified-manifests.json
-          jq -c '.[] | select(.architecture == "x86_64")' \
+          jq -c --argjson containers "${FINALIZED_CONTAINERS}" \
+            '.[] | select(.container as $name | $containers | index($name)) | select(.architecture == "x86_64")' \
             verified-manifests.json | while IFS= read -r manifest; do
               recipe="$(echo "${manifest}" | jq -r '.recipe')"
               variant="$(echo "${manifest}" | jq -r '.variant')"
@@ -1023,6 +1105,7 @@ jobs:
           FINALIZE_RESULT: ${{ needs.finalize.result }}
           SYNC_RESULT: ${{ needs.sync_openrecon.result }}
           SKIP_REASON: ${{ needs.resolve.outputs.skip_reason }}
+          FINALIZED_CONTAINERS: ${{ needs.finalize.outputs.containers }}
         with:
           script: |
             const issue_number = Number(process.env.PR_NUMBER);
@@ -1062,16 +1145,19 @@ jobs:
             const publishResult = process.env.PUBLISH_RESULT;
             const finalizeResult = process.env.FINALIZE_RESULT;
             const syncResult = process.env.SYNC_RESULT;
-            const promotionResult = publishResult !== 'success'
+            const promotionResult = publishResult !== 'success' && publishResult !== 'skipped'
               ? publishResult
               : finalizeResult !== 'success'
                 ? finalizeResult
-                : syncResult;
+                : syncResult === 'skipped' ? 'success' : syncResult;
             let heading;
             let action;
             if (promotionResult === 'success') {
-              heading = `## ✅ ${identity} published from the tested candidate`;
-              action = '**Action required:** None. The PR is merged and automatic promotion completed successfully.';
+              const containers = JSON.parse(process.env.FINALIZED_CONTAINERS || '[]');
+              heading = `## ✅ ${identity} promotion finalized`;
+              action = containers.length
+                ? `Finalized containers: ${containers.join(', ')}. Superseded candidates, if any, were excluded.`
+                : 'No containers were finalized. Every staged candidate was superseded.';
             } else if (process.env.SKIP_REASON === 'mixed-pr') {
               heading = `## ⚠️ ${identity} merged — not promoted automatically`;
               action = '**Action required:** This PR changed repository code alongside recipes, so automatic promotion does not apply and rerunning it will skip again. Publish the changed recipes with the `manual-build` workflow.';
@@ -1083,7 +1169,9 @@ jobs:
                 ? 'failed'
                 : promotionResult;
               heading = `## ⚠️ ${identity} candidate passed — promotion ${promotionOutcome}`;
-              action = `**Action required:** Investigate the failed promotion, then rerun \`Promote merged container candidate\` with \`pr_number=${issue_number}\`. Do not rebuild the candidate.`;
+              action = '**Action required:** Inspect the failed promotion and follow ' +
+                '[staged recovery](https://github.com/neurodesk/neurocontainers/blob/main/workflows/ONE_PR_RELEASES.md#concurrent-merges-and-staged-recovery). ' +
+                'A superseded candidate cannot be recovered by blindly repeating publication.';
             }
             const replacement = [
               lifecycleStart,
