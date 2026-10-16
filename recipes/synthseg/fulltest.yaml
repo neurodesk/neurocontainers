@@ -153,6 +153,93 @@ tests:
       bash -lc 'PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import synthseg, ismrmrd, numpy; print(synthseg.__file__)"'
     expected_output_contains: "/opt/code/python-ismrmrd-server/synthseg.py"
 
+  - name: Original MRD images survive segmentation failure
+    description: >-
+      Send real scan slices in two MRD series through the installed adapter.
+      Both original series must arrive before segmentation fails, with their
+      pixels and geometry intact, and the connection must close.
+    timeout: 60
+    command: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      from pathlib import Path
+      from unittest.mock import patch
+
+      import ismrmrd
+      import nibabel as nib
+      import numpy as np
+      import synthseg
+
+      assert Path(synthseg.__file__) == Path('/opt/code/python-ismrmrd-server/synthseg.py')
+      scan = nib.load('${t1w}')
+      pixels = np.asarray(scan.dataobj)
+      spacing = np.linalg.norm(scan.affine[:3, :3], axis=0)
+      lps = np.array([-1.0, -1.0, 1.0])
+      middle = scan.shape[2] // 2
+      sources = {}
+      for series, start in ((1, middle - 2), (5, middle)):
+          for index in range(start, start + 2):
+              image = ismrmrd.Image.from_array(pixels[:, :, index].T[None, None], transpose=False)
+              head = image.getHead()
+              head.field_of_view = (scan.shape[0] * spacing[0], scan.shape[1] * spacing[1], spacing[2])
+              head.position = tuple((scan.affine[:3, 3] + index * scan.affine[:3, 2]) * lps)
+              head.read_dir = tuple(scan.affine[:3, 0] / spacing[0] * lps)
+              head.phase_dir = tuple(scan.affine[:3, 1] / spacing[1] * lps)
+              head.slice_dir = tuple(scan.affine[:3, 2] / spacing[2] * lps)
+              head.image_type = ismrmrd.IMTYPE_MAGNITUDE
+              head.image_series_index, head.image_index, head.slice = series, index - start + 1, index - start
+              image.setHead(head)
+              meta = ismrmrd.Meta()
+              meta['SeriesDescription'] = f't1w_{series}'
+              meta['ImageType'] = 'ORIGINAL\\PRIMARY\\M\\ND'
+              image.attribute_string = meta.serialize()
+              sources[(series + 1, index - start)] = image
+
+      class Connection:
+          def __init__(self):
+              self.sent = []
+              self.logs = []
+              self.closed = False
+
+          def __iter__(self):
+              yield from sources.values()
+              yield None
+
+          def send_image(self, images):
+              self.sent.extend(images)
+
+          def send_logging(self, level, text):
+              self.logs.append(text)
+
+          def send_close(self):
+              self.closed = True
+
+      connection = Connection()
+      sent_before_failure = []
+
+      def fail_segmentation(*args):
+          sent_before_failure.append(list(connection.sent))
+          raise RuntimeError('simulated segmentation failure')
+
+      with patch.object(synthseg, 'process_image', side_effect=fail_segmentation) as segmentation:
+          synthseg.process(connection, {'parameters': {}}, None)
+
+      assert segmentation.call_count == 1, segmentation.call_count
+      assert connection.closed, 'connection did not close after segmentation failure'
+      assert any('simulated segmentation failure' in text for text in connection.logs), connection.logs
+      for stage, images in (('before failure', sent_before_failure[0]), ('after failure', connection.sent)):
+          delivered = [(int(image.image_series_index), int(image.slice)) for image in images]
+          assert len(delivered) == len(sources) and set(delivered) == set(sources), (stage, delivered)
+          for key, image in zip(delivered, images):
+              original = sources[key]
+              np.testing.assert_array_equal(image.data, original.data)
+              for field in ('field_of_view', 'position', 'read_dir', 'phase_dir', 'slice_dir'):
+                  np.testing.assert_array_equal(getattr(image.getHead(), field), getattr(original.getHead(), field))
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta['SeriesDescription'] == f't1w_{key[0] - 1}_original', meta
+      print('4 original MRD images from 2 series delivered before segmentation failure; connection closed')
+      PY
+    expected_output_contains: 4 original MRD images from 2 series delivered before segmentation failure; connection closed
+
   - name: OpenRecon parameter matrix generates
     description: Verify the wrapper can emit a config for every scanner option combination
     command: |
@@ -177,7 +264,8 @@ tests:
 
   - name: Brain volume report renders from the real volume CSV
     description: >-
-      Load the shipped IXI and 7 T norms as chosen by field strength, read the
+      Load the shipped IXI and 7 T norms, fast and normal mode, as chosen by
+      field strength and mode, read the
       --vol CSV written by the real network above and render both report pages,
       so the norms' column names must match what mri_synthseg writes.
     command: |
@@ -187,8 +275,10 @@ tests:
 
       volumes = brainquant.read_volumes("${output_dir}/synthseg/t1w_volumes.csv")
       subject = brainquant.resolve_subject(None, 30, "female")
-      for field_strength, cohort in ((2.89, "IXI"), (6.98, "AHEAD")):
-          norms_path, _ = brainquant.select_norms(field_strength)
+      for field_strength, fast, cohort in (
+          (2.89, True, "IXI"), (6.98, True, "AHEAD"), (2.89, False, "IXI"), (6.98, False, "AHEAD"),
+      ):
+          norms_path, _ = brainquant.select_norms(field_strength, fast)
           norms = brainquant.load_norms(norms_path)
           assert norms.reference.cohort == cohort, norms.reference
           report = brainquant.assess(norms, volumes, subject)

@@ -2,12 +2,15 @@
 
 This document describes how the reference curves were built, how the report
 evaluates a patient against them, how the models were validated, and what they
-cannot do. There are two references:
+cannot do. There are two cohorts, each fitted once per SynthSeg mode:
 
-- `brainquant_norms.json`: the IXI cohort, scanned at 1.5 T and 3 T. Most of
-  this document describes it.
-- `brainquant_norms_7t.json`: the AHEAD cohort, scanned at 7 T. See
-  [7 T reference](#7-t-reference).
+| Cohort | Fast mode | Normal mode |
+| --- | --- | --- |
+| IXI, scanned at 1.5 T and 3 T. Most of this document describes it. | `brainquant_norms.json` | `brainquant_norms_normal.json` |
+| AHEAD, scanned at 7 T. See [7 T reference](#7-t-reference). | `brainquant_norms_7t.json` | `brainquant_norms_7t_normal.json` |
+
+The sections below describe the fast-mode fits. [Normal mode](#normal-mode)
+describes how the normal-mode fits differ.
 
 The report is for research use only. It is not for diagnostic use.
 
@@ -36,7 +39,8 @@ re-running SynthSeg.
 
 The norms must come from the same measurement as the patient. Each IXI image
 was segmented with FreeSurfer 8.2.0 `mri_synthseg` using the SynthSeg 2.0 model
-in fast mode on CPU (`--fast --vol`), which is the scanner default.
+in fast mode on CPU (`--fast --vol`), which is the scanner default. The
+normal-mode norms repeat the fit without `--fast`.
 
 Volumes come from the `--vol` CSV. SynthSeg computes them by summing the soft
 posterior probabilities, not by counting labelled voxels. The report reads the
@@ -187,9 +191,9 @@ age 35 and sex female from the header, which match the IXI record.
   tissue totals. Expect offsets of this size on a new scanner.
 - **Population.** IXI is a London cohort of healthy volunteers. Its ethnic and
   socioeconomic mix may not match the patients being scanned.
-- **Measurement.** The model applies to SynthSeg 2.0 in fast mode. Other models,
-  or fast mode off, add a footnote because volumes may shift. SynthSeg 1.0 skips
-  the report because its CSV has no ICV column.
+- **Measurement.** The model applies to SynthSeg 2.0. Each mode is compared with
+  norms fitted in that mode. Other models add a footnote because volumes may
+  shift. SynthSeg 1.0 skips the report because its CSV has no ICV column.
 - **Distribution.** The model assumes log-normal residuals. Ventricle volume is
   strongly skewed, and its upper tail is the least certain part of the model.
 - **Single time point.** Percentiles describe one scan against a
@@ -220,8 +224,10 @@ reference.
 ### Choosing the reference
 
 The OpenRecon wrapper reads `systemFieldStrength_T` from the MRD header. At 5 T
-and above it uses `brainquant_norms_7t.json`, and below it uses
-`brainquant_norms.json`. If the header has no field strength, it uses IXI. The
+and above it uses AHEAD, and below it uses IXI. If the header has no field
+strength, it uses IXI. It then takes that cohort's fit for the SynthSeg mode of
+the run, for example `brainquant_norms_7t_normal.json` for a 7 T scan with fast
+mode off. The
 report footnote and the reconstruction log state which reference was used and
 why. The OpenRecon GUI has no reference selector, because the scanner UI allows
 at most 14 parameters and all 14 are taken.
@@ -331,6 +337,54 @@ model does not fully capture.
   decade.
 - **Sex differences.** One sex offset is shared across all ages.
 
+## Normal mode
+
+With fast mode off, SynthSeg 2.0 averages each prediction with that of the
+left-right flipped image and refines the topology of the labels. This moves the
+volumes. Every IXI and AHEAD image was segmented again in normal mode, from the
+same inputs, and the table compares the two modes on the same scans:
+
+| Structure | IXI, normal / fast | AHEAD, normal / fast |
+| --- | --- | --- |
+| Total intracranial | -0.1% | 0.0% |
+| Left / right hippocampus | -3.3% / -0.7% | -4.3% / -0.3% |
+| Left / right amygdala | -4.7% / +2.5% | -3.5% / +1.0% |
+| Left / right thalamus | +2.9% / -4.0% | 0.0% / -1.8% |
+| Lateral ventricles | +2.5% | +3.3% |
+| Cortical grey matter | -5.0% | -5.4% |
+| Cerebral white matter | +0.4% | +0.8% |
+| Whole brain | -2.3% | -2.5% |
+
+The cortex shift is consistent across subjects, with a paired SD of 0.2% on
+IXI. The two modes also split some structures differently between the
+hemispheres, so left and right can shift in opposite directions. On IXI the
+mean left / right thalamus ratio is 0.983 in fast mode and 1.054 in normal mode.
+
+Scored against the fast-mode norms, normal-mode volumes look abnormal. The
+table gives the share of healthy subjects inside the 5th to 95th band, against
+the nominal 90%:
+
+| Structure | IXI, against fast norms | IXI, against normal norms | AHEAD, against fast norms | AHEAD, against normal norms |
+| --- | --- | --- | --- | --- |
+| Cortical grey matter | 34% (mean z -2.10) | 90% | 45% (mean z -1.87) | 89% |
+| Whole brain | 67% (mean z -1.26) | 90% | 60% (mean z -1.37) | 87% |
+| Right thalamus | 84% | 90% | 91% | 88% |
+| Left hippocampus | 86% | 90% | 83% | 90% |
+
+So each run is compared with norms segmented in the same mode. The report
+footnote states the mode.
+
+The normal-mode fits use the same subjects, exclusions, models and inputs as
+the fast-mode fits. Only the segmentation changes. The 20 skull-stripping pairs
+were segmented again in normal mode, and their correction is in
+`brainquant_strip_correction_normal.json`. It is within 0.7% of the fast-mode
+correction for ICV, cortex and CSF. The volumes are in
+`brainquant_ixi_volumes_normal.csv` and `brainquant_ahead_volumes_normal.csv`.
+
+On AHEAD, 10 repeats of five-fold cross-validation give a mean held-out coverage
+of 86.5% for the shipped model, against 87.0% in fast mode. On IXI, the
+in-sample coverage of the pooled models is 89% to 91% for every structure.
+
 ## Reproducing the norms
 
 `fit_brainquant_norms.py` runs every step. Its docstring lists the commands:
@@ -364,3 +418,14 @@ For the 7 T reference:
 
 Step 5 alone reproduces the shipped 7 T JSON from the committed table and
 correction.
+
+For the normal-mode references, run the same steps without `--fast` and pass
+`--mode normal` to `fit`:
+
+```bash
+python fit_brainquant_norms.py fit brainquant_ixi_volumes_normal.csv \
+    brainquant_norms_normal.json --mode normal
+python fit_brainquant_norms.py fit brainquant_ahead_volumes_normal.csv \
+    brainquant_norms_7t_normal.json --cohort ahead --mode normal \
+    --strip-correction brainquant_strip_correction_normal.json
+```

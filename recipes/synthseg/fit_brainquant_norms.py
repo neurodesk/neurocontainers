@@ -24,6 +24,10 @@ trim needs nibabel, assemble needs pandas and xlrd, fit needs numpy and scipy.
 The 7 T reference (brainquant_norms_7t.json) is built from the AHEAD cohort with
 assemble-ahead, strip-correction and fit --cohort ahead; BRAINQUANT_NORMS.md
 lists the steps.
+
+The normal-mode references (brainquant_norms_normal.json and
+brainquant_norms_7t_normal.json) repeat every step without --fast and pass
+--mode normal to fit.
 """
 
 from __future__ import annotations
@@ -70,14 +74,17 @@ STRUCTURES = (
 )
 TRIM_MARGIN_MM = 15.0
 SUBJECT_PATTERN = re.compile(r"IXI(?P<id>\d+)-(?P<site>[A-Za-z]+)-\d+-T1")
-SYNTHSEG_SETTINGS = "SynthSeg 2.0, fast mode, FreeSurfer 8.2.0 mri_synthseg --vol"
+MODES = {
+    "fast": "SynthSeg 2.0, fast mode, FreeSurfer 8.2.0 mri_synthseg --vol",
+    "normal": "SynthSeg 2.0, normal mode, FreeSurfer 8.2.0 mri_synthseg --vol",
+}
 COHORTS = {
     "ixi": {
         "cohort": "IXI",
         "url": "https://brain-development.org/ixi-dataset/",
         "license": "CC-BY-SA-3.0",
         "field_strength": "1.5 T and 3 T",
-        "synthseg": SYNTHSEG_SETTINGS,
+        "synthseg_suffix": "",
         "pooled_sex": False,
     },
     "ahead": {
@@ -85,7 +92,7 @@ COHORTS = {
         "url": "https://doi.org/10.21942/uva.10007840",
         "license": "CC-BY-4.0",
         "field_strength": "7 T",
-        "synthseg": f"{SYNTHSEG_SETTINGS} on skull-stripped images, corrected to whole-head volumes",
+        "synthseg_suffix": " on skull-stripped images, corrected to whole-head volumes",
         # 105 subjects with binned ages: one fit with a sex offset held out
         # better than separate per-sex fits.
         "pooled_sex": True,
@@ -251,7 +258,9 @@ def _z_scores(model: dict, age: np.ndarray, log_volume: np.ndarray, log_icv_rati
     return (adjusted - (b0 + b1 * a + b2 * a * a)) / sigma
 
 
-def fit(table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: Path | None = None) -> None:
+def fit(
+    table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: Path | None = None, mode: str = "fast",
+) -> None:
     with table_csv.open(newline="") as handle:
         rows = [row for row in csv.DictReader(handle) if not row["exclude"]]
     if correction_json is not None:
@@ -297,7 +306,7 @@ def fit(table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: P
             "sites": sorted(set(site)),
             "age_min": age_range[0],
             "age_max": age_range[1],
-            "synthseg": COHORTS[cohort]["synthseg"],
+            "synthseg": MODES[mode] + COHORTS[cohort]["synthseg_suffix"],
         },
         "age_center": AGE_CENTER,
         "age_scale": AGE_SCALE,
@@ -329,6 +338,8 @@ def main() -> None:
     fit_parser.add_argument("out_json", type=Path)
     fit_parser.add_argument("--cohort", choices=sorted(COHORTS), default="ixi")
     fit_parser.add_argument("--strip-correction", type=Path)
+    fit_parser.add_argument("--mode", choices=sorted(MODES), default="fast",
+                            help="SynthSeg mode the volumes were segmented with (default: fast)")
     args = parser.parse_args()
     if args.command == "trim":
         trim(args.image, args.mask, args.out)
@@ -339,7 +350,7 @@ def main() -> None:
     elif args.command == "strip-correction":
         strip_correction(args.whole_csv, args.stripped_csv, args.out_json)
     else:
-        fit(args.table_csv, args.out_json, args.cohort, args.strip_correction)
+        fit(args.table_csv, args.out_json, args.cohort, args.strip_correction, args.mode)
 
 
 if __name__ == "__main__":

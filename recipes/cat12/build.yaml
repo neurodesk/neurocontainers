@@ -1,6 +1,6 @@
 # this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
-version: "26.0.0.rc3"
+version: "26.0.0"
 
 copyright:
   - license: GPL-2.0
@@ -13,26 +13,28 @@ architectures:
   - x86_64
 
 variables:
-  upstream_version: "26.0.rc3"
+  upstream_version: "26.0"
   matlab_version: 2023b
   matlab_runtime_version: R2023b
   matlab_mcr_root: "/opt/mcr/{{ context.matlab_runtime_version }}"
-  cat12_inner_zip: "CAT_R{{ context.matlab_version }}_MCR_Linux.zip"
 
 files:
   - name: cat12.zip
-    url: https://github.com/ChristianGaser/cat12/releases/download/{{ context.upstream_version }}/cat-standalone-Linux.zip
+    url: https://github.com/ChristianGaser/cat12/releases/download/26.0/CAT_R2023b_MCR_Linux.zip
+    sha256: 8bc1733425943d5297c48212af6179026e262822a468a0c38c8550f0a9092bc3
 
 auto_update:
   container_version: "cat12"
   method: sources
   sources:
     - id: cat12
-      method: github_release
+      method: github_release_asset
       repo: ChristianGaser/cat12
+      asset: CAT_R2023b_MCR_Linux.zip
       target:
-        variable: upstream_version
-        fulltest_variable: upstream_version
+        file: cat12.zip
+        variables:
+          upstream_version: version
 
 build:
   kind: neurodocker
@@ -67,13 +69,12 @@ build:
             # Install cat12
             - mkdir -p /tmp/cat12-extract {{ local.install_path }}
             - unzip -q {{ get_file("cat12.zip") }} -d /tmp/cat12-extract
-            - unzip -q /tmp/cat12-extract/{{ context.cat12_inner_zip }} -d /tmp/cat12-extract
             - mv /tmp/cat12-extract/cat_standalone/* {{ local.install_path }}/
             - rm -rf /tmp/cat12-extract
             - chmod -R 777 {{ local.install_path }}
         - run:
             # Test
-            - "{{ local.install_path }}/run_spm25.sh {{ context.matlab_mcr_root }} function exit"
+            - "{{ local.install_path }}/run_spm.sh {{ context.matlab_mcr_root }} function exit"
         - environment:
             FORCE_SPMMCR: "1"
             SPM_HTML_BROWSER: "0"
@@ -87,19 +88,19 @@ build:
 
 deploy:
   bins:
-    - run_spm25.sh
-    - spm25
+    - run_spm.sh
+    - spm
     - cat_standalone.sh
     - cat_parallelize.sh
 
 readme: |
   ----------------------------------
   ## cat12/{{ context.version }} ##
-  SPM25 standalone with CAT12 toolbox in Matlab Compiler Runtime
+  SPM standalone with CAT12 toolbox in Matlab Compiler Runtime
 
   Example:
   ```
-  run_spm25.sh {{ context.matlab_mcr_root }}/
+  run_spm.sh {{ context.matlab_mcr_root }}/
   ```
 
   Example with nipype:
@@ -115,7 +116,7 @@ readme: |
   ```
   import nipype.interfaces.spm as spm
 
-  matlab_cmd = 'run_spm25.sh {{ context.matlab_mcr_root }}/ script'
+  matlab_cmd = 'run_spm.sh {{ context.matlab_mcr_root }}/ script'
   spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
 
   import nipype.interfaces.cat12 as cat12
@@ -139,4 +140,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBI
 
 gui_apps:
   - name: "cat12GUI"
-    exec: "bash run_spm25.sh {{ context.matlab_mcr_root }}/"
+    exec: "bash run_spm.sh {{ context.matlab_mcr_root }}/"

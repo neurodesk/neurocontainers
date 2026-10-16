@@ -1,5 +1,5 @@
 name: enigma-pd-wml
-version: 1.1.1
+version: 1.2.0
 
 copyright:
   - license: BSD-3-Clause
@@ -130,7 +130,7 @@ readme: |-
   -f <file>      path (relative to /data) to a file listing one subject per line
   -s <subjects>  comma-separated list of subjects, e.g. -s sub-1,sub-2
   -l <csv>       CSV of subjects/sessions, for non-BIDS data layouts
-  -h <prefix>    prefix for the generated QC HTML files (default: dataset_1)
+  -q <prefix>    prefix for the generated QC HTML files (default: dataset_1)
   ```
 
   If `-f`, `-s` and `-l` are omitted, all subjects in the BIDS dataset are processed.

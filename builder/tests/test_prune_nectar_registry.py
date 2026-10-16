@@ -205,3 +205,50 @@ def test_apply_refuses_a_plan_that_differs_from_the_reviewed_one(
     argv = ["--apps-json", str(apps_path), "--apply", "--expect-plan", "stale"]
     assert prune.main(argv) == 1
     assert fake.store["napari_0.8.0"] == [retired]
+
+
+def test_deletes_use_a_registry_token_and_reads_stay_anonymous(monkeypatch) -> None:
+    # Under OIDC, Harbor's REST API rejects the CLI secret; only the registry's
+    # token service accepts it.
+    sent = []
+
+    class Response:
+        def __init__(self, body: bytes) -> None:
+            self.body = body
+
+        def read(self) -> bytes:
+            return self.body
+
+        def close(self) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> None:
+            pass
+
+        headers: dict = {}
+
+    def urlopen(request, timeout):
+        sent.append(request)
+        if "/service/token" in request.full_url:
+            return Response(b'{"token": "registry-token"}')
+        return Response(b"[]")
+
+    monkeypatch.setattr(prune.urllib.request, "urlopen", urlopen)
+    harbor = prune.Harbor(prune.HARBOR_API, "ssdsorg", "user", "cli-secret")
+    harbor.repositories()
+    harbor.delete_artifact(artifact("napari_0.8.0", "20260814"))
+
+    read, token, delete = sent
+    assert read.get_header("Authorization") is None
+    assert token.full_url.startswith("https://registry.rc.nectar.org.au/service/token?")
+    assert "repository%3Assdsorg%2Fnapari_0.8.0%3Adelete" in token.full_url
+    assert token.get_header("Authorization") == "Basic dXNlcjpjbGktc2VjcmV0"
+    assert delete.get_method() == "DELETE"
+    assert delete.full_url == (
+        "https://registry.rc.nectar.org.au/v2/ssdsorg/napari_0.8.0/manifests/"
+        "sha256:napari_0.8.0('20260814',)"
+    )
+    assert delete.get_header("Authorization") == "Bearer registry-token"

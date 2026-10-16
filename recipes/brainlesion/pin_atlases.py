@@ -57,14 +57,14 @@ replacements = [
     (
         '''    def _fetch_uncached(self) -> Path:
         """Perform the actual Zenodo check / download without consulting the cache."""
-        zenodo_response = self._get_metadata_and_archive_url()
+        zenodo_response = self._get_metadata_and_files()
 ''',
         '''    def _fetch_uncached(self) -> Path:
         """Perform the actual Zenodo check / download without consulting the cache."""
         baked = self._baked_copy()
         if baked is not None:
             return baked
-        zenodo_response = self._get_metadata_and_archive_url()
+        zenodo_response = self._get_metadata_and_files()
 ''',
     ),
     # The check itself, placed with the other private helpers.

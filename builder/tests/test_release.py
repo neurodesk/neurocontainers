@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from builder.config import default_config, resolve_recipe
 from builder.recipe import compile_recipe
 from builder.release import release_data, release_version
@@ -19,17 +21,33 @@ def test_release_shape_matches_current_contract() -> None:
     assert app["exec"] == ""
 
 
-def test_release_renders_gui_app_exec_from_recipe_context() -> None:
-    config = default_config()
-    compiled = compile_recipe(
-        resolve_recipe(config, "cat12"),
-        architecture="x86_64",
-        include_dirs=config.include_dirs,
+def test_release_renders_gui_app_exec_from_recipe_context(tmp_path: Path) -> None:
+    recipe_path = tmp_path / "build.yaml"
+    recipe_path.write_text(
+        "name: gui-tool\n"
+        "version: 1.2.3\n"
+        "readme: GUI release rendering fixture\n"
+        "architectures: [x86_64]\n"
+        "categories: [visualization]\n"
+        "icon: data:image/svg+xml;base64,PHN2Zy8+\n"
+        "variables:\n"
+        "  runtime: R2023b\n"
+        "build:\n"
+        "  kind: neurodocker\n"
+        "  base-image: ubuntu:24.04\n"
+        "  pkg-manager: apt\n"
+        "  directives: []\n"
+        "  add-default-template: false\n"
+        "gui_apps:\n"
+        "  - name: toolGUI\n"
+        "    exec: 'bash run_tool.sh /opt/{{ context.runtime }}/'\n",
+        encoding="utf-8",
     )
+    compiled = compile_recipe(tmp_path, architecture="x86_64")
     data = release_data(compiled.name, compiled.version, compiled.recipe, "20260519")
-    exec_command = data["apps"][f"cat12GUI-{compiled.name} {compiled.version}"]["exec"]
+    exec_command = data["apps"][f"toolGUI-{compiled.name} {compiled.version}"]["exec"]
 
-    assert exec_command == "bash run_spm25.sh /opt/mcr/R2023b/"
+    assert exec_command == "bash run_tool.sh /opt/R2023b/"
     assert "{{" not in exec_command
 
 
