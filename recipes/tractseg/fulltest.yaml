@@ -1,23 +1,8 @@
-# TractSeg container test suite
-# Tests for tractseg v2.9 - White matter bundle segmentation from Diffusion MRI
-#
-# TractSeg includes: MRtrix3 3.0.4, FSL 6.0.7.16, and TractSeg 2.9
-#
-# Note: The test data (ds000001) contains T1w and BOLD images but NOT diffusion
-# imaging data. Therefore, TractSeg-specific segmentation tests cannot run on
-# this data. Tests focus on:
-# 1. TractSeg command-line interface verification
-# 2. MRtrix3 tools (bundled with container)
-# 3. FSL tools (bundled with container)
-# 4. Tractometry interface verification
-#
-# For full TractSeg testing, diffusion data with bvals/bvecs is required.
-
 name: tractseg
-version: "2.9.0"
-upstream_version: "2.9"
-arm_torch_version: "2.6.0"
-arm_numpy_version: "2.2.6"
+version: "2.10.0"
+upstream_version: "2.10"
+torch_version: "2.6.0"
+numpy_version: "2.2.6"
 
 required_files:
   - dataset: ds000001
@@ -829,18 +814,18 @@ tests:
 
   - name: Native CPU tensor and package closure
     command: |
+      set -eu
       /opt/miniconda/bin/python -m pip check
       /opt/miniconda/bin/python - <<'PYTHON'
       import importlib.metadata as md
-      import platform
       import numpy as np
       import torch
-      assert md.version('TractSeg')=='${upstream_version}'
-      if platform.machine()=='aarch64':
-          assert md.version('torch').split('+')[0]=='${arm_torch_version}'
-          assert md.version('numpy')=='${arm_numpy_version}' and torch.version.cuda is None
-      values=np.arange(12,dtype=np.float32).reshape(3,4)
-      np.testing.assert_array_equal(torch.from_numpy(values).sum(dim=1).numpy(),[6,22,38])
+      assert md.version('TractSeg') == '${upstream_version}'
+      assert md.version('torch').split('+')[0] == '${torch_version}'
+      assert md.version('numpy') == '${numpy_version}'
+      assert torch.version.cuda is None
+      values = np.arange(12, dtype=np.float32).reshape(3, 4)
+      np.testing.assert_array_equal(torch.from_numpy(values).sum(dim=1).numpy(), [6, 22, 38])
       print('Native TractSeg dependency closure and NumPy CPU tensor bridge verified')
       PYTHON
     expected_exit_code: 0

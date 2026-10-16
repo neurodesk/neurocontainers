@@ -1,10 +1,10 @@
 variables:
-  upstream_version: "2.9"
-  arm_torch_version: "2.6.0"
-  arm_numpy_version: "2.2.6"
+  upstream_version: "2.10"
+  torch_version: "2.6.0"
+  numpy_version: "2.2.6"
 
 name: tractseg
-version: "2.9.0"
+version: "2.10.0"
 architectures:
   - x86_64
   - aarch64
@@ -21,22 +21,22 @@ auto_update:
       target:
         variable: upstream_version
         fulltest_variable: upstream_version
-    - id: arm-cpu-torch
+    - id: cpu-torch
       dependency: true
       method: pypi
       package: torch
       version_regex: '^(?P<version>2\.6\.\d+)$'
       target:
-        variable: arm_torch_version
-        fulltest_variable: arm_torch_version
-    - id: arm-numpy-abi
+        variable: torch_version
+        fulltest_variable: torch_version
+    - id: numpy-abi
       dependency: true
       method: pypi
       package: numpy
       version_regex: '^(?P<version>2\.2\.\d+)$'
       target:
-        variable: arm_numpy_version
-        fulltest_variable: arm_numpy_version
+        variable: numpy_version
+        fulltest_variable: numpy_version
 
 files:
   - name: pretrained_weights_tract_segmentation_xtract_v1.npz
@@ -83,14 +83,7 @@ build:
         version: 3.0.4
         libtiff_package: libtiff5
         configure_options: ""
-    - condition: arch == "x86_64"
-      template:
-        name: miniconda
-        version: py37_23.1.0-1
-        install_path: /opt/miniconda
-        mamba: true
-    - condition: arch == "aarch64"
-      template:
+    - template:
         name: miniconda
         version: py311_24.9.2-0
         install_path: /opt/miniconda
@@ -107,18 +100,15 @@ build:
         - libgl1-mesa-glx
         - xvfb
     - run:
-        - pip install packaging numpy
-    - run:
-        - pip install TractSeg=={{ context.upstream_version }}
-    - run:
-        - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
+        - pip install packaging "numpy=={{ context.numpy_version }}" "TractSeg=={{ context.upstream_version }}" wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
     - condition: arch == "x86_64"
       run:
-        - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+        - pip install -q "torch=={{ context.torch_version }}+cpu" --index-url https://download.pytorch.org/whl/cpu
     - condition: arch == "aarch64"
       run:
-        # FURY2/pygfx requires NumPy2; Torch2.6 has official compatible ARM wheels.
-        - pip install -q "numpy=={{ context.arm_numpy_version }}" "torch=={{ context.arm_torch_version }}"
+        - pip install -q "torch=={{ context.torch_version }}"
+    - run:
+        - pip check
     - environment:
         TRACTSEG_WEIGHTS_DIR: /opt/miniconda/share/TractSeg/weights
     - run:
