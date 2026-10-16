@@ -128,6 +128,9 @@ tests:
       import threading
       import time
 
+      if platform.machine() == 'aarch64':
+          os.environ['ONEDNN_VERBOSE'] = '2'
+
       faulthandler.dump_traceback_later(120, repeat=True)
       started = time.perf_counter()
       print('[DEBUG-synthstrip-3610] importing inference packages', flush=True)
