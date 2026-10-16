@@ -10,10 +10,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 SCRIPT_REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(SCRIPT_REPO_ROOT) not in sys.path:
@@ -39,10 +42,41 @@ POST_RELEASE_VERSION_PATTERN = re.compile(
     r"(?P<base>(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){1,2})\.post(?:0|[1-9][0-9]*)"
 )
 IMAGE_ASSIGNMENT_PATTERN = re.compile(
-    r"^(?P<prefix>[ \t]*(?:export[ \t]+)?baseDockerImage=)(?P<image>\S*)$",
+    r"^(?P<prefix>[ \t]*(?:export[ \t]+)?baseDockerImage=)"
+    r"(?P<quote>[\"']?)(?P<image>[^\s\"'#]*)(?P=quote)(?:[ \t]+#.*)?[ \t]*$",
     re.MULTILINE,
 )
 BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
+DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+LITERAL_ASSIGNMENT_PATTERN = re.compile(
+    r"^[ \t]*(?:export[ \t]+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)="
+    r"(?:'(?P<single>[^'\n]*)'|\"(?P<double>[^\"`\\\n]*)\"|(?P<bare>[^\s'\"`\\;&|<>()]*))"
+    r"(?:[ \t]+#.*)?[ \t]*$",
+    re.MULTILINE,
+)
+SHELL_REFERENCE_PATTERN = re.compile(
+    r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))"
+)
+MANIFEST_MEDIA_TYPES = ", ".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
+REGISTRY_TIMEOUT_SECONDS = 30
+ANY_ASSIGNMENT_PATTERNS = {
+    "version": re.compile(
+        r"^[ \t]*(?:export[ \t]+)?(?:version|VERSION)=", re.MULTILINE
+    ),
+    "openrecon_version": re.compile(
+        r"^[ \t]*(?:export[ \t]+)?openrecon_version=", re.MULTILINE
+    ),
+    "baseDockerImage": re.compile(
+        r"^[ \t]*(?:export[ \t]+)?baseDockerImage=", re.MULTILINE
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -128,17 +162,71 @@ def resolve_openrecon_target(
     )
 
 
+def literal_assignments(contents: str) -> dict[str, str]:
+    """Expand literal params.sh assignments in order, without executing shell."""
+    values: dict[str, str] = {}
+    for match in LITERAL_ASSIGNMENT_PATTERN.finditer(contents):
+        if match.group("single") is not None:
+            values[match.group("name")] = match.group("single")
+            continue
+        raw = match.group("double")
+        if raw is None:
+            raw = match.group("bare")
+        values[match.group("name")] = SHELL_REFERENCE_PATTERN.sub(
+            lambda reference: values.get(
+                reference.group("braced") or reference.group("bare"),
+                reference.group(0),
+            ),
+            raw,
+        )
+    return values
+
+
+def reject_duplicate_assignments(contents: str) -> None:
+    """Refuse params.sh files whose effective value the sync cannot rewrite."""
+    for name, pattern in ANY_ASSIGNMENT_PATTERNS.items():
+        if len(pattern.findall(contents)) > 1:
+            raise RuntimeError(f"params.sh assigns {name} more than once")
+    if ANY_ASSIGNMENT_PATTERNS["baseDockerImage"].search(
+        contents
+    ) and not IMAGE_ASSIGNMENT_PATTERN.search(contents):
+        raise RuntimeError("params.sh baseDockerImage assignment is not supported")
+
+
+def scanner_version(contents: str) -> str | None:
+    """Return the numeric scanner version params.sh currently publishes."""
+    values = literal_assignments(contents)
+    version = values.get("openrecon_version", values.get("version"))
+    if version is None or not OPENRECON_VERSION_PATTERN.fullmatch(version):
+        return None
+    return version
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 def update_params_version(contents: str, version: str) -> str:
-    """Update the first supported version assignment in params.sh."""
+    """Update the first supported version assignment in params.sh.
+
+    The scanner version never regresses: a maintainer may release scanner
+    packages ahead of the container version, and a rebuild keeps that release.
+    """
     validate_version(version)
     if not VERSION_ASSIGNMENT_PATTERN.search(contents):
         raise RuntimeError("params.sh has no supported version assignment")
+    reject_duplicate_assignments(contents)
+    metadata_version = openrecon_version(version)
+    current_version = scanner_version(contents)
+    if current_version is not None and version_key(current_version) > version_key(
+        metadata_version
+    ):
+        metadata_version = current_version
     updated = VERSION_ASSIGNMENT_PATTERN.sub(
         lambda match: f"{match.group('prefix')}{version}",
         contents,
         count=1,
     )
-    metadata_version = openrecon_version(version)
     if metadata_version == version:
         return OPENRECON_VERSION_ASSIGNMENT_PATTERN.sub("", updated, count=1)
     if OPENRECON_VERSION_ASSIGNMENT_PATTERN.search(updated):
@@ -175,12 +263,23 @@ def released_build_date(source_root: Path, container: str, version: str) -> str 
     return build_date if BUILD_DATE_PATTERN.fullmatch(build_date) else None
 
 
+def split_image_digest(image: str) -> tuple[str, str | None]:
+    """Split an image reference into its name/tag and an optional digest pin."""
+    reference, separator, digest = image.rpartition("@")
+    if not separator:
+        return image, None
+    if not DIGEST_PATTERN.fullmatch(digest):
+        raise RuntimeError(f"Unsupported image digest in params.sh: {image!r}")
+    return reference, digest
+
+
 def dated_image_tag(contents: str) -> str | None:
     """Return the date pinned by a date-only or version-prefixed image tag."""
     match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
     if match is None:
         return None
-    _, separator, tag = match.group("image").rpartition(":")
+    reference, _ = split_image_digest(match.group("image"))
+    _, separator, tag = reference.rpartition(":")
     build_date = tag.rsplit("_", 1)[-1]
     if not separator or "/" in tag or not BUILD_DATE_PATTERN.fullmatch(build_date):
         return None
@@ -196,11 +295,141 @@ def update_params_image_tag(contents: str, build_date: str) -> str:
         return contents
     match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
     assert match is not None
+    reference, _ = split_image_digest(match.group("image"))
+    reference_end = match.start("image") + len(reference)
     return (
-        contents[: match.end("image") - len(pinned_date)]
+        contents[: reference_end - len(pinned_date)]
         + build_date
+        + contents[reference_end:]
+    )
+
+
+def pinned_image_digest(contents: str) -> str | None:
+    """Return the digest params.sh pins its base image to, if any."""
+    match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
+    if match is None:
+        return None
+    return split_image_digest(match.group("image"))[1]
+
+
+def update_params_image_digest(contents: str, digest: str) -> str:
+    """Replace the digest pinned by the base image reference."""
+    if not DIGEST_PATTERN.fullmatch(digest):
+        raise ValueError(f"Invalid image digest: {digest!r}")
+    match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
+    if match is None or pinned_image_digest(contents) is None:
+        return contents
+    return (
+        contents[: match.end("image") - len(digest)]
+        + digest
         + contents[match.end("image") :]
     )
+
+
+def pinned_image_reference(contents: str) -> str:
+    """Return the expanded name:tag of a digest-pinned base image."""
+    image = literal_assignments(contents).get("baseDockerImage")
+    if image is None:
+        raise RuntimeError("params.sh baseDockerImage must be a literal assignment")
+    reference, _ = split_image_digest(image)
+    name, separator, tag = reference.rpartition(":")
+    if "$" in reference or not separator or "/" in tag:
+        raise RuntimeError(
+            f"Cannot refresh the digest of {image!r}; pin a fully resolvable name:tag"
+        )
+    return reference
+
+
+class SameOriginHTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow HTTPS redirects only, and never carry credentials across hosts."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl)
+        if target.scheme != "https":
+            raise RuntimeError(f"Refusing non-HTTPS registry redirect to {newurl}")
+        request = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if request is None:
+            return None
+        if req.get_method() == "HEAD":
+            request.method = "HEAD"
+        if target.netloc != urllib.parse.urlsplit(req.full_url).netloc:
+            request.remove_header("Authorization")
+        return request
+
+
+REGISTRY_OPENER = urllib.request.build_opener(SameOriginHTTPSRedirectHandler)
+
+
+def parse_bearer_challenge(header: str) -> dict[str, str]:
+    scheme, _, parameters = header.partition(" ")
+    if scheme.lower() != "bearer":
+        raise RuntimeError(f"Unsupported registry authentication: {header!r}")
+    return dict(re.findall(r'(\w+)="([^"]*)"', parameters))
+
+
+def resolve_image_digest(reference: str) -> str:
+    """Resolve the manifest digest a registry serves for a public name:tag."""
+    name, _, tag = reference.rpartition(":")
+    registry, separator, repository = name.partition("/")
+    if not separator or not (
+        "." in registry or ":" in registry or registry == "localhost"
+    ):
+        registry, repository = "docker.io", name
+    if registry == "index.docker.io":
+        registry = "docker.io"
+    if registry == "docker.io":
+        registry = "registry-1.docker.io"
+        if "/" not in repository:
+            repository = f"library/{repository}"
+    url = f"https://{registry}/v2/{repository}/manifests/{tag}"
+    headers = {"Accept": MANIFEST_MEDIA_TYPES}
+
+    def head() -> str:
+        request = urllib.request.Request(url, headers=headers, method="HEAD")
+        with REGISTRY_OPENER.open(
+            request, timeout=REGISTRY_TIMEOUT_SECONDS
+        ) as response:
+            return response.headers.get("Docker-Content-Digest", "")
+
+    try:
+        try:
+            digest = head()
+        except urllib.error.HTTPError as error:
+            if error.code != 401:
+                raise
+            challenge = parse_bearer_challenge(
+                error.headers.get("WWW-Authenticate", "")
+            )
+            realm = urllib.parse.urlsplit(challenge.get("realm", ""))
+            if (
+                realm.scheme != "https"
+                or not realm.hostname
+                or realm.username is not None
+                or realm.password is not None
+            ):
+                raise RuntimeError(
+                    f"Refusing registry token realm {challenge.get('realm')!r}"
+                )
+            query = urllib.parse.urlencode(
+                {key: value for key, value in challenge.items() if key != "realm"}
+            )
+            separator = "&" if realm.query else "?"
+            with REGISTRY_OPENER.open(
+                f"{challenge['realm']}{separator}{query}",
+                timeout=REGISTRY_TIMEOUT_SECONDS,
+            ) as response:
+                token = json.load(response)
+            headers["Authorization"] = (
+                f"Bearer {token.get('token') or token['access_token']}"
+            )
+            digest = head()
+    except (urllib.error.URLError, KeyError, ValueError, OSError) as error:
+        raise RuntimeError(
+            f"Cannot resolve the digest of {reference}: {error}"
+        ) from error
+    if not DIGEST_PATTERN.fullmatch(digest):
+        raise RuntimeError(f"Registry returned no usable digest for {reference}")
+    return digest
 
 
 def is_raw_return_label(label_path: Path) -> bool:
@@ -216,6 +445,7 @@ def prepare_recipe(
     *,
     variant: str = "",
     experimental_raw_return: bool = False,
+    resolve_digest: Callable[[str], str] = resolve_image_digest,
 ) -> PreparedSync | None:
     """Copy one recipe's OpenRecon metadata into an existing checkout."""
     version = validate_version(version)
@@ -262,11 +492,28 @@ def prepare_recipe(
         )
     )
     updated_params = update_params_version(params, version)
+    previous_scanner_version = scanner_version(params)
+    if (
+        previous_scanner_version is not None
+        and scanner_version(updated_params) == previous_scanner_version
+        and openrecon_version(version) != previous_scanner_version
+    ):
+        notes.append(
+            f"- Keep scanner version `{previous_scanner_version}` in "
+            f"`{(relative_recipe / 'params.sh').as_posix()}` because it is ahead of "
+            f"the container's `{openrecon_version(version)}`; bump it if this "
+            "release should install as a new scanner package"
+        )
     pinned_tag = dated_image_tag(updated_params)
     if pinned_tag is not None:
         build_date = released_build_date(
             source_root, openrecon_target.container, version
         )
+        if build_date is None and pinned_image_digest(updated_params) is not None:
+            raise RuntimeError(
+                f"No release metadata for {openrecon_target.container} {version}; "
+                "cannot advance the digest-pinned base image"
+            )
         if build_date is None:
             notes.append(
                 f"- Leave the `{pinned_tag}` image tag in "
@@ -281,6 +528,28 @@ def prepare_recipe(
                     f"- Repoint `{(relative_recipe / 'params.sh').as_posix()}` from "
                     f"image tag `{pinned_tag}` to the published `{build_date}`"
                 )
+    pinned_digest = pinned_image_digest(updated_params)
+    expanded_image = literal_assignments(updated_params).get("baseDockerImage", "")
+    if pinned_digest is None and "@" in expanded_image:
+        raise RuntimeError(
+            f"Cannot refresh the digest of {expanded_image!r}; write the pinned "
+            "reference directly in baseDockerImage"
+        )
+    if pinned_digest is not None:
+        reference = pinned_image_reference(updated_params)
+        expanded_date = reference.rpartition(":")[2].rsplit("_", 1)[-1]
+        if pinned_tag is None and BUILD_DATE_PATTERN.fullmatch(expanded_date):
+            raise RuntimeError(
+                f"Cannot advance the dated tag of {reference}; write the build "
+                "date literally in baseDockerImage"
+            )
+        digest = resolve_digest(reference)
+        updated_params = update_params_image_digest(updated_params, digest)
+        if digest != pinned_digest:
+            notes.append(
+                f"- Pin `{(relative_recipe / 'params.sh').as_posix()}` to the "
+                f"digest `{digest}` that `{reference}` resolves to"
+            )
     target_recipe.mkdir(parents=True, exist_ok=True)
     if not target_params.is_file() or updated_params != params:
         target_params.write_text(updated_params, encoding="utf-8")

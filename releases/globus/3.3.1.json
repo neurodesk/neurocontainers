@@ -1,12 +1,12 @@
 {
   "apps": {
     "globus 3.3.1": {
-      "version": "20260927",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     },
     "globusGUI-globus 3.3.1": {
-      "version": "20260927",
+      "version": "20261013",
       "exec": "globusconnectpersonal -gui",
       "apptainer_args": []
     }

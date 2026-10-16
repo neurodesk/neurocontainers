@@ -302,3 +302,70 @@ tests:
   - name: LQT namespace database exists
     command: R --slave -e 'stopifnot(file.exists(system.file("NAMESPACE", package = "LQT")))'
     expected_exit_code: 0
+  - name: Exact analytical parcel damage and NIfTI output
+    command: |
+      set -eu
+      Rscript --vanilla - <<'RS'
+      library(LQT)
+      library(neurobase)
+      root <- tempfile('lqt-parcel-'); dir.create(root)
+      parcels <- oro.nifti::nifti(array(rep(1:4, each=2), dim=c(8,6,4)))
+      parcels@sform_code <- 1L; parcels@qform_code <- 0L
+      parcels@srow_x <- c(1,0,0,-4); parcels@srow_y <- c(0,1,0,-3); parcels@srow_z <- c(0,0,1,-2)
+      lesion_data <- array(0,dim=c(8,6,4))
+      lesion_data[1:2,,] <- 1; lesion_data[3:4,1:3,] <- 1; lesion_data[5:6,1:3,1:2] <- 1
+      lesion <- oro.nifti::nifti(lesion_data)
+      lesion@sform_code <- parcels@sform_code; lesion@qform_code <- parcels@qform_code
+      lesion@srow_x <- parcels@srow_x; lesion@srow_y <- parcels@srow_y; lesion@srow_z <- parcels@srow_z
+      lp <- file.path(root,'lesion.nii.gz'); pp <- file.path(root,'parcels.nii.gz')
+      writenii(lesion,lp); writenii(parcels,pp)
+      before <- tools::md5sum(c(lp,pp))
+      cfg <- list(pat_id='analytical', lesion_path=lp, parcel_path=pp, out_path=file.path(root,'results'), file_suffix='four', node_label=c('A','B','C','D'), node_group=c(1,1,2,2))
+      get_parcel_damage(cfg,verbose=FALSE)
+      prefix <- file.path(cfg$out_path,cfg$pat_id,'Parcel_Damage','analytical_four_percent_damage')
+      tab <- read.csv(paste0(prefix,'.csv')); output <- readnii(paste0(prefix,'.nii.gz'))
+      stopifnot(identical(as.character(tab$Parcel),cfg$node_label), identical(as.numeric(tab$PercentDamage),c(100,50,25,0)), identical(as.numeric(tab$ParcelGroup),cfg$node_group))
+      expected <- array(rep(c(100,100,50,50,25,25,0,0),6*4),dim=c(8,6,4))
+      stopifnot(identical(dim(output),c(8L,6L,4L)), identical(as.numeric(output),as.numeric(expected)), identical(output@srow_x,parcels@srow_x), identical(output@srow_y,parcels@srow_y), identical(output@srow_z,parcels@srow_z), identical(output@pixdim,parcels@pixdim))
+      copied <- readnii(file.path(cfg$out_path,cfg$pat_id,'analytical_lesion.nii.gz'))
+      stopifnot(identical(as.numeric(copied),as.numeric(lesion)),identical(tools::md5sum(c(lp,pp)),before))
+      cat('LQT exact192-voxel parcel damage100/50/25/0, geometry and input hashes verified\n')
+      unlink(root,recursive=TRUE)
+      RS
+    expected_exit_code: 0
+    expected_output_contains: "LQT exact192-voxel"
+    timeout: 120
+  - name: Exact structural shortest paths and disconnection outputs
+    command: |
+      set -eu
+      Rscript --vanilla - <<'RS'
+      library(LQT)
+      root <- tempfile('lqt-graph-'); dir.create(root)
+      cfg <- list(pat_id='analytical',out_path=root,file_suffix='four',node_label=c('A','B','C','D'),node_group=c(1,1,2,2),parcel_coords=matrix(c(0,0,0,1,0,0,2,0,0,3,0,0),ncol=3,byrow=TRUE),sspl_spared_thresh=50)
+      atlas <- file.path(root,'Atlas'); dir.create(atlas)
+      connectivity <- matrix(c(0,1,1,0,1,0,1,0,1,1,0,1,0,0,1,0),4,4,byrow=TRUE)
+      save(connectivity,file=file.path(atlas,'atlas_four_connectivity.RData'))
+      get_atlas_sspl(cfg)
+      a <- new.env();load(file.path(atlas,'atlas_four_SSPL_matrix.RData'),envir=a)
+      expected_atlas <- matrix(c(NA,1,1,2,1,NA,1,2,1,1,NA,1,2,2,1,NA),4,4,byrow=TRUE)
+      stopifnot(identical(unname(a$sspl_matrix),expected_atlas),identical(rownames(a$sspl_matrix),cfg$node_label))
+      pd <- file.path(root,'analytical','Parcel_Disconnection'); dir.create(pd,recursive=TRUE)
+      pct_spared_sc_matrix <- matrix(c(0,100,0,0,100,0,100,0,0,100,0,100,0,0,100,0),4,4,byrow=TRUE)
+      pct_sdc_matrix <- matrix(0,4,4); pct_sdc_matrix[1,3] <- 100; pct_sdc_matrix[3,1] <- 100
+      save(pct_spared_sc_matrix,pct_sdc_matrix,file=file.path(pd,'analytical_four_percent_parcel_mats.RData'))
+      inputs <- c(file.path(atlas,'atlas_four_connectivity.RData'),file.path(pd,'analytical_four_percent_parcel_mats.RData'));before <- tools::md5sum(inputs)
+      get_patient_sspl(cfg,verbose=FALSE)
+      ps <- file.path(root,'analytical','Parcel_SSPL'); p <- new.env();load(file.path(ps,'analytical_four_SSPL_matrices.RData'),envir=p)
+      expected_patient <- matrix(c(NA,1,2,3,1,NA,1,2,2,1,NA,1,3,2,1,NA),4,4,byrow=TRUE)
+      expected_delta <- matrix(c(0,0,1,1,0,0,0,0,1,0,0,0,1,0,0,0),4,4,byrow=TRUE)
+      expected_indirect <- matrix(0,4,4);expected_indirect[1,4] <- 1;expected_indirect[4,1] <- 1
+      stopifnot(identical(unname(p$sspl_matrix),expected_patient),identical(unname(p$delta_sspl_matrix),expected_delta),identical(unname(p$idc_matrix),expected_indirect),identical(p$node_label,cfg$node_label),identical(p$node_group,cfg$node_group))
+      edge <- as.matrix(read.table(file.path(ps,'analytical_four_delta_SSPL.edge')));stopifnot(identical(as.numeric(edge),as.numeric(expected_delta)))
+      avg <- read.csv(file.path(ps,'analytical_four_parcel_average_sspl.csv'));stopifnot(identical(avg$ParcelAvgSSPL,c(.375,0,.25,.125)))
+      node <- read.table(file.path(ps,'analytical_four_delta_SSPL.node'));stopifnot(nrow(node)==4,ncol(node)==6,identical(as.character(node[,6]),cfg$node_label),all(is.finite(as.matrix(node[,1:5]))),identical(tools::md5sum(inputs),before))
+      cat('LQT exact atlas/patient shortest paths, direct/indirect disconnection matrices and parcel averages verified\n')
+      unlink(root,recursive=TRUE)
+      RS
+    expected_exit_code: 0
+    expected_output_contains: "LQT exact atlas/patient"
+    timeout: 120

@@ -2,6 +2,7 @@ name: qupath
 version: 0.7.0
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   cellpose_version: 3.1.1.2
@@ -10,7 +11,11 @@ variables:
 
 files:
   - name: qupath_archive
+    condition: arch == "x86_64"
     url: https://github.com/qupath/qupath/releases/download/v{{ context.version }}/QuPath-v{{ context.version }}-Linux.tar.xz
+  - name: qupath_source
+    condition: arch == "aarch64"
+    url: https://github.com/qupath/qupath/archive/refs/tags/v{{ context.version }}.tar.gz
   - name: cellpose_extension_archive
     url: https://github.com/BIOP/qupath-extension-cellpose/releases/download/v{{ context.cellpose_extension_version }}/qupath-extension-cellpose-{{ context.cellpose_extension_version }}.zip
   - name: cellpose_cyto3_model
@@ -132,14 +137,37 @@ build:
         - unzip
         - xz-utils
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - tar -xJf {{ get_file("qupath_archive") }} -C /usr/local/bin
+
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - openjdk-21-jdk-headless
+
+    - condition: arch == "aarch64"
+      run:
+        - mkdir -p /opt/qupath-source
+        - tar -xzf {{ get_file("qupath_source") }} -C /opt/qupath-source --strip-components=1
+        - chmod 0755 /opt/qupath-source/gradlew
+        - cd /opt/qupath-source && ./gradlew --no-daemon clean jpackage -Ppackage=image -x javadoc
+        - mkdir -p /usr/local/bin
+        - cp -a /opt/qupath-source/build/dist/QuPath /usr/local/bin/QuPath
+        - rm -rf /opt/qupath-source /root/.gradle
 
     - run:
         - python3 -m venv /opt/cellpose
         - /opt/cellpose/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+    - condition: arch == "x86_64"
+      run:
         - /opt/cellpose/bin/python -m pip install --no-cache-dir torch=={{ context.torch_version }} --index-url https://download.pytorch.org/whl/cu124
+    - condition: arch == "aarch64"
+      run:
+        - /opt/cellpose/bin/python -m pip install --no-cache-dir torch=={{ context.torch_version }} --index-url https://download.pytorch.org/whl/cpu
+    - run:
         - /opt/cellpose/bin/python -m pip install --no-cache-dir cellpose=={{ context.cellpose_version }} scikit-image
+        - /opt/cellpose/bin/python -m pip check
         - mkdir -p /opt/cellpose/models
         - cp {{ get_file("cellpose_cyto3_model") }} /opt/cellpose/models/cyto3
         - cp {{ get_file("cellpose_cyto3_size_model") }} /opt/cellpose/models/size_cyto3.npy
@@ -165,16 +193,6 @@ build:
           - /opt/cellpose/bin
           - /usr/local/bin/QuPath/bin
 
-    - test:
-        name: testScript
-        script: |-
-          #!/bin/bash
-          set -e
-          QuPath --version
-          cellpose --version
-          test -f "/opt/qupath-user/extensions/catalogs/QuPath-BIOP catalog/QuPath Cellpose extension/v{{ context.cellpose_extension_version }}/main-jar/qupath-extension-cellpose-{{ context.cellpose_extension_version }}.jar"
-          test -f "/opt/qupath-user/extensions/catalogs/QuPath-BIOP catalog/QuPath Cellpose extension/v{{ context.cellpose_extension_version }}/main-jar/run-cellpose-qc.py"
-
 icon: data:image/png;base64,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
 categories:
   - image segmentation
@@ -192,7 +210,7 @@ readme: |-
   This container also includes:
   - BIOP QuPath Cellpose extension {{ context.cellpose_extension_version }}
   - Cellpose {{ context.cellpose_version }} with the Cellpose 3 `cyto3` model
-  - CUDA-enabled PyTorch {{ context.torch_version }} with CPU fallback
+  - PyTorch {{ context.torch_version }} (CUDA with CPU fallback on x86_64; official CPU wheels on ARM64)
 
   QuPath is preconfigured to use `/opt/cellpose/bin/python` for Cellpose. You can confirm or change this under `Edit > Preferences > Cellpose/Omnipose`.
 

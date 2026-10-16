@@ -3,12 +3,37 @@ variables:
   julia_version: "1.13.1"
   go_version: "1.27.2"
   singularity_version: "4.6.0"
+  vscode_platform:
+    try:
+    - value: x64
+      condition: arch == "x86_64"
+    - value: arm64
+      condition: arch == "aarch64"
+  julia_download_directory:
+    try:
+    - value: x64
+      condition: arch == "x86_64"
+    - value: aarch64
+      condition: arch == "aarch64"
+  julia_platform:
+    try:
+    - value: x86_64
+      condition: arch == "x86_64"
+    - value: aarch64
+      condition: arch == "aarch64"
+  go_platform:
+    try:
+    - value: amd64
+      condition: arch == "x86_64"
+    - value: arm64
+      condition: arch == "aarch64"
 
 name: code
 version: "240320"
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: false
@@ -34,12 +59,19 @@ auto_update:
     version_regex: '"version":\s*"go(?P<version>\d+\.\d+\.\d+)"'
     target:
       variable: go_version
+      fulltest_variable: go_version
   - id: singularity
     method: github_release
     repo: sylabs/singularity
     target:
       variable: singularity_version
       fulltest_variable: singularity_version
+  - id: singularity_source_digest
+    dependency: true
+    method: http_digest
+    url: https://github.com/sylabs/singularity/releases/download/v{{ context.singularity_version }}/singularity-ce-{{ context.singularity_version }}.tar.gz
+    target:
+      file: singularity_archive
 
 build:
   kind: neurodocker
@@ -113,6 +145,9 @@ build:
         - fuse2fs
         - squashfs-tools-ng
         - uidmap
+        - xvfb
+        - xauth
+        - xdotool
 
     - run:
         - cp {{ get_file("download") }} vscode.deb
@@ -122,9 +157,9 @@ build:
     - workdir: /opt
 
     - run:
-        - cp {{ get_file("julia_tarball") }} julia-{{ context.julia_version }}-linux-x86_64.tar.gz
-        - tar zxvf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
-        - rm -rf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+        - cp {{ get_file("julia_tarball") }} julia-{{ context.julia_version }}-linux-{{ context.julia_platform }}.tar.gz
+        - tar zxvf julia-{{ context.julia_version }}-linux-{{ context.julia_platform }}.tar.gz
+        - rm -rf julia-{{ context.julia_version }}-linux-{{ context.julia_platform }}.tar.gz
         - ln -s /opt/julia-{{ context.julia_version }} /opt/julia-latest
 
     - run:
@@ -144,16 +179,16 @@ build:
         GOPATH: $HOME/go
 
     - run:
-        - cp {{ get_file("go_tarball") }} go{{ context.go_version }}.linux-amd64.tar.gz
-        - tar -C /usr/local -xzvf go{{ context.go_version }}.linux-amd64.tar.gz
-        - rm go{{ context.go_version }}.linux-amd64.tar.gz
+        - cp {{ get_file("go_tarball") }} go{{ context.go_version }}.linux-{{ context.go_platform }}.tar.gz
+        - tar -C /usr/local -xzvf go{{ context.go_version }}.linux-{{ context.go_platform }}.tar.gz
+        - rm go{{ context.go_version }}.linux-{{ context.go_platform }}.tar.gz
 
     - environment:
         PATH: $PATH:/usr/local/go/bin:$GOPATH/bin
 
     - run:
         - mkdir -p /root/go/src/github.com/sylabs
-        - cd /root/go/src/github.com/sylabs && wget https://github.com/sylabs/singularity/releases/download/v{{ context.singularity_version }}/singularity-ce-{{ context.singularity_version }}.tar.gz
+        - cp {{ get_file("singularity_archive") }} /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }}.tar.gz
         - cd /root/go/src/github.com/sylabs && tar -xzvf singularity-ce-{{ context.singularity_version }}.tar.gz
         - cd /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }} && ./mconfig --without-suid --prefix=/usr/local/singularity
         - make -C /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }}/builddir
@@ -201,13 +236,13 @@ readme: |
 
 files:
   - name: download
-    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-{{ context.vscode_platform }}/stable
 
   - name: julia_tarball
-    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_version.split(".")[:2] | join(".") }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+    url: https://julialang-s3.julialang.org/bin/linux/{{ context.julia_download_directory }}/{{ context.julia_version.split(".")[:2] | join(".") }}/julia-{{ context.julia_version }}-linux-{{ context.julia_platform }}.tar.gz
 
   - name: go_tarball
-    url: https://dl.google.com/go/go{{ context.go_version }}.linux-amd64.tar.gz
+    url: https://dl.google.com/go/go{{ context.go_version }}.linux-{{ context.go_platform }}.tar.gz
   - name: code
     contents: |
       #!/usr/bin/env sh
@@ -229,3 +264,7 @@ files:
       esac
 
       trap - 1 2 3
+
+  - name: singularity_archive
+    url: https://github.com/sylabs/singularity/releases/download/v{{ context.singularity_version }}/singularity-ce-{{ context.singularity_version }}.tar.gz
+    sha256: 920f3e8b3b103b54e9f303c80989ddd6bdac2e1339eab952505cd3fda14b2315

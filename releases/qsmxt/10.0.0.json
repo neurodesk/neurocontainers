@@ -1,11 +1,13 @@
 {
   "apps": {
-    "qsmxt 5.1.0": {
-      "version": "20230905",
-      "exec": ""
+    "qsmxt 10.0.0": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
+    "image reconstruction",
     "phase processing",
     "quantitative imaging",
     "structural imaging",

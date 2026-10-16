@@ -1,8 +1,9 @@
 {
   "apps": {
     "xnat 1.9.2.1": {
-      "version": "20250805",
-      "exec": ""
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [

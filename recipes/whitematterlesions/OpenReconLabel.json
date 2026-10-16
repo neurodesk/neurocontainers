@@ -1,0 +1,91 @@
+{
+  "general": {
+    "name": { "en": "whitematterlesions" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "Research-only white matter lesion segmentation of a FLAIR series with FLAMeS." },
+    "id": "whitematterlesions",
+    "regulatory_information": {
+      "device_trade_name": "whitematterlesions",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2026/10/13",
+      "material_number": "whitematterlesions_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "safety_advices": "Research use only. Automated lesion masks can miss lesions or include artefacts and must be reviewed before use.",
+      "special_operating_instructions": "OpenRecon FLAMeS white matter lesion segmentation of a reconstructed FLAIR series",
+      "additional_relevant_information": "The scanner receives a lesion overlay and a lesion mask on the source grid, plus a DICOM metrics table with lesion count, total volume and per-lesion voxel count, volume and centroid in RAS coordinates."
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 8192,
+    "min_count_required_cpu_cores": 4,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "whitematterlesions",
+          "name": { "en": "whitematterlesions" }
+        }
+      ],
+      "default": "whitematterlesions",
+      "information": { "en": "Select the FLAMeS MRD server configuration." }
+    },
+    {
+      "id": "sendoriginal",
+      "label": { "en": "Keep original images" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Return a restamped copy of the FLAIR before the lesion series." }
+    },
+    {
+      "id": "wmlmodel",
+      "label": { "en": "Model" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "fold0",
+          "name": { "en": "FLAMeS fold 0" }
+        },
+        {
+          "id": "ensemble",
+          "name": { "en": "Five-fold ensemble" }
+        }
+      ],
+      "default": "fold0",
+      "information": { "en": "Fold 0 takes about 90 s on 8 CPU threads. The ensemble averages all five published folds and takes about five times as long; on held-out scans it raised Dice from 0.61 to 0.65 for multiple sclerosis lesions." }
+    },
+    {
+      "id": "wmlskullstripped",
+      "label": { "en": "Image is already skull-stripped" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "By default SynthStrip finds the brain first. Enable this only when the FLAIR is already brain-only, so nonzero voxels are used as the brain." }
+    },
+    {
+      "id": "wmlprobability",
+      "label": { "en": "Send lesion probability" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Also return the lesion probability map, scaled from 0 to 1000." }
+    }
+  ]
+}

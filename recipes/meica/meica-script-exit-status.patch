@@ -1,0 +1,40 @@
+diff --git a/meica.py b/meica.py
+--- a/meica.py
++++ b/meica.py
+@@ -1495,12 +1495,12 @@
+ if initial_run and not options.no_trim_work:
+     e_csl = ",".join([str(ii) for ii in list(range(1, len(DATASETS) + 1))])
+     sl.append(f"mv {workdir_full_path}/e[{e_csl}]_in{osf} {workdir_full_path}/TED/")
+-    sl.append(f"rm {workdir_full_path}/e[{e_csl}]*nii*")
+-    sl.append(f"rm {workdir_full_path}/e[{e_csl}]*BRIK*")
+-    sl.append(f"rm {workdir_full_path}/e[{e_csl}]*HEAD*")
+-    sl.append(f"rm {workdir_full_path}/*_pt*")
+-    sl.append(f"rm {workdir_full_path}/*_vrA*")
+-    sl.append(f"rm {workdir_full_path}/*.nii")
++    sl.append(f"rm -f {workdir_full_path}/e[{e_csl}]*nii*")
++    sl.append(f"rm -f {workdir_full_path}/e[{e_csl}]*BRIK*")
++    sl.append(f"rm -f {workdir_full_path}/e[{e_csl}]*HEAD*")
++    sl.append(f"rm -f {workdir_full_path}/*_pt*")
++    sl.append(f"rm -f {workdir_full_path}/*_vrA*")
++    sl.append(f"rm -f {workdir_full_path}/*.nii")
+     sl.append(f"rm -rf {workdir_full_path}/memmaps")
+     sl.append(f"mv {workdir_full_path}/TED/e[{e_csl}]_in{osf} {workdir_full_path}/")
+     sl.append(f"cp {workdir_full_path}/TED/meica_mix.1D {workdir_full_path}/")
+@@ -1514,7 +1514,7 @@
+     sl.append(f"mv {workdir_full_path}/betas_OC.nii {workdir_full_path}/TED/")
+ 
+ if linked_workdir and initial_run:
+-    sl.append(f"rm {finaldir_full_path}")
++    sl.append(f"rm -f {finaldir_full_path}")
+     # replace with minimal file copy later
+     sl.append(f"cp -rf {workdir_full_path} {finaldir_full_path}")
+     sl.append(f"rm -rf {workdir_full_path}")
+@@ -1527,4 +1527,7 @@
+ if not options.script_only:
+     # should add suffixes for only so we don't overwrite origina _meica...sh file
+     print("++ Executing script file: _meica_%s.sh" % (SETNAME))
+-    system("bash _meica_%s.sh" % SETNAME)
++    script_status = subprocess.call(["bash", "_meica_%s.sh" % SETNAME])
++    if script_status != 0:
++        print("** ME-ICA script _meica_%s.sh failed with exit code %d" % (SETNAME, script_status))
++        sys.exit(script_status)

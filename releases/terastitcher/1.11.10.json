@@ -1,7 +1,7 @@
 {
   "apps": {
     "terastitcher 1.11.10": {
-      "version": "20260619",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }

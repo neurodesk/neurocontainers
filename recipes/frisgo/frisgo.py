@@ -46,20 +46,21 @@ class _Correction:
     minimum_repetitions: int
     series_suffix: str
     history: str
+    comment: str
 
 
 _CORRECTIONS = {
     "spline": _Correction(
-        ("-tshift",), "Tshift", 4, "frisgo", "LN2_FRISGO_TSHIFT"
+        ("-tshift",), "Tshift", 4, "frisgo", "LN2_FRISGO_TSHIFT", "FRISGO spline"
     ),
     "simple": _Correction(
-        ("-simple",), "frisgo-simple", 2, "frisgo_simple", "LN2_FRISGO_SIMPLE"
+        ("-simple",), "frisgo-simple", 2, "frisgo_simple", "LN2_FRISGO_SIMPLE", "FRISGO simple"
     ),
     "lpass": _Correction(
-        ("-lpass",), "frisgo-lpass", 2, "frisgo_lpass", "LN2_FRISGO_LPASS"
+        ("-lpass",), "frisgo-lpass", 2, "frisgo_lpass", "LN2_FRISGO_LPASS", "FRISGO lpass"
     ),
     "runwise": _Correction(
-        ("-runwise",), "frisgo-runwise", 2, "frisgo_runwise", "LN2_FRISGO_RUNWISE"
+        ("-runwise",), "frisgo-runwise", 2, "frisgo_runwise", "LN2_FRISGO_RUNWISE", "FRISGO runwise"
     ),
 }
 _DEFAULT_CORRECTION = _CORRECTIONS["spline"]
@@ -92,6 +93,7 @@ def _correction_from_config(config) -> _Correction:
         correction,
         arguments=("-lpass", token),
         history=f"{correction.history}_WINDOW_TR={token}",
+        comment=f"{correction.comment} window={token}TR",
     )
 
 
@@ -429,8 +431,9 @@ def _stamp_time_series_image(
     i2i._strip_scanner_write_unsafe_meta(meta)
     if correction:
         image_type = f"DERIVED\\PRIMARY\\M\\{FRISGO_IMAGE_TYPE_TOKEN}"
-        for key in ("SeriesDescription", "SequenceDescription", "ProtocolName", "ImageComments"):
+        for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
             meta[key] = series_name
+        meta["ImageComment"] = meta["ImageComments"] = correction.comment
         meta["ImageType"] = image_type
         meta["DicomImageType"] = image_type
         meta["ImageTypeValue4"] = FRISGO_IMAGE_TYPE_TOKEN
@@ -458,6 +461,10 @@ def _stamp_time_series_image(
             for name in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
                 minihead, _ = i2i._replace_or_append_minihead_string_param(
                     minihead, name, series_name
+                )
+            for name in ("ImageComment", "ImageComments"):
+                minihead, _ = i2i._replace_or_append_minihead_string_param(
+                    minihead, name, correction.comment
                 )
             minihead, _ = i2i._replace_or_append_minihead_string_param(
                 minihead, "ImageType", image_type

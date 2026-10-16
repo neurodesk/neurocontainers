@@ -1,5 +1,14 @@
 name: megnet
 version: "1.1.0"
+test_data:
+  output_dir: test_output
+env_setup: |
+  export NUMBA_CACHE_DIR="${output_dir}/megnet-numba"
+  export MPLCONFIGDIR="${output_dir}/megnet-matplotlib"
+setup:
+  script: |
+    set -eu
+    mkdir -p "${output_dir}"
 tests:
 - name: source revision
   command: git -c safe.directory=/MEGNET_pipeline -C /MEGNET_pipeline rev-parse HEAD
@@ -21,4 +30,117 @@ tests:
   command: megnet main_nonexistent.py
   expected_exit_code: 2
   expected_output_contains: Unknown MEGNET pipeline
+- name: Native PyQt and scientific package closure
+  command: |
+    set -euo pipefail
+    python -m pip check
+    python -c 'from PyQt5.QtCore import PYQT_VERSION_STR; assert PYQT_VERSION_STR == "${pyqt5_version}"; print("Native PyQt binding version", PYQT_VERSION_STR)'
+  expected_output_contains: Native PyQt binding version
+  expected_exit_code: 0
+- name: Actual MEGNET signal filtering
+  description: Run the project bandpass/notch stage on known10Hz plus50Hz MEG signals, checking passband amplitude/phase and line-noise attenuation
+  timeout: 240
+  command: |
+    env -u HOME OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python - <<'PYTHON'
+    import sys
+    import numpy as np
+    import mne
+    sys.path.insert(0, '/MEGNET_pipeline/code')
+    from MEGNET_preprocessing import MEGNET_basic_filtering
+    sfreq = 500.0
+    time = np.arange(10000)/sfreq
+    wanted = np.array([1e-12,0.5e-12])
+    noise = np.array([2e-12,1e-12])
+    data = np.array([wanted[0]*np.sin(2*np.pi*10*time)+noise[0]*np.sin(2*np.pi*50*time),
+                     wanted[1]*np.cos(2*np.pi*10*time)+noise[1]*np.cos(2*np.pi*50*time)])
+    info = mne.create_info(['MEG001','MEG002'], sfreq, ['mag','mag'])
+    raw = mne.io.RawArray(data.copy(), info)
+    result = MEGNET_basic_filtering(raw.copy(), line_freq=50, highpass=1, lowpass=120)
+    values = result.get_data()
+    assert values.shape == data.shape and np.isfinite(values).all()
+    assert result.ch_names == raw.ch_names and result.info['sfreq'] == sfreq
+    np.testing.assert_array_equal(raw.get_data(), data)
+    # Use an integer number of cycles, five seconds away from both filter boundaries.
+    indices = slice(2500,7500)
+    for frequency, amplitudes in [(10,wanted),(50,noise)]:
+        basis = np.array([np.sin(2*np.pi*frequency*time[indices]),np.cos(2*np.pi*frequency*time[indices])])
+        coefficients = 2*values[:,indices]@basis.T/5000
+        amplitude = np.linalg.norm(coefficients,axis=1)
+        if frequency == 10:
+            assert np.all(np.abs(amplitude/amplitudes-1) <= 0.01), amplitude
+            assert abs(coefficients[0,1]/wanted[0]) <= 0.01
+            assert abs(coefficients[1,0]/wanted[1]) <= 0.01
+        else:
+            assert np.all(amplitude/amplitudes <= 0.01), amplitude
+        print(frequency,'Hz amplitudes',amplitude.tolist())
+    print('Actual MEGNET filtering preserves 10Hz signal within1percent and removes at least99percent of50Hz line amplitude')
+    PYTHON
+  expected_output_contains: Actual MEGNET filtering preserves 10Hz signal within1percent and removes at least99percent of50Hz line amplitude
+  expected_exit_code: 0
+- name: Actual MEGNET event epochs and FIFF output
+  description: Run project event parsing and epoch creation with nonzero first-sample offset, compare every detrended/baseline-corrected sample against independent linear regression, and require exact saved float32 FIFF values
+  timeout: 240
+  command: |
+    env -u HOME OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python - <<'PYTHON'
+    import sys
+    import tempfile
+    from pathlib import Path
+    import numpy as np
+    import mne
+    sys.path.insert(0, '/MEGNET_pipeline/code')
+    from MEGNET_preprocessing import MEGNET_epoch_trials
+    sfreq = 500.0
+    first_sample = 1234
+    samples = np.arange(10000)
+    data = 1e-12*np.array([np.sin(samples*.031)+samples*.00003,
+                          np.cos(samples*.017)+samples*samples*.00000001])
+    raw = mne.io.RawArray(data.copy(),mne.create_info(['MEG001','MEG002'],sfreq,['mag','mag']),first_samp=first_sample)
+    events = {'A':[1000,4000], 'B':[2500,6000]}
+    with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as scratch:
+        root = Path(scratch)
+        bids = root/'bids'
+        derivatives = root/'derivatives'
+        event_dir = bids/'sub-01'/'ses-01'/'meg'
+        event_dir.mkdir(parents=True)
+        (derivatives/'sub-01'/'ses-01'/'meg').mkdir(parents=True)
+        path = event_dir/'sub-01_ses-01_task-analytic_run-1_events.tsv'
+        rows = [(sample,code) for code,name in [(1,'A'),(2,'B')] for sample in events[name]]
+        rows.sort()
+        path.write_text('onset\tduration\ttrial_type\tvalue\tsample\n'+''.join(f'{sample/sfreq}\t0\ttrial\t{code}\t{sample}\n' for sample,code in rows))
+        config = {'bids_root_path':str(bids),'preprocessed_data_path':str(derivatives),
+                  'conditions':{'analytic':{'A':1,'B':2}},
+                  'epoch_time':{'analytic':{'pre_onset_time':-.1,'post_onset_time':.2,'baseline':[-.1,0]}}}
+        epochs, parsed = MEGNET_epoch_trials(raw,'01','01','analytic',config,save_epochs=True)
+        assert set(epochs)==set(parsed)=={'A','B'}
+        expected_times = np.arange(-50,101)/sfreq
+        design = np.column_stack([np.ones(151),np.arange(151)])
+        rounding = 512*np.finfo(np.float64).eps
+        for code,name in [(1,'A'),(2,'B')]:
+            expected = []
+            for sample in events[name]:
+                trial = data[:,sample-50:sample+101].copy()
+                coefficients = np.linalg.lstsq(design,trial.T,rcond=None)[0]
+                detrended = trial-(design@coefficients).T
+                expected.append(detrended-detrended[:,:51].mean(axis=1,keepdims=True))
+            expected = np.array(expected)
+            result = epochs[name]
+            assert result.get_data().shape==(2,2,151)
+            np.testing.assert_array_equal(result.times,expected_times)
+            np.testing.assert_array_equal(result.events[:,0],np.array(events[name])+first_sample)
+            np.testing.assert_array_equal(result.events[:,2],[code,code])
+            assert parsed[name] == [[sample,0,code] for sample in events[name]]
+            np.testing.assert_allclose(result.get_data()/1e-12,expected/1e-12,rtol=rounding,atol=rounding)
+            output = derivatives/'sub-01'/'ses-01'/'meg'/f'sub-01_ses-01_task-analytic_{name}_meg-epo.fif'
+            saved = mne.read_epochs(output,preload=True)
+            np.testing.assert_array_equal(saved.events,result.events)
+            # The official save path uses single-precision FIFF samples.
+            np.testing.assert_array_equal(saved.get_data(),result.get_data().astype(np.float32).astype(np.float64))
+            assert saved.ch_names==raw.ch_names and saved.info['sfreq']==sfreq
+    np.testing.assert_array_equal(raw.get_data(),data)
+    print('Actual MEGNET event parsing, first-sample offsets, detrending, baseline and saved FIFF epoch samples verified')
+    PYTHON
+  expected_output_contains: Actual MEGNET event parsing, first-sample offsets, detrending, baseline and saved FIFF epoch samples verified
+  expected_exit_code: 0
+
 upstream_commit: 113d1054b8700b362a86b8e495045c2b78a46bb1
+pyqt5_version: 5.15.11
