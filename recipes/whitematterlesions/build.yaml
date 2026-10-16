@@ -18,6 +18,7 @@ variables:
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
   flames_version: "0.3.20261015"
+  pillow_version: "12.3.0"
 
 auto_update:
   container_version: flames
@@ -25,6 +26,12 @@ auto_update:
   local:
   - macros/openrecon
   sources:
+  - id: pillow
+    dependency: true
+    method: pypi
+    package: pillow
+    target:
+      variable: pillow_version
   - id: flames
     method: github_release_asset
     repo: neurodesk/webapps
@@ -78,8 +85,12 @@ build:
         - ca-certificates
         - python3
         - python3-pip
+        - fonts-dejavu-core
 
     - include: macros/openrecon/neurodocker.yaml
+
+    - run:
+        - python3 -m pip install --no-cache-dir Pillow=={{ context.pillow_version }}
 
     # The web app's standalone release: its own Node.js runtime, SynthStrip and
     # all five FLAMeS folds, so the scanner runs the browser's exact pipeline.
@@ -142,7 +153,7 @@ readme: |-
   coordinates). Every output keeps the input grid and affine.
 
   The container also holds an OpenRecon image-to-image adapter that returns a
-  lesion overlay and a lesion mask to the scanner.
+  lesion overlay, a lesion mask and a DICOM metrics table to the scanner.
 
   FLAMeS is research software. Review the lesion masks before use.
 
