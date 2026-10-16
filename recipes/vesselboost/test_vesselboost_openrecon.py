@@ -269,3 +269,113 @@ def test_reformat_outputs_use_2d_segmentation_header_contract():
         assert "slice_count" not in meta
         assert "NumberOfSlices" not in meta
         assert "ImagesInAcquisition" not in meta
+
+
+def _import_vesselboost(monkeypatch):
+    """Import the adapter, standing in for the MRD server modules outside its image."""
+    import importlib
+    import sys
+    import types
+
+    stubs = {
+        "constants": types.SimpleNamespace(MRD_LOGGING_INFO=1, MRD_LOGGING_ERROR=4),
+        "mrdhelper": types.SimpleNamespace(
+            get_json_config_param=lambda config, key, default=None, **kwargs: (
+                config["parameters"].get(key, default)
+            ),
+        ),
+    }
+    for name, stub in stubs.items():
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            monkeypatch.setitem(sys.modules, name, stub)
+    monkeypatch.delitem(sys.modules, "vesselboost", raising=False)
+    monkeypatch.syspath_prepend(str(RECIPE_DIR))
+    return importlib.import_module("vesselboost")
+
+
+def _mrd_series(series_index, description, slices=2):
+    import ismrmrd
+
+    images = []
+    for index in range(slices):
+        image = ismrmrd.Image.from_array(np.ones((1, 1, 4, 4), dtype=np.int16), transpose=False)
+        head = image.getHead()
+        head.field_of_view = (4.0, 4.0, 1.0)
+        head.position = (0.0, 0.0, float(index))
+        head.read_dir, head.phase_dir, head.slice_dir = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+        head.image_series_index, head.image_index, head.slice = series_index, index + 1, index
+        image.setHead(head)
+        meta = ismrmrd.Meta()
+        meta["SeriesDescription"] = description
+        meta["SeriesNumberRangeNameUID"] = f"{description}_group"
+        meta["SeriesInstanceUID"] = f"1.2.3.{series_index}"
+        meta["ImageType"], meta["ImageTypeValue4"] = "ORIGINAL\\PRIMARY\\M\\ND", "ND"
+        image.attribute_string = meta.serialize()
+        images.append(image)
+    return images
+
+
+class _RecordingConnection:
+    def __init__(self, images):
+        self.images = images
+        self.sent = []
+        self.logs = []
+        self.closed = False
+
+    def __iter__(self):
+        yield from self.images
+        yield None
+
+    def send_image(self, images):
+        self.sent.append(list(images))
+
+    def send_logging(self, level, text):
+        self.logs.append((level, text))
+
+    def send_close(self):
+        self.closed = True
+
+
+def _sent_series(connection):
+    import ismrmrd
+
+    return {
+        int(batch[0].getHead().image_series_index): ismrmrd.Meta.deserialize(
+            batch[0].attribute_string
+        )["SeriesDescription"]
+        for batch in connection.sent
+    }
+
+
+def test_originals_of_every_series_are_sent_before_vesselboost_and_survive_its_failure(monkeypatch):
+    adapter = _import_vesselboost(monkeypatch)
+    connection = _RecordingConnection(_mrd_series(1, "first") + _mrd_series(5, "second"))
+    sent_before_run = []
+
+    def failing_process_image(images, connection_, config, metadata):
+        sent_before_run.append(_sent_series(connection))
+        raise RuntimeError("VesselBoost failed")
+
+    monkeypatch.setattr(adapter, "process_image", failing_process_image)
+    adapter.process(connection, {"parameters": {}}, None)
+
+    assert connection.closed
+    assert sent_before_run == [{2: "first_original", 6: "second_original"}]
+    assert _sent_series(connection) == {2: "first_original", 6: "second_original"}
+    assert [len(batch) for batch in connection.sent] == [2, 2]
+    assert "VesselBoost failed" in connection.logs[-1][1]
+
+
+def test_without_sendoriginal_a_vesselboost_failure_returns_nothing(monkeypatch):
+    adapter = _import_vesselboost(monkeypatch)
+    connection = _RecordingConnection(_mrd_series(1, "first"))
+    monkeypatch.setattr(
+        adapter, "process_image", lambda *args: (_ for _ in ()).throw(RuntimeError("VesselBoost failed")),
+    )
+    adapter.process(connection, {"parameters": {"sendoriginal": False}}, None)
+
+    assert connection.closed
+    assert connection.sent == []
+    assert "VesselBoost failed" in connection.logs[-1][1]

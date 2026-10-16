@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "pals_arm64 2.0.1": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "pals"
+}

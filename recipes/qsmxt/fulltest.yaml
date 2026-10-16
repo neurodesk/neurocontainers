@@ -1,5 +1,6 @@
 name: qsmxt
-version: "9.22.0"
+version: "10.0.0"
+upstream_version: "10.0.0"
 
 test_data:
   output_dir: test_output
@@ -40,7 +41,7 @@ setup:
     if "--mask" not in sys.argv:
         raise SystemExit("qsmxt OpenRecon must pass --mask")
     mask_index = sys.argv.index("--mask")
-    expected_mask = "magnitude,hd-bet,close:1,fill-holes:0"
+    expected_mask = "magnitude,threshold:otsu,close:1,fill-holes:0"
     if mask_index + 1 >= len(sys.argv) or sys.argv[mask_index + 1] != expected_mask:
         raise SystemExit(f"qsmxt OpenRecon should pass --mask {expected_mask}")
 
@@ -511,26 +512,49 @@ tests:
       parameter_ids = {parameter["id"] for parameter in data["parameters"]}
       expected = {
           "config",
+          "inputseries",
           "sendoutputs",
           "sourceseparation",
-          "maskthresholdpercentile",
-          "pipelinepreset",
           "qsmalgorithm",
           "unwrappingalgorithm",
           "bfalgorithm",
           "maskpreset",
+          "inhomogeneitycorrection",
+          "twopass",
+          "pipelinepreset",
+          "qsmreference",
+          "vsharpgrid",
+          "swiunwrapping",
       }
-      assert expected <= parameter_ids
+      assert expected == parameter_ids, f"Missing: {expected - parameter_ids}; unexpected: {parameter_ids - expected}"
       parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
-      pipeline_preset = parameters["pipelinepreset"]
-      assert pipeline_preset["type"] == "choice"
-      assert pipeline_preset["default"] == "custom"
+      assert list(parameters) == [
+          "config",
+          "inputseries",
+          "sendoutputs",
+          "inhomogeneitycorrection",
+          "maskpreset",
+          "pipelinepreset",
+          "unwrappingalgorithm",
+          "bfalgorithm",
+          "qsmalgorithm",
+          "vsharpgrid",
+          "twopass",
+          "qsmreference",
+          "sourceseparation",
+          "swiunwrapping",
+      ]
+      assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
       import sys
       sys.path.insert(0, "/opt/code/python-ismrmrd-server")
       import qsmxt
-      assert {value["id"] for value in pipeline_preset["values"]} == {
-          "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
-      }
+      assert parameters["pipelinepreset"]["default"] == "custom"
+      assert [value["id"] for value in parameters["pipelinepreset"]["values"]] == ["custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS]
+      assert parameters["config"]["default"] == "qsmxt"
+      assert [value["id"] for value in parameters["config"]["values"]] == ["qsmxt", "qsmxt_gre_motion", "qsmxt_ep3d", "qsmxt_ep3d_denoise"]
+      import importlib
+      for value in parameters["config"]["values"]:
+          assert callable(importlib.import_module(value["id"]).process)
       assert parameters["sourceseparation"]["default"] == "off"
       assert {value["id"] for value in parameters["sourceseparation"]["values"]} == set(qsmxt.SOURCE_SEPARATION_METHODS)
       assert parameters["qsmalgorithm"]["default"] == "rts"
@@ -549,19 +573,78 @@ tests:
       ]
       assert len(data["parameters"]) == len(parameters) == 14
       assert "maskcleanup" not in parameter_ids
-      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "hd-bet"
+      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
       assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
-      assert parameters["maskinginput"]["default"] == "magnitude"
-      assert parameters["betfractionalintensity"]["default"] == 0.5
+      for parameter_id in ("twopass",):
+          assert parameters[parameter_id]["type"] == "boolean"
+          assert parameters[parameter_id]["default"] is False
+      assert parameters["qsmreference"]["type"] == "string"
+      assert parameters["qsmreference"]["default"] == "mean"
+      assert parameters["vsharpgrid"]["default"] == "native"
+      assert {value["id"] for value in parameters["vsharpgrid"]["values"]} == {"native", "finest", "isotropic"}
+      assert parameters["swiunwrapping"]["default"] == "laplacian"
+      assert {value["id"] for value in parameters["swiunwrapping"]["values"]} == {"laplacian", "laplacian-slice", "romeo"}
+      defaults = {key: parameter["default"] for key, parameter in parameters.items()}
+      settings = qsmxt._settings_from_config({"parameters": defaults})
+      assert settings["two_pass"] is settings["motion_correction"] is False
+      assert settings["qsm_reference"] == "mean"
+      assert settings["vsharp_grid"] == "native"
+      assert settings["swi_unwrapping"] == "laplacian"
+      assert settings["pipeline_preset"] == "custom"
+      assert settings["masking_input"] == "magnitude"
+      assert settings["bet_fractional_intensity"] == 0.5
+      assert settings["mask_threshold_percentile"] == 65.0
       correction = parameters["inhomogeneitycorrection"]
       assert correction["default"] == qsmxt.DEFAULT_HOMOGENEITY_PROFILE == "standard"
       assert correction["label"]["en"] == "Homogeneity correction"
       assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
       assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
       assert "sendoriginal" not in parameter_ids
-      assert parameters["maskthresholdpercentile"]["default"] == 65.0
       assert "minip" not in parameter_ids
       print(label)
+      PY
+
+
+  - name: GRE echo alignment configuration
+    description: Verify the installed GRE motion configuration forces alignment and preserves advanced settings
+    script: |
+      set -euo pipefail
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import copy
+      import json
+      from pathlib import Path
+      from unittest.mock import patch
+
+      import qsmxt
+      import qsmxt_gre_motion
+
+      for shape in ("bare", "nested", "json"):
+          parameters = {"motioncorrection": False, "motionreference": "last",
+                        "qsmreference": "none", "inhomogeneitycorrection": "fine"}
+          config = parameters if shape == "bare" else {"parameters": parameters}
+          if shape == "json":
+              config = json.dumps(config)
+          before = copy.deepcopy(config)
+          received = []
+          with patch.object(qsmxt, "process", side_effect=lambda connection, config, metadata: received.append(config)):
+              qsmxt_gre_motion.process(None, config, None)
+          assert config == before
+          settings = qsmxt._settings_from_config(received[0])
+          assert settings["motion_correction"] is True
+          assert settings["motion_reference"] == "last"
+          assert settings["qsm_reference"] == "none"
+          assert settings["inhomogeneity_correction"] == "fine"
+          command = qsmxt._qsmxt_command(Path("bids"), Path("output"), settings)
+          assert "--motion-correction" in command
+          assert command[command.index("--motion-reference") + 1] == "last"
+          assert command[command.index("--homogeneity-nbox") + 1] == "15"
+      received = []
+      with patch.object(qsmxt, "process", side_effect=lambda connection, config, metadata: received.append(config)):
+          qsmxt_gre_motion.process(None, {}, None)
+      assert qsmxt._settings_from_config(received[0])["motion_reference"] == "first"
+      assert qsmxt._settings_from_config({})["motion_correction"] is False
+      assert qsmxt._settings_from_config({"motioncorrection": True})["motion_correction"] is True
+      print("Installed GRE echo alignment configuration verified")
       PY
 
   - name: OpenRecon bridge imports and display scaling
@@ -869,10 +952,28 @@ tests:
           assert magnitude_error < 0.05 < naive_error
 
           output = Path(work) / "out"
-          subprocess.run(["qsmxt", "run", str(bids), str(output), "--force"], check=True, capture_output=True)
+          qsmxt._run_qsmxt(bids, output, result["settings"])
           chimaps = list(output.rglob("*_Chimap.nii*"))
           assert chimaps and np.isfinite(nib.load(chimaps[0]).get_fdata()).all()
       print("3D EPI dual polarity motion correction, phase matching, averaging and QSMxT verified")
       PYCODE
 
-upstream_version: 9.22.0
+  - name: native QSMxT 10 reconstruction features
+    description: Exercise iLSQR, two-pass, echo motion, anisotropic slice SWI, gap refusal, and ROI reference arithmetic
+    command: python /opt/qsmxt/verify_v10_runtime.py
+    expected_output_contains: Native named ventricular and numeric union references subtract the actual ROI mean
+
+  - name: offline SynthSeg anatomy and ventricular labels
+    description: Run packaged SynthSeg v1 with a 128-voxel crop on MNI anatomy, independently of custom segmentation reference tests
+    command: python /opt/qsmxt/verify_v10_runtime.py --segmentation
+    expected_output_contains: Packaged offline SynthSeg v1 produced all 32 labels including ventricles on MNI anatomy
+
+  - name: All outputs follow effective echo count
+    description: Run the real MRD adapter and native engine for one, two, and three echoes and verify returned maps
+    command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py
+    expected_output_contains: All returns compatible maps at one and two echoes and retains T2*/R2* at three echoes
+
+  - name: Preferred input falls back to ND
+    description: Verify native MRD fallback, preferred and unmarked inputs, selection errors, and original returns
+    command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py --nd-fallback
+    expected_output_contains: ND fallback returns finite nonzero maps with actual input labels and preserves originals

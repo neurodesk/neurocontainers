@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "syncro_arm64 0.2.0": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "syncro"
+}

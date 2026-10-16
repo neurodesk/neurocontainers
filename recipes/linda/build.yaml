@@ -462,9 +462,6 @@ build:
         executable: true
         addToPath: true
         makeDeployBin: true
-    - test:
-        name: testScript
-        script: R
   add-default-template: false
   add-tzdata: false
 categories:

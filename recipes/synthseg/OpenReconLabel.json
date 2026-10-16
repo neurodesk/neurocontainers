@@ -88,7 +88,7 @@
         { "id": "both", "name": { "en": "Both" } }
       ],
       "default": "none",
-      "information": { "en": "The base SynthSeg segmentation is always returned. Desikan-Killiany adds a separate cortical parcel series. Approximate Glasser registers a volumetric atlas on CPU and adds a separate parcel series. Both returns all three label products. Glasser is incompatible with debug threshold segmentation; registration failure retains the other outputs." }
+      "information": { "en": "The base SynthSeg segmentation is always returned. Desikan-Killiany adds a separate cortical parcel series. Approximate Glasser registers a volumetric atlas on CPU and adds a separate parcel series. Both returns all three label products. A Glasser registration failure retains the other outputs." }
     },
     {
       "id": "ssfast",
@@ -124,10 +124,17 @@
     },
     {
       "id": "ssvolumes",
-      "label": { "en": "Report region volumes" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Compute per-structure volumes in mm3 and write them to the reconstruction log as CSV." }
+      "label": { "en": "Region volumes" },
+      "type": "choice",
+      "values": [
+        { "id": "none", "name": { "en": "None" } },
+        { "id": "log", "name": { "en": "Log CSV" } },
+        { "id": "report", "name": { "en": "Log CSV and report (sex from header)" } },
+        { "id": "report_female", "name": { "en": "Log CSV and report (female reference)" } },
+        { "id": "report_male", "name": { "en": "Log CSV and report (male reference)" } }
+      ],
+      "default": "none",
+      "information": { "en": "Log CSV writes per-structure volumes in mm3 to the reconstruction log. The report options also append a brain volume report series that plots core structure volumes against age-normative percentile curves, with a percentile table. The reference is chosen from the scanner field strength: IXI (1.5 T and 3 T) below 5 T, AHEAD (7 T) at 5 T and above. Research use only. Not for diagnostic use. The report is skipped with SynthSeg 1.0." }
     },
     {
       "id": "ssqc",
@@ -140,7 +147,7 @@
       "id": "sssegmentheader",
       "label": { "en": "Segmentation header" },
       "type": "boolean",
-      "default": false,
+      "default": true,
       "information": { "en": "Send the label map in a source-geometry 2D segmentation-header format so scanner post-processing treats it as a segmentation stream. When disabled, the label map keeps the source image header identity and post-processing stays on the original stream." }
     },
     {
@@ -158,11 +165,13 @@
       "information": { "en": "Send an additional coronal 3D reformat of the label map." }
     },
     {
-      "id": "ssdebugthresholdsegment",
-      "label": { "en": "Debug threshold segmentation" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Skip SynthSeg inference and create a simple threshold-based segmentation for send-path debugging." }
+      "id": "ssquantage",
+      "label": { "en": "Report age (years)" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 120,
+      "default": 0,
+      "information": { "en": "Patient age for the brain volume report. Use 0 to compute the age from the birth date and study date in the scanner header." }
     }
   ]
 }

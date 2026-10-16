@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "code_arm64 240320": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "code"
+}

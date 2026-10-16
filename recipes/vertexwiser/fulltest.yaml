@@ -1,5 +1,5 @@
 name: vertexwiser
-version: 1.5.1
+version: 1.5.4
 default_timeout: 180
 
 test_data:

@@ -1,5 +1,5 @@
 name: whitematterlesions
-version: "0.2.20261009"
+version: "0.3.20261015"
 
 copyright:
   - license: Apache-2.0
@@ -17,7 +17,8 @@ variables:
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
-  flames_version: "0.2.20261009"
+  flames_version: "0.3.20261015"
+  pillow_version: "12.3.0"
 
 auto_update:
   container_version: flames
@@ -25,6 +26,12 @@ auto_update:
   local:
   - macros/openrecon
   sources:
+  - id: pillow
+    dependency: true
+    method: pypi
+    package: pillow
+    target:
+      variable: pillow_version
   - id: flames
     method: github_release_asset
     repo: neurodesk/webapps
@@ -78,8 +85,12 @@ build:
         - ca-certificates
         - python3
         - python3-pip
+        - fonts-dejavu-core
 
     - include: macros/openrecon/neurodocker.yaml
+
+    - run:
+        - python3 -m pip install --no-cache-dir Pillow=={{ context.pillow_version }}
 
     # The web app's standalone release: its own Node.js runtime, SynthStrip and
     # all five FLAMeS folds, so the scanner runs the browser's exact pipeline.
@@ -105,8 +116,8 @@ deploy:
 
 files:
   - name: flames_archive
-    url: https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.2.20261009/flames-0.2.20261009-linux-x64.tar.gz
-    sha256: 9c355432b43f5e679e6457960c01a5dfe96d712221b9dd407b666d67930b250d
+    url: https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.3.20261015/flames-0.3.20261015-linux-x64.tar.gz
+    sha256: 5d24b1783006928d4e21a44b9fd25d61dbb169e1d0832c516febefb989129d0b
   - name: whitematterlesions.py
     filename: whitematterlesions.py
   - name: test_whitematterlesions_openrecon.py
@@ -142,7 +153,7 @@ readme: |-
   coordinates). Every output keeps the input grid and affine.
 
   The container also holds an OpenRecon image-to-image adapter that returns a
-  lesion overlay and a lesion mask to the scanner.
+  lesion overlay, a lesion mask and a DICOM metrics table to the scanner.
 
   FLAMeS is research software. Review the lesion masks before use.
 
