@@ -1,5 +1,7 @@
 variables:
   upstream_version: "2.10"
+  torch_version: "2.6.0"
+  numpy_version: "2.2.6"
 
 name: tractseg
 version: "2.10.0"
@@ -18,6 +20,22 @@ auto_update:
       target:
         variable: upstream_version
         fulltest_variable: upstream_version
+    - id: cpu-torch
+      dependency: true
+      method: pypi
+      package: torch
+      version_regex: '^(?P<version>2\.6\.\d+)$'
+      target:
+        variable: torch_version
+        fulltest_variable: torch_version
+    - id: numpy-abi
+      dependency: true
+      method: pypi
+      package: numpy
+      version_regex: '^(?P<version>2\.2\.\d+)$'
+      target:
+        variable: numpy_version
+        fulltest_variable: numpy_version
 
 files:
   - name: pretrained_weights_tract_segmentation_xtract_v1.npz
@@ -51,7 +69,7 @@ build:
         libtiff_package: libtiff5
     - template:
         name: miniconda
-        version: py37_23.1.0-1
+        version: py311_24.9.2-0
         install_path: /opt/miniconda
         mamba: true
     - install:
@@ -66,13 +84,10 @@ build:
         - libgl1-mesa-glx
         - xvfb
     - run:
-        - pip install packaging numpy
+        - pip install packaging "numpy=={{ context.numpy_version }}" "TractSeg=={{ context.upstream_version }}" wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
     - run:
-        - pip install TractSeg=={{ context.upstream_version }}
-    - run:
-        - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
-    - run:
-        - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+        - pip install -q "torch=={{ context.torch_version }}+cpu" --index-url https://download.pytorch.org/whl/cpu
+        - pip check
     - environment:
         TRACTSEG_WEIGHTS_DIR: /opt/miniconda/share/TractSeg/weights
     - run:
