@@ -504,8 +504,8 @@ jobs:
               statusHeading = `## ✅ ${identityText} passed — review and merge PR #${issue_number}`;
               actionLine = '**Action required:** Review the changes and merge the PR. Publishing starts automatically and reuses these exact candidates without rebuilding them.';
             } else if (promotionRun?.conclusion === 'success') {
-              statusHeading = `## ✅ ${identityText} published from the tested candidate`;
-              actionLine = '**Action required:** None. The PR is merged and automatic promotion completed successfully.';
+              statusHeading = `## ✅ ${identityText} promotion completed`;
+              actionLine = 'The promotion run lists the finalized containers. Candidates superseded by later merges are excluded.';
               promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — success`;
             } else if (promotionRun?.status === 'in_progress' || promotionRun?.status === 'queued') {
               statusHeading = `## 🚀 ${identityText} passed — promotion is running`;
@@ -516,7 +516,9 @@ jobs:
                 ? 'failed'
                 : promotionRun.conclusion || promotionRun.status;
               statusHeading = `## ⚠️ ${identityText} candidate passed — promotion ${promotionOutcome}`;
-              actionLine = `**Action required:** Investigate the failed promotion, then rerun \`Promote merged container candidate\` with \`pr_number=${issue_number}\`. Do not rebuild the candidate.`;
+              actionLine = '**Action required:** Inspect the failed promotion and follow ' +
+                '[staged recovery](https://github.com/neurodesk/neurocontainers/blob/main/workflows/ONE_PR_RELEASES.md#concurrent-merges-and-staged-recovery). ' +
+                'A superseded candidate cannot be recovered by blindly repeating publication.';
               promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — ${promotionRun.conclusion || promotionRun.status}`;
             } else {
               statusHeading = `## ⏳ ${identityText} passed and PR #${issue_number} is merged — promotion pending`;
