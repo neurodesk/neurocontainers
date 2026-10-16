@@ -58,6 +58,94 @@ Manual builds remain available as a recovery path. The old push-to-main
 `auto-build` workflow is removed so recipe changes cannot start an untested
 second build.
 
+## Concurrent merges and staged recovery
+
+Publication uses unique PR-head staging names. The finalizer holds the
+`promote-container-and-metadata` lock while it promotes public names and commits
+release metadata. Source merges do not hold this lock.
+
+Before any public writes, `select-current-metadata` validates every staged
+manifest and release preview against the original trusted merge. It checks the
+PR head, PR number, recipe fingerprint, variant, filenames, digest formats, and
+release metadata, including records that may be excluded. The original merge
+must be an ancestor of the current trusted checkout. A malformed record, missing
+preview, or incorrect binding fails the entire selection.
+
+The finalizer then excludes recipes whose image inputs changed after that merge,
+and candidates older than existing release metadata. It preserves the existing
+source-only policy and release-preview checks. It finalizes the remaining
+containers, and OpenRecon sync receives only those containers. An all-superseded
+batch succeeds without public writes, a release commit, or OpenRecon sync. The
+run log lists excluded containers, and the lifecycle comment lists finalized
+containers. A filename such as `test_adapter.py` is still a recipe-local build
+input. The planner does not infer source-only status from a filename.
+
+After rebasing the generated metadata commit onto `main`, `verify-metadata`
+strictly revalidates the selected set. A new same-recipe merge at this point
+aborts the push. Git's fast-forward requirement rejects an intervening main
+update; the retry rebases and revalidates again. Do not remove this check or
+silently shrink an already-created metadata commit. Public tags and object
+copies happen before this push and cannot be rolled back atomically with Git.
+Other finalizers share the lock, but an outside source merge can still cause a
+late failure. Hold overlapping source merges until promotion finishes when
+possible.
+
+To recover a failed **push** promotion whose publish jobs all succeeded, dispatch
+the promoter on `main` with the original PR number and failed run ID:
+
+```bash
+gh workflow run promote-container-candidate.yml \
+  --repo neurodesk/neurocontainers --ref main \
+  -f pr_number=3661 -f staged_run_id=38935478621
+```
+
+This is a publication action for a maintainer to run after reviewing the staged
+records and current source. It downloads only the original run's small promotion
+metadata artifacts, skips the candidate wait and publish matrix, and finalizes
+the validated current subset from existing staging names. It does not rebuild,
+download, or upload Docker archives or SIF payloads. The finalizer still uses
+registry manifests and server-side object copies, the same main-ref OIDC
+identity, signing policy, credentials, lock, and release App token.
+
+Recovery checks the source run's repository, workflow path, push event, main
+branch, exact merge SHA, failed finalizer, successful publish jobs, and complete
+unexpired metadata artifact set. The artifacts currently expire after seven
+days. The original staged objects and tags must still exist. The candidate
+digests were checked during the successful publish jobs; metadata-only recovery
+does not repeat payload hashing. Missing staged objects or required signing
+sidecars remain errors. Keep the signing policy consistent with the source run.
+Recovery is deliberately unavailable for incomplete publication, untrusted
+events, or missing metadata. A recipe removed from current main also fails
+closed and needs separate review.
+
+For a read-only local rehearsal, download the metadata and combine the manifest
+arrays without modifying any artifact:
+
+```bash
+gh run download 38935478621 --repo neurodesk/neurocontainers \
+  --pattern 'promotion-metadata-*' --dir staged
+mkdir -p previews
+cp -R staged/*/release-previews/* previews/
+jq -s 'add' staged/*/verified-manifest-*.json > published.json
+python tools/one_pr_release.py select-current-metadata \
+  --bundle previews --manifests published.json --output selected.json \
+  --pr-number 3661 \
+  --head-sha 7c941b104d349658203624c6f7ece00d994487be \
+  --merge-sha a73387a132628c4a2a0f990399fd2d9472603f84
+jq 'map(.container)' selected.json
+```
+
+Run the rehearsal from a clean, current `main` checkout containing the repair.
+At main `ef652c82`, the expected result is `qsmxt` and `vesselboost`; `synthseg`
+is superseded. Recheck this result before recovery because main can move again.
+Do not hand-edit the selected list, release previews, or `releases/`.
+
+Rerunning only the old failed finalize job checks out fixed Python code from
+current main, but uses the old workflow definition. Its `verify-metadata` call
+still requires every entry to be current, so it cannot recover a mixed batch.
+A plain redispatch without `staged_run_id` repeats publication and can fail on a
+superseded recipe before finalization. Use the explicit staged recovery path.
+
 ## Required repository configuration
 
 - Make `Container release gate` a required pull-request check.
