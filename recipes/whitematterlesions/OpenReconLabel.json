@@ -16,7 +16,7 @@
       "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "safety_advices": "Research use only. Automated lesion masks can miss lesions or include artefacts and must be reviewed before use.",
       "special_operating_instructions": "OpenRecon FLAMeS white matter lesion segmentation of a reconstructed FLAIR series",
-      "additional_relevant_information": "The scanner receives a lesion overlay and a lesion mask on the source grid. The lesion table remains in the run workspace."
+      "additional_relevant_information": "The scanner receives a lesion overlay and a lesion mask on the source grid, plus a DICOM metrics table with lesion count, total volume and per-lesion voxel count, volume and centroid in RAS coordinates."
     }
   },
   "reconstruction": {

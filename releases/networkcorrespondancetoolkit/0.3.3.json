@@ -1,10 +1,13 @@
 {
   "apps": {
     "networkcorrespondancetoolkit 0.3.3": {
-      "version": "20250826",
-      "exec": ""
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
-    "functional imaging"  ]
+    "image registration",
+    "data organisation"
+  ]
 }

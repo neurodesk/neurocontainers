@@ -5,7 +5,7 @@
 # 90 s each with one fold on 8 CPU threads.
 
 name: whitematterlesions
-version: "0.2.20261009"
+version: "0.3.20261015"
 default_timeout: 1800
 
 test_data:
@@ -43,7 +43,7 @@ tests:
     expected_output_contains: "whitematterlesions OpenRecon assets ok"
 
   - name: OpenRecon mock transport tests
-    description: Send MRD images through the adapter and verify geometry, output series, metadata and error reporting.
+    description: Send MRD images through the adapter and verify lesion metrics, paginated DICOM report geometry, output series, metadata and error reporting.
     command: |
       cd /opt/code/python-ismrmrd-server && python3 -m unittest -v test_whitematterlesions_openrecon 2>&1
     expected_output_contains: "OK (skipped=1)"
@@ -74,7 +74,7 @@ tests:
     expected_output_contains: "FLAMeS matches the web app"
 
   - name: Scanner path matches a direct FLAMeS run
-    description: Slice the oblique FLAIR into MRD images, run the adapter with real FLAMeS, and compare its mask series with the direct command.
+    description: Slice the oblique FLAIR into MRD images, run the adapter with real FLAMeS, compare its mask series with the direct command and verify the metrics report describes the returned mask.
     command: |
       export WHITEMATTERLESIONS_TEST_FLAIR="$(realpath '${flair}')"
       cd /opt/code/python-ismrmrd-server && python3 -m unittest -v test_whitematterlesions_openrecon.WhiteMatterLesionsOpenReconTests.test_scanner_path_matches_a_direct_flames_run 2>&1

@@ -3299,6 +3299,15 @@ def process(connection, config, metadata):
                 skipped_passthrough_images,
             )
 
+        # The originals go back before VesselBoost runs, as OpenMSK does, so the scanner
+        # keeps them when segmentation fails.
+        for images in imageGroups.values():
+            _send_images_by_series(
+                connection,
+                _build_original_output_images(images, config),
+                "restamped originals before VesselBoost",
+            )
+
         for series_index, images in imageGroups.items():
             logging.info(
                 "Processing buffered VesselBoost image series after input drain: "
@@ -3448,6 +3457,44 @@ def process_raw(group, connection, config, metadata):
     return imagesOut
 
 
+def _send_original_enabled(config):
+    option = mrdhelper.get_json_config_param(
+        config,
+        "sendoriginal",
+        OPENRECON_DEFAULTS["sendoriginal"],
+        type='bool',
+    )
+    if isinstance(option, str):
+        return option.strip().lower() in ("1", "true", "yes", "on")
+    return bool(option)
+
+
+def _build_original_output_images(images, config):
+    if not images or not _send_original_enabled(config):
+        return []
+    unsorted_head = [image.getHead() for image in images]
+    slice_sort_indices, _, _ = _slice_sort_indices(unsorted_head)
+    ordered_images = [images[index] for index in slice_sort_indices]
+    source_identity = _resolve_source_series_identity(_meta_from_image(images[0]))
+    source_series_indices = [
+        int(getattr(image_header, "image_series_index", 0))
+        for image_header in unsorted_head
+    ]
+    original_images = _build_vesselboost_original_images(
+        [_clone_mrd_image(image) for image in ordered_images],
+        ordered_images,
+        source_identity,
+        max(source_series_indices) + 1,
+    )
+    _validate_vesselboost_output_contract(
+        original_images,
+        source_series_indices,
+        source_identity,
+        "restamped originals",
+    )
+    return original_images
+
+
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
@@ -3459,14 +3506,10 @@ def process_image(images, connection, config, metadata):
         else:
             return bool(option)
 
-    send_original = boolean_checker(
-        "sendoriginal",
-        default_val=OPENRECON_DEFAULTS["sendoriginal"],
-    )
+    # process() sends the originals before any series runs; this only reserves
+    # their series index.
+    send_original = _send_original_enabled(config)
     called_from_raw = traceback.extract_stack()[-2].name == "process_raw"
-    original_images = []
-    if send_original and not called_from_raw:
-        original_images = [_clone_mrd_image(image) for image in images]
     logging.info("sendoriginal resolved to %s", send_original)
 
     source_identity = _resolve_source_series_identity(_meta_from_image(images[0]))
@@ -3538,18 +3581,6 @@ def process_image(images, connection, config, metadata):
         sorted(set(source_series_indices)),
     )
     imagesOut = []
-    original_output_images = []
-    if original_series_index is not None:
-        ordered_original_images = [
-            original_images[index] for index in slice_sort_indices
-        ]
-        original_output_images = _build_vesselboost_original_images(
-            ordered_original_images,
-            ordered_images,
-            source_identity,
-            original_series_index,
-        )
-        imagesOut.extend(original_output_images)
 
     legacy_option = None
     if isinstance(config, dict):
@@ -4070,8 +4101,7 @@ def process_image(images, connection, config, metadata):
     )
     logging.info("VESSELBOOST_OPENRECON_POSTPROCESSING target=%s", postprocessing_target)
     logging.info(
-        "Sending %d original image(s), %d segmentation image(s), and %d reformat image(s)",
-        len(original_output_images),
+        "Sending %d segmentation image(s) and %d reformat image(s)",
         len(segmentation_images),
         len(reformat_images),
     )

@@ -1181,6 +1181,42 @@ tests:
     expected_output_contains: Bundled atlas overlap computed
     timeout: 180
 
+  - name: Documented network correspondence example runs offline
+    description: >-
+      Run the README example end to end on the bundled data: overlap and spin
+      permutation tests against EG17 and MG360J12, then the summary CSV and
+      figures. NCT writes temporary files next to its input, so the inputs are
+      copied out of the read-only image first, as the README shows. The example
+      map is a default network, so Default must rank first and be significant
+      in both atlases.
+    command: |
+      python - <<'PYTHON'
+      import os
+      import shutil
+      import cbig_network_correspondence as cnc
+      import pandas as pd
+
+      out = os.path.abspath("${output_dir}/nct_readme_example")
+      os.makedirs(out, exist_ok=True)
+      example = cnc.load_example
+      config = shutil.copy(example.example_config, out)
+      nii = shutil.copy(example.example_nii, out)
+      params = cnc.compute_overlap_with_atlases.DataParams(config, nii)
+      cnc.compute_overlap_with_atlases.network_correspondence(params, ["EG17", "MG360J12"], out)
+
+      for name in ("circular_barchart.png", "circular_atlases_all.png", "table_summary_plot0.png"):
+          assert os.path.getsize(os.path.join(out, name)) > 0, name
+      table = pd.read_csv(os.path.join(out, "network_correspondence.csv"))
+      assert table.groupby("group").size().to_dict() == {"EG17": 17, "MG360J12": 12}
+      assert table["dice"].between(0, 1).all() and table["p_value"].between(0, 1).all()
+      for atlas, rows in table.groupby("group"):
+          best = rows.loc[rows["dice"].idxmax()]
+          assert best["name"] == "Default" and best["p_value"] < 0.05, (atlas, best.to_dict())
+      print("README network correspondence example completed")
+      PYTHON
+    expected_output_contains: README network correspondence example completed
+    timeout: 600
+
 cleanup:
   script: |
     #!/usr/bin/env bash

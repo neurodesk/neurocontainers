@@ -14,6 +14,8 @@ import pytest
 RECIPE_DIR = Path(__file__).resolve().parent
 WRAPPER_PATH = RECIPE_DIR / "synthseg.py"
 LABEL_PATH = RECIPE_DIR / "OpenReconLabel.json"
+# ImageType values are DICOM CS (16 characters), so products use short tokens.
+SHORT_PRODUCT = {"synthseg": "synthseg", "desikan": "desikan", "glasser_approx": "glasser"}
 
 
 def _load_runtime_helpers_for_test(function_names, assignments=()):
@@ -157,6 +159,7 @@ def _helpers():
             "_ice_compatible_target_shape",
             "_meta_from_image",
             "_resize_2d_nearest",
+            "_segment_image_type_value4",
             "_set_meta_scalar",
             "_set_output_position_meta",
             "_square_pixel_target_shape",
@@ -168,6 +171,7 @@ def _helpers():
             "OPENRECON_REFORMAT_DOWNSAMPLE_ENV",
             "OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX",
             "OPENRECON_SERIES_SUFFIX",
+            "LABEL_PRODUCTS",
             "SCANNER_PARTITION_INDEX",
             "SCANNER_WRITE_UNSAFE_META_KEYS",
             "SOURCE_PARENT_REFERENCE_META_KEYS",
@@ -183,8 +187,8 @@ def _helpers():
             "SYNTHSEG_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
             "SYNTHSEG_SEGMENTATION_LABEL",
             "SYNTHSEG_SEGMENTATION_TYPE_TOKEN",
-            "SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE",
-            "SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4",
+            "LABEL_PRODUCTS",
+            "SEGMENT_IMAGE_TYPE_PRODUCT_TOKENS",
         ],
     )
 
@@ -282,6 +286,7 @@ def _openrecon_helpers():
         [
             "_openrecon_run_name",
             "_resolve_openrecon_parcellation",
+            "_resolve_openrecon_choice",
             "_parse_model_list",
             "_safe_path_component",
             "iter_openrecon_parameter_combinations",
@@ -289,6 +294,8 @@ def _openrecon_helpers():
         assignments=[
             "OPENRECON_DEFAULTS",
             "OPENRECON_PARCELLATIONS",
+            "OPENRECON_VOLUME_OUTPUTS",
+            "OPENRECON_CHOICES",
             "OPENRECON_COMBINATION_PARAMETER_VALUES",
             "OPENRECON_MODEL_DEFAULT",
             "OPENRECON_MODEL_VALUES",
@@ -437,8 +444,8 @@ def test_openrecon_defaults_match_the_scanner_label():
     label_ids = [parameter["id"] for parameter in label["parameters"]]
     assert len(label_ids) == len(set(label_ids)), "duplicate parameter ids in label"
     assert set(label_ids) == set(helpers["OPENRECON_DEFAULTS"])
-    assert len(label_ids) == 14
-    assert "ssdebugthresholdsegment" in label_ids
+    # The Siemens OpenRecon UI accepts at most 14 parameter entries.
+    assert len(label_ids) <= 14
 
     for parameter in label["parameters"]:
         default = helpers["OPENRECON_DEFAULTS"][parameter["id"]]
@@ -503,12 +510,37 @@ def test_parameter_matrix_only_emits_runnable_combinations():
         if parameters["ssmodel"] == "robust":
             assert parameters["ssfast"] is True
 
+    assert {config["parameters"]["ssvolumes"] for _, config in combinations} == set(
+        helpers["OPENRECON_VOLUME_OUTPUTS"]
+    )
+
     robust_names = {
         name
         for name, config in combinations
         if config["parameters"]["ssmodel"] == "robust"
     }
     assert all("_fast1" in name for name in robust_names)
+
+
+@pytest.mark.parametrize("parameter, choice, expected", [
+    ("ssvolumes", "none", (False, None)),
+    ("ssvolumes", "log", (True, None)),
+    ("ssvolumes", "report", (True, "header")),
+    ("ssvolumes", "Report_Female", (True, "female")),
+    ("ssvolumes", "report_male", (True, "male")),
+    ("ssvolumes", True, (True, None)),
+    ("ssvolumes", "false", (False, None)),
+])
+def test_shared_choices_resolve_scanner_and_saved_configs(parameter, choice, expected):
+    resolve = _openrecon_helpers()["_resolve_openrecon_choice"]
+    assert resolve(parameter, choice) == expected
+
+
+@pytest.mark.parametrize("parameter", ["ssvolumes"])
+def test_shared_choices_reject_unknown_values(parameter):
+    resolve = _openrecon_helpers()["_resolve_openrecon_choice"]
+    with pytest.raises(ValueError, match=f"Invalid {parameter} choice"):
+        resolve(parameter, "report_other")
 
 
 def _inference_helpers():
@@ -646,6 +678,7 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
     source.setHead(head)
     source_meta = helpers['FakeMeta'].deserialize(source.attribute_string)
     source_meta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+    source_meta['SegmentPostProcessing'] = '1'
     source.attribute_string = source_meta.serialize()
     source_identity = {'series_description': 'source_t1w', 'parent_grouping': 'source_group',
                        'series_uid': '1.2.3', 'sop_uid': '1.2.3.4', 'source_type_token': 'ND'}
@@ -665,11 +698,12 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
         np.testing.assert_array_equal(image.data[0, 0], labels[:, :, 0])
         np.testing.assert_array_equal(image.getHead().position, source.getHead().position)
         assert 'LUTFileName' not in meta
+        assert all(len(value) <= 16 for value in meta['ImageType'].split('\\'))
         assert meta['SeriesDescription'] == f'source_t1w_{product}'
         assert meta['SeriesNumberRangeNameUID'] == f'source_group_{product}'
         if segmentation_header:
-            assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_geometry'
-            assert meta['ImageTypeValue4'] == f'{product}_source_geometry'
+            assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{SHORT_PRODUCT[product]}_seg'
+            assert meta['ImageTypeValue4'] == f'{SHORT_PRODUCT[product]}_seg'
         else:
             assert meta['ImageType'] == 'ORIGINAL\\PRIMARY\\M\\ND'
             assert meta['ImageTypeValue4'] == ['ND']
@@ -695,7 +729,7 @@ def process_runtime(monkeypatch, tmp_path):
     import nibabel as nib
     import scipy.ndimage as ndi
 
-    helpers = _output_helpers({'process_image'})
+    helpers = _output_helpers({'process_image', '_build_original_output_images'})
     helpers.update(ismrmrd=ismrmrd, nib=nib, ndi=ndi, logging=logging,
                    shutil=shutil, traceback=traceback, debugFolder=str(tmp_path))
     helpers['mrdhelper'] = types.SimpleNamespace(
@@ -709,7 +743,23 @@ def process_runtime(monkeypatch, tmp_path):
     glasser = np.where(base == 3, 7, np.where(base == 42, 189, 0)).astype(np.int16)
     maps = dict(synthseg=base, desikan=desikan, glasser_approx=glasser)
 
+    import brainquant
+    from test_brainquant import SAMPLE_VOLUMES_MM3, _fixture_norms, _write_vol_csv
+
+    norms_path = tmp_path / 'brainquant_norms.json'
+    norms_path.write_text(json.dumps(_fixture_norms()))
+    monkeypatch.setattr(brainquant, 'NORMS_PATH', norms_path)
+    norms_7t = _fixture_norms()
+    norms_7t['reference'].update(cohort='AHEAD', field_strength='7 T')
+    norms_7t_path = tmp_path / 'brainquant_norms_7t.json'
+    norms_7t_path.write_text(json.dumps(norms_7t))
+    monkeypatch.setattr(brainquant, 'NORMS_7T_PATH', norms_7t_path)
+    commands = []
+
     def inference(command, output_dir):
+        commands.append(command)
+        if '--vol' in command:
+            _write_vol_csv(Path(command[command.index('--vol') + 1]), SAMPLE_VOLUMES_MM3, '--parc' in command)
         affine = nib.load(command[command.index('--i') + 1]).affine
         labels = desikan if '--parc' in command else base
         nib.save(nib.Nifti1Image(labels, affine), command[command.index('--o') + 1])
@@ -738,7 +788,14 @@ def process_runtime(monkeypatch, tmp_path):
         meta['ImageType'], meta['ImageTypeValue4'] = 'ORIGINAL\\PRIMARY\\M\\ND', 'ND'
         image.attribute_string = meta.serialize()
         images.append(image)
+    helpers['inference_commands'] = commands
     return helpers, images, maps
+
+
+def _session_outputs(helpers, sources, config, metadata):
+    """What one series returns: the originals sent up front, then the processed outputs."""
+    originals = helpers['_build_original_output_images'](sources, config)
+    return originals + helpers['process_image'](sources, None, config, metadata)
 
 
 @pytest.mark.parametrize('choice,products', [
@@ -754,7 +811,7 @@ def test_process_image_returns_base_and_selected_products(process_runtime, choic
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc=choice,
                                  sendoriginal=extras, sssegmentheader=segment_header,
                                  ssreslicesagittal=extras, ssreslicecoronal=extras)}
-    outputs = helpers['process_image'](sources, None, config, None)
+    outputs = _session_outputs(helpers, sources, config, None)
     series = {}
     for image in outputs:
         series.setdefault(image.getHead().image_series_index, []).append(image)
@@ -762,15 +819,17 @@ def test_process_image_returns_base_and_selected_products(process_runtime, choic
     native = [(images, meta) for images, meta in zip(series.values(), metas)
               if meta.get('LabelProduct') and not meta.get('SynthSegReformatOrientation')]
     assert [meta['LabelProduct'] for _, meta in native] == products
+    for meta in metas:
+        assert 'LUTFileName' not in meta
+        assert all(len(value) <= 16 for value in meta['ImageType'].split('\\'))
     for images, meta in native:
         product = meta['LabelProduct']
         np.testing.assert_array_equal(np.stack([image.data[0, 0].T for image in images], axis=-1), maps[product])
         assert meta['SeriesDescription'] == f't1w_{product}'
         assert meta['SeriesNumberRangeNameUID'] == f't1w_{product}'
-        assert 'LUTFileName' not in meta
         if product == 'glasser_approx':
             assert meta['WindowWidth'] == '361'
-        expected_type = f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_geometry' if segment_header else 'ORIGINAL\\PRIMARY\\M\\ND'
+        expected_type = f'DERIVED\\PRIMARY\\SEGMENTATION\\{SHORT_PRODUCT[product]}_seg' if segment_header else 'ORIGINAL\\PRIMARY\\M\\ND'
         assert meta['ImageType'] == expected_type
         for source, image in zip(sources, images):
             assert tuple(image.getHead().position) == tuple(source.getHead().position)
@@ -798,7 +857,7 @@ def test_process_image_rejects_missing_required_product(process_runtime, missing
     helpers['_run_synthseg_command'] = incomplete_inference
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='desikan')}
     with pytest.raises(FileNotFoundError, match=missing_name):
-        helpers['process_image'](sources, None, config, None)
+        _session_outputs(helpers, sources, config, None)
 
 
 @pytest.mark.parametrize('invalid', ['shape', 'fractional', 'overflow'])
@@ -821,7 +880,7 @@ def test_process_image_rejects_invalid_label_product(process_runtime, invalid):
     helpers['_run_synthseg_command'] = invalid_inference
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='desikan')}
     with pytest.raises(ValueError, match='Label product'):
-        helpers['process_image'](sources, None, config, None)
+        _session_outputs(helpers, sources, config, None)
 
 
 def test_missing_source_type_uses_each_product_identity(process_runtime):
@@ -832,10 +891,244 @@ def test_missing_source_type_uses_each_product_identity(process_runtime):
         del meta['ImageType']
         del meta['ImageTypeValue4']
         source.attribute_string = meta.serialize()
-    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='both', sendoriginal=False)}
-    outputs = helpers['process_image'](sources, None, config, None)
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='both', sendoriginal=False,
+                                 sssegmentheader=False)}
+    outputs = _session_outputs(helpers, sources, config, None)
     for image in outputs:
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
         product = meta['LabelProduct']
-        assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_image_header'
-        assert meta['ImageTypeValue4'] == f'{product}_source_image_header'
+        assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{SHORT_PRODUCT[product]}_hdr'
+        assert meta['ImageTypeValue4'] == f'{SHORT_PRODUCT[product]}_hdr'
+
+
+def _series_by_index(outputs):
+    import ismrmrd
+    series = {}
+    for image in outputs:
+        series.setdefault(image.getHead().image_series_index, []).append(image)
+    return {index: (images, ismrmrd.Meta.deserialize(images[0].attribute_string))
+            for index, images in series.items()}
+
+
+def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01', field_strength=None):
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        subjectInformation=SimpleNamespace(patientBirthdate=birth, patientGender=gender),
+        studyInformation=SimpleNamespace(studyDate=study),
+        acquisitionSystemInformation=SimpleNamespace(systemFieldStrength_T=field_strength),
+    )
+
+
+@pytest.mark.parametrize('field_strength, cohort, reason', [
+    (6.98, 'AHEAD', 'the scanner field strength is 6.98 T'),
+    (2.89, 'IXI', 'the scanner field strength is 2.89 T'),
+    (None, 'IXI', 'the scanner field strength is not in the header'),
+])
+def test_brainquant_reference_follows_scanner_field_strength(process_runtime, caplog, field_strength, cohort, reason):
+    import logging
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    with caplog.at_level(logging.INFO):
+        outputs = _session_outputs(helpers, sources, config, _mrd_header(field_strength=field_strength))
+    assert _series_by_index(outputs)[max(_series_by_index(outputs))][1]['SeriesDescription'] == 't1w_brainquant'
+    assert f'report reference: {cohort} ' in caplog.text
+    assert f'chosen because {reason}' in caplog.text
+
+
+@pytest.mark.parametrize('extras', [False, True])
+def test_brainquant_report_is_the_last_distinct_series(process_runtime, caplog, extras):
+    import logging
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssparc='desikan',
+                                 sendoriginal=extras, ssreslicesagittal=extras)}
+    with caplog.at_level(logging.INFO):
+        outputs = _session_outputs(helpers, sources, config, _mrd_header())
+    series = _series_by_index(outputs)
+    last_index = max(series)
+    images, meta = series[last_index]
+    assert list(series) == list(range(2, last_index + 1))
+    assert meta['SeriesDescription'] == 't1w_brainquant'
+    assert meta['SeriesNumberRangeNameUID'] == 't1w_brainquant'
+    assert meta['ImageTypeValue4'] == 'brainquant'
+    assert 'LUTFileName' not in meta and 'LabelProduct' not in meta
+    assert meta['Keep_image_geometry'] == '0'
+    assert len({m['SeriesInstanceUID'] for _, m in series.values()}) == len(series)
+    assert [m.get('LabelProduct') for _, m in series.values() if m.get('LabelProduct')
+            and not m.get('SynthSegReformatOrientation')] == ['synthseg', 'desikan']
+    assert len(images) == 1
+    pages = images[0].data[0]
+    assert pages.shape[0] == 2 and pages.shape[1] >= 1024 and pages.shape[2] >= 1024
+    for page in pages:
+        assert page.max() <= 4095
+        assert 0.005 < float(np.mean(page < 2048)) < 0.5
+    helpers['_validate_synthseg_output_contract'](outputs, {1}, {'series_description': 't1w'}, 'test')
+    assert '--vol' in helpers['inference_commands'][-1]
+    subject_lines = [r.getMessage() for r in caplog.records if 'report subject' in r.getMessage()]
+    assert subject_lines == ['SynthSeg brain volume report subject: age source=header sex source=header']
+    structures = re.findall(r'SYNTHSEG_BRAINQUANT structure=(\S+) volume_ml=', caplog.text)
+    assert structures[0] == 'hippocampus_left' and len(structures) == 10
+    assert 'structure=hippocampus_left volume_ml=3.900 ' in caplog.text
+
+
+def test_brainquant_off_leaves_outputs_and_command_unchanged(process_runtime):
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssquantage=40)}
+    outputs = _session_outputs(helpers, sources, config, _mrd_header())
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert '--vol' not in helpers['inference_commands'][-1]
+
+
+def test_brainquant_is_skipped_with_synthseg_v1(process_runtime, caplog):
+    import logging
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssmodel='v1')}
+    with caplog.at_level(logging.WARNING):
+        outputs = _session_outputs(helpers, sources, config, None)
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert 'brain volume report is skipped' in caplog.text
+
+
+def test_brainquant_report_rejected_by_output_contract_keeps_other_outputs(process_runtime, caplog):
+    import logging
+    helpers, sources, _ = process_runtime
+    build_report = helpers['_build_brainquant_report_image']
+
+    def report_reusing_source_series(pages, source_image, source_identity, series_index):
+        report = build_report(pages, source_image, source_identity, series_index)
+        head = report.getHead()
+        head.image_series_index = source_image.getHead().image_series_index
+        report.setHead(head)
+        return report
+
+    helpers['_build_brainquant_report_image'] = report_reusing_source_series
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    with caplog.at_level(logging.ERROR):
+        outputs = _session_outputs(helpers, sources, config, _mrd_header())
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert 'omitting the report series' in caplog.text
+
+
+def test_brainquant_failure_omits_only_the_report(process_runtime, tmp_path, caplog):
+    import logging
+    import brainquant
+    helpers, sources, _ = process_runtime
+    brainquant.NORMS_PATH = tmp_path / 'missing_norms.json'
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    with caplog.at_level(logging.ERROR):
+        outputs = _session_outputs(helpers, sources, config, None)
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert 'omitting the report series' in caplog.text
+
+
+def _import_synthseg(monkeypatch):
+    """Import the adapter, standing in for the MRD server modules outside its image."""
+    import importlib
+    import sys
+    import types
+
+    stubs = {
+        "constants": types.SimpleNamespace(MRD_LOGGING_INFO=1, MRD_LOGGING_ERROR=4),
+        "mrdhelper": types.SimpleNamespace(
+            get_json_config_param=lambda config, key, default=None, **kwargs: (
+                config["parameters"].get(key, default)
+            ),
+        ),
+    }
+    for name, stub in stubs.items():
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            monkeypatch.setitem(sys.modules, name, stub)
+    monkeypatch.delitem(sys.modules, "synthseg", raising=False)
+    monkeypatch.syspath_prepend(str(RECIPE_DIR))
+    return importlib.import_module("synthseg")
+
+
+def _mrd_series(series_index, description, slices=2):
+    import ismrmrd
+
+    images = []
+    for index in range(slices):
+        image = ismrmrd.Image.from_array(np.ones((1, 1, 4, 4), dtype=np.int16), transpose=False)
+        head = image.getHead()
+        head.field_of_view = (4.0, 4.0, 1.0)
+        head.position = (0.0, 0.0, float(index))
+        head.read_dir, head.phase_dir, head.slice_dir = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+        head.image_series_index, head.image_index, head.slice = series_index, index + 1, index
+        image.setHead(head)
+        meta = ismrmrd.Meta()
+        meta["SeriesDescription"] = description
+        meta["SeriesNumberRangeNameUID"] = f"{description}_group"
+        meta["SeriesInstanceUID"] = f"1.2.3.{series_index}"
+        meta["ImageType"], meta["ImageTypeValue4"] = "ORIGINAL\\PRIMARY\\M\\ND", "ND"
+        image.attribute_string = meta.serialize()
+        images.append(image)
+    return images
+
+
+class _RecordingConnection:
+    def __init__(self, images):
+        self.images = images
+        self.sent = []
+        self.logs = []
+        self.closed = False
+
+    def __iter__(self):
+        yield from self.images
+        yield None
+
+    def send_image(self, images):
+        self.sent.append(list(images))
+
+    def send_logging(self, level, text):
+        self.logs.append((level, text))
+
+    def send_close(self):
+        self.closed = True
+
+
+def _sent_series(connection):
+    import ismrmrd
+
+    return {
+        int(batch[0].getHead().image_series_index): ismrmrd.Meta.deserialize(
+            batch[0].attribute_string
+        )["SeriesDescription"]
+        for batch in connection.sent
+    }
+
+
+def test_originals_of_every_series_are_sent_before_synthseg_and_survive_its_failure(monkeypatch):
+    adapter = _import_synthseg(monkeypatch)
+    connection = _RecordingConnection(_mrd_series(1, "first") + _mrd_series(5, "second"))
+    sent_before_run = []
+
+    def failing_process_image(images, connection_, config, metadata):
+        sent_before_run.append(_sent_series(connection))
+        raise RuntimeError("SynthSeg failed")
+
+    monkeypatch.setattr(adapter, "process_image", failing_process_image)
+    adapter.process(connection, {"parameters": {}}, None)
+
+    assert connection.closed
+    assert sent_before_run == [{2: "first_original", 6: "second_original"}]
+    assert _sent_series(connection) == {2: "first_original", 6: "second_original"}
+    assert [len(batch) for batch in connection.sent] == [2, 2]
+    assert "SynthSeg failed" in connection.logs[-1][1]
+
+
+def test_without_sendoriginal_a_synthseg_failure_returns_nothing(monkeypatch):
+    adapter = _import_synthseg(monkeypatch)
+    connection = _RecordingConnection(_mrd_series(1, "first"))
+    monkeypatch.setattr(
+        adapter, "process_image", lambda *args: (_ for _ in ()).throw(RuntimeError("SynthSeg failed")),
+    )
+    adapter.process(connection, {"parameters": {"sendoriginal": False}}, None)
+
+    assert connection.closed
+    assert connection.sent == []
+    assert "SynthSeg failed" in connection.logs[-1][1]

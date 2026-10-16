@@ -53,6 +53,27 @@ tests:
     command: find /opt/qupath-user/extensions -name 'qupath-extension-cellpose-*.jar' -print
     expected_output_contains: "qupath-extension-cellpose"
 
+  - name: Cellpose extension installed where the catalog registry expects it
+    description: Verify the jar and its QC script sit in the catalog directory named by the registry's installedVersion
+    command: |
+      set -euo pipefail
+      python3 - <<'PY'
+      import json
+      from pathlib import Path
+      catalogs = Path('/opt/qupath-user/extensions/catalogs')
+      registry = json.loads((catalogs / 'registry.json').read_text())
+      biop = next(c for c in registry['catalogs'] if c['name'] == 'QuPath-BIOP catalog')
+      ext = next(e for e in biop['extensions'] if e['name'] == 'QuPath Cellpose extension')
+      tag = ext['installedVersion']
+      main_jar = catalogs / biop['name'] / ext['name'] / tag / 'main-jar'
+      jar = main_jar / f"qupath-extension-cellpose-{tag.lstrip('v')}.jar"
+      qc = main_jar / 'run-cellpose-qc.py'
+      assert jar.is_file(), jar
+      assert qc.is_file(), qc
+      print('cellpose extension', tag, 'installed with QC script')
+      PY
+    expected_output_contains: "installed with QC script"
+
   - name: Cellpose extension preconfigured
     description: Verify QuPath preferences point the extension at the bundled Cellpose Python environment
     command: grep 'cellposePythonPath.*\/opt\/cellpose\/bin\/python' /opt/qupath-config/preferences.xml

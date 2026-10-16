@@ -90,13 +90,21 @@ jobs:
               });
               pr = response.data;
             } else {
-              const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner: context.repo.owner, repo: context.repo.repo,
-                commit_sha: context.sha,
-              });
-              const merged = response.data.filter(item =>
-                item.merged_at && item.base.ref === 'main'
-              );
+              // GitHub can deliver the merge push before this association is
+              // visible. Do not permanently skip a tested recipe on that race.
+              let merged = [];
+              for (let attempt = 1; attempt <= 6; attempt++) {
+                const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  commit_sha: context.sha,
+                });
+                merged = response.data.filter(item =>
+                  item.merged_at && item.base.ref === 'main'
+                );
+                if (merged.length > 0 || attempt === 6) break;
+                core.info(`Merge association for ${context.sha} is not visible; retrying (${attempt}/6)`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
+              }
               const exact = merged.filter(item => item.merge_commit_sha === context.sha);
               if (exact.length === 1) {
                 pr = exact[0];

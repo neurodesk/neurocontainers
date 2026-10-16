@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "fetalsynthseg_arm64 1.0.0": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "fetal imaging",
+    "image segmentation",
+    "machine learning"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "fetalsynthseg"
+}
