@@ -25,3 +25,8 @@ retired:
     reason: >-
       Renamed to slicegrappa, which carries the maintained recipe and the same
       reconstruction fixes.
+  - recipe: freesurfer6
+    superseded_by: freesurfer
+    reason: >-
+      Published by mistake as a separate tool. FreeSurfer 6.0.0 is released
+      as freesurfer/6.0.0 alongside the other FreeSurfer versions instead.
