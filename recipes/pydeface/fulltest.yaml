@@ -38,6 +38,7 @@ setup:
     from dataclasses import dataclass
     import errno
     import hashlib
+    import http.client
     import json
     import os
     from pathlib import Path
@@ -52,6 +53,7 @@ setup:
     import stat
     import struct
     import sys
+    import tarfile
     import tempfile
     import time
     from types import FrameType
@@ -62,7 +64,7 @@ setup:
     EXE = '/opt/fsl-6.0.7.23/bin/flirt'
     EXE_SHA = '1fe86d868e0bf0781b8afb9c4f0689f0bdb3e49edf67795bee346f1a48c7c17c'
     TEMPLATE = '/opt/miniconda-py312_25.5.1-0/lib/python3.12/site-packages/pydeface/data/mean_reg2mean.nii.gz'
-    POLICY = dict(bootstrap=40, lifetime=1800, acquisition=45, selected=120,
+    POLICY = dict(supply=15, bootstrap=40, lifetime=1800, acquisition=45, selected=120,
                   preflight=30, record=40, disabled=5, interval=30, command=10,
                   read=3, service=.25, grace=1, admission=.250,
                   traces=16, trace_bytes=16*1024**2, line=256*1024, records=20000,
@@ -131,6 +133,33 @@ setup:
         wall: float
         boot: str
         control: socket.socket | None = None
+        private: Path | None = None
+        tool: _HostLoadedPerf | None = None
+        preflight_deadline: float = float('inf')
+        supply_deadline: float = float('inf')
+
+
+    @dataclass(frozen=True)
+    class _HostLoadedPerf:
+        path: Path
+        sha256: str
+        identity: tuple[int, int, int, int, int]
+        environment: dict[str, str]
+        loader_receipt: Path
+
+        def check(self) -> None:
+            observed = _executable_identity(self.path)
+            if observed['identity'] != self.identity or observed['sha256'] != self.sha256:
+                raise Refusal('supplied perf identity changed')
+
+
+    def _diagnostic_environment(private: Path) -> dict[str, str]:
+        return {
+            'LC_ALL': 'C', 'LANG': 'C', 'PATH': '/usr/bin:/bin',
+            'HOME': str(private / 'home'), 'TMPDIR': str(private),
+            'PERF_CONFIG': '/dev/null', 'PERF_BUILDID_DIR': '/dev/null',
+            'DEBUGINFOD_URLS': '', 'PERF_PAGER': 'cat', 'PAGER': 'cat',
+        }
 
 
     def readable(fd: int | socket.socket) -> bool:
@@ -462,7 +491,20 @@ setup:
 
     def spawn_command(args: list[str], stdout: int, stderr: int,
                       pass_fds: tuple[int, ...] = (),
-                      file_cap: int | None = None) -> OwnedChild:
+                      file_cap: int | None = None, *, plan: RunPlan) -> OwnedChild:
+        _diagnostic_check(plan)
+        if plan.private is None:
+            raise Refusal('diagnostic private directory missing')
+        if plan.tool is not None:
+            if args[0] != str(plan.tool.path):
+                raise Refusal('unexpected diagnostic executable')
+            plan.tool.check()
+            environment = plan.tool.environment
+        else:
+            if args[0] != '/usr/bin/dpkg-deb':
+                raise Refusal('unexpected supply decoder')
+            _executable_identity(Path(args[0]))
+            environment = _diagnostic_environment(plan.private)
         parent = os.getpid()
         pid = os.fork()
         if pid == 0:
@@ -475,8 +517,6 @@ setup:
                     os.set_inheritable(fd, True)
                 limit = file_cap or POLICY['text']
                 resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
-                environment = dict(os.environ, LC_ALL='C', PERF_CONFIG='/dev/null',
-                                   PERF_BUILDID_DIR='/dev/null', DEBUGINFOD_URLS='')
                 os.execve(args[0], args, environment)
             except BaseException:
                 os._exit(92)
@@ -484,39 +524,97 @@ setup:
 
 
     def command(plan: RunPlan, args: list[str], label: str,
-                timeout: float | None = None) -> bytes:
-        if plan.control is not None:
+                timeout: float | None = None, *, supply_output: bool = False) -> bytes | Path:
+        nested_supply = plan.supply_deadline != float('inf')
+        if plan.control is not None and not nested_supply:
             send(plan.control, 'operation', kind='command')
         started = time.monotonic()
-        paths = [plan.retained / (label + suffix) for suffix in ('.out', '.err')]
-        file_cap = min(POLICY['text'], (POLICY['total']-retained_size(plan.retained)-65536)//2)
-        if file_cap <= 0:
+        if supply_output:
+            if plan.private is None or not nested_supply:
+                raise Refusal('supply output outside acquisition')
+            paths = [plan.private / 'data.tar', plan.retained / (label+'.err')]
+            caps = [12*1024**2, min(POLICY['text'], POLICY['total']-retained_size(plan.retained)-65536)]
+        else:
+            paths = [plan.retained / (label + suffix) for suffix in ('.out', '.err')]
+            caps = [min(POLICY['text'], (POLICY['total']-retained_size(plan.retained)-65536)//2)]*2
+        if min(caps) <= 0:
             raise Refusal('command output admission limit')
-        fds = [os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) for path in paths]
-        child = spawn_command(args, *fds, file_cap=file_cap)
-        for fd in fds:
-            os.close(fd)
-        deadline = min(plan.started+POLICY['lifetime'], started+(timeout or POLICY['command']))
+        fds = []
+        error_pipe: tuple[int, int] | None = None
+        try:
+            for path in paths:
+                fds.append(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
+            if supply_output:
+                error_pipe = os.pipe2(os.O_CLOEXEC)
+                os.set_blocking(error_pipe[0], False)
+            child = spawn_command(args, fds[0], error_pipe[1] if error_pipe else fds[1],
+                                  file_cap=caps[0], plan=plan)
+        except BaseException:
+            if error_pipe:
+                os.close(error_pipe[0])
+            raise
+        finally:
+            if error_pipe:
+                os.close(error_pipe[1])
+            for fd in fds:
+                os.close(fd)
+        error_size = 0
+
+        def drain_errors() -> None:
+            nonlocal error_size
+            if error_pipe is None:
+                return
+            with paths[1].open('ab') as stream:
+                for _ in range(16):
+                    try:
+                        block = os.read(error_pipe[0], 65536)
+                    except BlockingIOError:
+                        return
+                    if not block:
+                        return
+                    allowed = max(0, caps[1]-error_size)
+                    stream.write(block[:allowed])
+                    error_size += len(block)
+                    if error_size > caps[1]:
+                        raise Refusal('command stderr output limit')
+
+        deadline = min(plan.started+POLICY['lifetime'], plan.preflight_deadline,
+                       plan.supply_deadline, started+min(timeout or POLICY['command'], POLICY['command']))
         reason = 'exited'
         try:
             while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                drain_errors()
+                plan.owner.check()
                 if time.monotonic() > deadline:
                     reason = 'deadline'
                     raise Refusal('command deadline')
-                if any(path.stat().st_size > POLICY['text'] for path in paths):
+                if any(path.stat().st_size > cap for path, cap in zip(paths, caps)):
                     reason = 'output_limit'
                     raise Refusal('command output limit')
                 retained_size(plan.retained)
                 time.sleep(.02)
+        except BaseException as error:
+            reason = str(error)[:512]
+            raise
         finally:
             child.signal(signal.SIGKILL)
             _, status = os.waitpid(child.pid, 0)
+            try:
+                drain_errors()
+            except Refusal:
+                reason = 'output_limit'
+            finally:
+                if error_pipe:
+                    os.close(error_pipe[0])
             save(plan, label+'.command.json', dict(argv=args, started=started,
-                 ended=time.monotonic(), returncode=os.waitstatus_to_exitcode(status), reason=reason))
-        if status or any(path.stat().st_size > POLICY['text'] for path in paths):
+                 ended=time.monotonic(), returncode=os.waitstatus_to_exitcode(status), reason=reason,
+                 transient_mappings='unobserved', runtime_contract='trusted_host_os_not_closed',
+                 tool_identity=plan.tool.identity if plan.tool else None))
+        if status or reason == 'output_limit' or any(path.stat().st_size > cap for path, cap in zip(paths, caps)):
             raise Refusal('command failed or output limit ' + label)
-        output = read_bytes(paths[0], POLICY['text'])
-        if plan.control is not None:
+        _diagnostic_check(plan)
+        output = paths[0] if supply_output else read_bytes(paths[0], POLICY['text'])
+        if plan.control is not None and not nested_supply:
             send(plan.control, 'operation_done')
         return output
 
@@ -549,17 +647,19 @@ setup:
                 '-F', '49', '--strict-freq', '-m', '64', '-D', '-1',
                 '--control=fd:'+str(control_read)+','+str(ack_write), '-p', str(pid), '-o', str(raw)]
         times = dict(pre_spawn=time.monotonic())
-        child = spawn_command(args, logfd, logfd, (control_read, ack_write), file_cap=file_cap)
+        child = spawn_command(args, logfd, logfd, (control_read, ack_write), file_cap=file_cap, plan=plan)
         os.close(logfd)
         os.close(control_read)
         os.close(ack_write)
-        end = times['pre_spawn']+POLICY['record']
+        end = min(times['pre_spawn']+POLICY['record'], plan.preflight_deadline)
         status = None
         try:
             control(control_write, ack_read, 'ping', min(end, times['pre_spawn']+POLICY['disabled']), times)
+            if label == 'preflight':
+                _observe_sibling_recorder(plan, child)
             validate()
             times['last_validation'] = time.monotonic()
-            if times['last_validation'] > times['pre_spawn']+POLICY['disabled']:
+            if label != 'preflight' and times['last_validation'] > times['pre_spawn']+POLICY['disabled']:
                 raise Refusal('disabled attach deadline')
             if time.monotonic()-times['last_validation'] > POLICY['admission']:
                 raise Refusal('enable admission deadline')
@@ -925,6 +1025,392 @@ setup:
             os.close(rootfd)
 
 
+    PERF_PACKAGE = dict(
+        url='https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-tools-6.8.0-31_6.8.0-31.31_arm64.deb',
+        size=2669546, sha256='0d0ef777ebcae85b8bb8f4a48df4949ffd748c633aede0352221741578bbaf67',
+        member='usr/lib/linux-tools-6.8.0-31/perf', elf_size=5486808,
+        elf_sha256='7edef8a48ee07478539f7adf3cb2cbe6a85e2f783ba754f72ed2b5a8c86962ae',
+        interpreter='/lib/ld-linux-aarch64.so.1', version='6.8.0-31.31',
+        table_sha256='29ee9ae918a256c94e1634a7b3616d616d9c3977fda6f844576f89f6572914a8',
+        authentication='R21 verification.json; original Noble signed InRelease/Packages ARM64',
+        inrelease_sha256='cdb2f31d809f589719a53c6ad15f255b27569c4059542ada282aaa21b8e164b0',
+        signing_fingerprint='F6ECB3762474EDA9D21B7022871920D1991BC93C')
+
+
+    def _diagnostic_check(plan: RunPlan) -> None:
+        plan.owner.check()
+        if time.monotonic() > min(plan.preflight_deadline, plan.supply_deadline,
+                                  plan.started+POLICY['lifetime']):
+            raise Refusal('diagnostic deadline')
+
+
+    def _executable_identity(path: Path, *, executable: bool = True) -> dict[str, Any]:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            value = os.fstat(fd)
+            before = file_identity(fd)
+            if not stat.S_ISREG(value.st_mode) or (executable and not os.access(path, os.X_OK)):
+                raise Refusal('tool is not a regular executable')
+            if value.st_mode & (stat.S_ISUID | stat.S_ISGID):
+                raise Refusal('privileged executable changes parent-death semantics')
+            try:
+                capabilities = os.getxattr(fd, 'security.capability')
+            except OSError as error:
+                if error.errno not in (errno.ENODATA, errno.ENOTSUP):
+                    raise
+                capabilities = b''
+            if capabilities:
+                raise Refusal('capability-bearing executable changes parent-death semantics')
+            digest = hash_fd(fd)
+            current = os.stat(path, follow_symlinks=False)
+            if before != file_identity(fd) or before != (
+                    current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns):
+                raise Refusal('executable path or descriptor identity changed')
+            return dict(path=str(path), identity=before, sha256=digest,
+                        capabilities=capabilities.hex(), mode=value.st_mode,
+                        execution_binding='checked pathname; later path-based exec is not atomic')
+        finally:
+            os.close(fd)
+
+
+    def _admit_perf(path: Path) -> dict[str, Any]:
+        if path.lstat().st_size != PERF_PACKAGE['elf_size']:
+            raise Refusal('perf byte pin mismatch')
+        observed = _executable_identity(path, executable=False)
+        if observed['identity'][2] != PERF_PACKAGE['elf_size'] or observed['sha256'] != PERF_PACKAGE['elf_sha256']:
+            raise Refusal('perf byte pin mismatch')
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            if file_identity(fd) != observed['identity']:
+                raise Refusal('perf identity changed before ELF admission')
+            header = os.pread(fd, 64, 0)
+            if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                    or struct.unpack_from('<HHI', header, 16) not in ((2, 183, 1), (3, 183, 1))):
+                raise Refusal('perf target is not ELF64 little-endian AArch64')
+            offset = struct.unpack_from('<Q', header, 32)[0]
+            size, count = struct.unpack_from('<HH', header, 54)
+            if size != 56 or not 0 < count <= 256:
+                raise Refusal('perf ELF program header limit')
+            interpreter = None
+            for index in range(count):
+                ph = os.pread(fd, size, offset+size*index)
+                if len(ph) != size:
+                    raise Refusal('truncated perf ELF')
+                kind = struct.unpack_from('<I', ph)[0]
+                start, length = struct.unpack_from('<Q', ph, 8)[0], struct.unpack_from('<Q', ph, 32)[0]
+                if start+length > PERF_PACKAGE['elf_size']:
+                    raise Refusal('perf ELF segment outside file')
+                if kind == 3:
+                    if interpreter is not None or length > 4096:
+                        raise Refusal('perf interpreter count or size')
+                    interpreter = os.pread(fd, length, start)
+                if kind == 2:
+                    if length > POLICY['metadata'] or length % 16:
+                        raise Refusal('perf dynamic table limit')
+                    table = os.pread(fd, length, start)
+                    tags = [struct.unpack_from('<q', table, pos)[0] for pos in range(0, length, 16)]
+                    if 15 in tags or 29 in tags or 0 not in tags:
+                        raise Refusal('perf RPATH/RUNPATH or invalid dynamic table')
+            if interpreter != PERF_PACKAGE['interpreter'].encode()+b'\0':
+                raise Refusal('perf interpreter mismatch')
+            if file_identity(fd) != observed['identity']:
+                raise Refusal('perf changed during ELF admission')
+            os.fchmod(fd, 0o500)
+            admitted_identity = file_identity(fd)
+        finally:
+            os.close(fd)
+        admitted = _executable_identity(path)
+        if admitted['identity'] != admitted_identity or admitted['sha256'] != PERF_PACKAGE['elf_sha256']:
+            raise Refusal('perf identity changed after ELF admission')
+        return admitted
+
+
+    def _download_perf(plan: RunPlan, package: Path) -> None:
+        host, request_path = PERF_PACKAGE['url'].removeprefix('https://').split('/', 1)
+        connection = http.client.HTTPSConnection(host, timeout=5)
+        fd = os.open(package, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            _diagnostic_check(plan)
+            connection.request('GET', '/'+request_path, headers={'Accept-Encoding': 'identity'})
+            response = connection.getresponse()
+            if response.status != 200 or response.getheader('Content-Encoding') not in (None, 'identity'):
+                raise Refusal('package HTTP status or encoding refused')
+            length = response.getheader('Content-Length')
+            if length is not None and length != str(PERF_PACKAGE['size']):
+                raise Refusal('package HTTP size mismatch')
+            size = 0
+            with os.fdopen(fd, 'wb', closefd=False) as output:
+                while True:
+                    _diagnostic_check(plan)
+                    block = response.read(min(65536, PERF_PACKAGE['size']+1-size))
+                    _diagnostic_check(plan)
+                    if not block:
+                        break
+                    size += len(block)
+                    if size > PERF_PACKAGE['size'] or size > 3*1024**2:
+                        raise Refusal('package download size limit')
+                    output.write(block)
+            if size != PERF_PACKAGE['size']:
+                raise Refusal('package download truncated')
+        finally:
+            connection.close()
+            os.close(fd)
+
+
+    def _check_package(package: Path) -> dict[str, Any]:
+        fd = os.open(package, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = file_identity(fd)
+            if before[2] != PERF_PACKAGE['size']:
+                raise Refusal('package byte pin mismatch')
+            digest = hash_fd(fd)
+            if digest != PERF_PACKAGE['sha256']:
+                raise Refusal('package byte pin mismatch')
+            if os.pread(fd, 8, 0) != b'!<arch>\n':
+                raise Refusal('invalid package archive')
+            position = 8
+            names = []
+            while position < before[2]:
+                header = os.pread(fd, 60, position)
+                if len(header) != 60 or header[58:] != b'`\n':
+                    raise Refusal('invalid package member header')
+                name = header[:16].decode('ascii').strip().removesuffix('/')
+                try:
+                    size = int(header[48:58].decode('ascii').strip())
+                except ValueError:
+                    raise Refusal('invalid package member size') from None
+                if size < 0 or position+60+size > before[2] or len(names) >= 3:
+                    raise Refusal('package member size or count limit')
+                names.append(name)
+                if name == 'debian-binary' and os.pread(fd, size, position+60) != b'2.0\n':
+                    raise Refusal('unsupported package format')
+                position += 60+size
+                if size % 2:
+                    if os.pread(fd, 1, position) != b'\n':
+                        raise Refusal('invalid package padding')
+                    position += 1
+            if names != ['debian-binary', 'control.tar.zst', 'data.tar.zst'] or position != before[2]:
+                raise Refusal('unexpected package archive structure')
+            if before != file_identity(fd):
+                raise Refusal('package identity changed')
+            return dict(identity=before, sha256=digest, members=names)
+        finally:
+            os.close(fd)
+
+
+    def _select_perf(plan: RunPlan, archive: Path, destination: Path) -> dict[str, Any]:
+        fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = file_identity(fd)
+            if not stat.S_ISREG(os.fstat(fd).st_mode) or not 1024 <= before[2] <= 12*1024**2 or before[2] % 512:
+                raise Refusal('tar size or type limit')
+            position, selected = 0, None
+            names = set()
+            while position < before[2]:
+                _diagnostic_check(plan)
+                header = os.pread(fd, 512, position)
+                if header == bytes(512):
+                    if before[2]-position < 1024:
+                        raise Refusal('tar end marker truncated')
+                    while position < before[2]:
+                        _diagnostic_check(plan)
+                        block = os.pread(fd, min(65536, before[2]-position), position)
+                        if not block or any(block):
+                            raise Refusal('unaccounted trailing tar bytes')
+                        position += len(block)
+                    break
+                try:
+                    member = tarfile.TarInfo.frombuf(header, 'utf-8', 'strict')
+                except (tarfile.HeaderError, UnicodeError, ValueError):
+                    raise Refusal('invalid tar header') from None
+                name = member.name.removeprefix('./').rstrip('/')
+                if name == '.':
+                    name = ''
+                if (len(os.fsencode(name)) > 4095 or name.startswith('/')
+                        or (name and any(part in ('', '.', '..') for part in name.split('/')))):
+                    raise Refusal('unsafe tar member path')
+                if name in names:
+                    raise Refusal('duplicate tar member')
+                names.add(name)
+                if len(names) > 128:
+                    raise Refusal('tar member count limit')
+                if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE) or member.linkname:
+                    raise Refusal('tar links or special members refused')
+                if member.size < 0 or (member.isdir() and member.size):
+                    raise Refusal('invalid tar member size')
+                if not name and not member.isdir():
+                    raise Refusal('invalid tar root member')
+                data_start = position+512
+                position = data_start+((member.size+511)//512)*512
+                if position > before[2]:
+                    raise Refusal('truncated tar member')
+                if any(os.pread(fd, position-data_start-member.size, data_start+member.size)):
+                    raise Refusal('invalid tar member padding')
+                if name == PERF_PACKAGE['member']:
+                    if not member.isfile() or member.size != PERF_PACKAGE['elf_size'] or member.size > 6*1024**2:
+                        raise Refusal('selected perf member size or type mismatch')
+                    if member.mode & (stat.S_ISUID | stat.S_ISGID):
+                        raise Refusal('privileged archive member')
+                    selected = (data_start, member.size)
+            else:
+                raise Refusal('tar end marker missing')
+            if selected is None:
+                raise Refusal('selected perf member missing')
+            outfd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                offset, remaining = selected
+                with os.fdopen(outfd, 'wb', closefd=False) as output:
+                    while remaining:
+                        _diagnostic_check(plan)
+                        block = os.pread(fd, min(65536, remaining), offset)
+                        if not block:
+                            raise Refusal('selected perf truncated')
+                        output.write(block)
+                        offset += len(block)
+                        remaining -= len(block)
+            finally:
+                os.close(outfd)
+            if before != file_identity(fd):
+                raise Refusal('tar identity changed')
+            return dict(members=len(names), archive_identity=before, selected=PERF_PACKAGE['member'])
+        finally:
+            os.close(fd)
+
+
+    def _observe_host_loader(plan: RunPlan) -> Path:
+        _diagnostic_check(plan)
+        root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fd = open_rooted(root, PERF_PACKAGE['interpreter'])
+        finally:
+            os.close(root)
+        try:
+            before = file_identity(fd)
+            canonical = Path(os.readlink(f'/proc/self/fd/{fd}'))
+            loader = _executable_identity(canonical)
+            header = os.pread(fd, 64, 0)
+            if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                    or struct.unpack_from('<HHI', header, 16) not in ((2, 183, 1), (3, 183, 1))):
+                raise Refusal('host interpreter is not AArch64 ELF')
+            root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                again = open_rooted(root, PERF_PACKAGE['interpreter'])
+                try:
+                    if before != file_identity(again) or before != file_identity(fd) or before != loader['identity']:
+                        raise Refusal('host interpreter identity changed')
+                finally:
+                    os.close(again)
+            finally:
+                os.close(root)
+        finally:
+            os.close(fd)
+        optional = []
+        for name in ('/etc/ld.so.preload', '/etc/ld.so.cache'):
+            _diagnostic_check(plan)
+            try:
+                root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    fd = open_rooted(root, name)
+                finally:
+                    os.close(root)
+                try:
+                    before = file_identity(fd)
+                    if before[2] > POLICY['metadata']:
+                        raise Refusal('optional loader metadata size limit')
+                    digest = hash_fd(fd)
+                    optional.append(dict(path=name, state='observed', identity=before, sha256=digest))
+                finally:
+                    os.close(fd)
+            except FileNotFoundError:
+                optional.append(dict(path=name, state='absent'))
+            except (OSError, Refusal) as error:
+                optional.append(dict(path=name, state='unreadable', reason=str(error)[:512]))
+        _diagnostic_check(plan)
+        receipt = plan.retained / 'host-loader.json'
+        save(plan, receipt.name, dict(architecture=platform.machine(), kernel=os.uname().release,
+             loader=loader, optional=optional, runtime_contract='trusted_host_os_not_closed',
+             conditional_modules='trusted, not exhaustively observed or authenticated',
+             complete_load_trace=False, source_build_correspondence='unproved'))
+        return receipt
+
+
+    def _prepare_host_loaded_perf(plan: RunPlan) -> _HostLoadedPerf:
+        if plan.private is None:
+            raise Refusal('supply directory missing')
+        plan.supply_deadline = min(time.monotonic()+POLICY['supply'], plan.preflight_deadline,
+                                   plan.started+POLICY['bootstrap'])
+        receipt: dict[str, Any] = dict(stage='supply_pending', started=time.monotonic(), pins=PERF_PACKAGE,
+            runtime_contract='trusted_host_os_not_closed', native_acceptance=False)
+        save(plan, 'supply-pending.json', receipt)
+        if plan.control is not None:
+            send(plan.control, 'operation', kind='supply')
+        try:
+            package = plan.private / 'perf.deb'
+            _download_perf(plan, package)
+            _diagnostic_check(plan)
+            receipt['package'] = _check_package(package)
+            receipt['decoder'] = _executable_identity(Path('/usr/bin/dpkg-deb'))
+            archive = command(plan, ['/usr/bin/dpkg-deb', '--fsys-tarfile', str(package)],
+                              'supply-decode', supply_output=True)
+            if not isinstance(archive, Path):
+                raise Refusal('decoder did not produce a bounded file')
+            _diagnostic_check(plan)
+            if _executable_identity(Path('/usr/bin/dpkg-deb')) != receipt['decoder']:
+                raise Refusal('decoder identity changed')
+            if _check_package(package) != receipt['package']:
+                raise Refusal('package changed during decoding')
+            path = plan.private / 'perf'
+            receipt['archive'] = _select_perf(plan, archive, path)
+            admitted = _admit_perf(path)
+            receipt['elf'] = admitted
+            _diagnostic_check(plan)
+            files = list(plan.private.iterdir())
+            if len(files)+len(list((plan.private/'home').iterdir())) > 8 or sum(p.lstat().st_size for p in files) > 24*1024**2:
+                raise Refusal('aggregate supply file or byte limit')
+            loader_receipt = _observe_host_loader(plan)
+            _diagnostic_check(plan)
+            receipt.update(stage='supplied', ended=time.monotonic())
+            return _HostLoadedPerf(path, admitted['sha256'], admitted['identity'],
+                                   _diagnostic_environment(plan.private), loader_receipt)
+        except BaseException as error:
+            receipt.update(stage='refused', reason=type(error).__name__+': '+str(error)[:512])
+            raise
+        finally:
+            save(plan, 'perf-supply.json', receipt)
+            plan.supply_deadline = float('inf')
+            if plan.control is not None:
+                send(plan.control, 'operation_done')
+
+
+    def _observe_sibling_recorder(plan: RunPlan, child: OwnedChild) -> None:
+        receipt: dict[str, Any] = dict(kind='sibling_recorder_mapping_snapshot', complete_load_trace=False,
+            runtime_contract='trusted_host_os_not_closed', started=time.monotonic(), pid=child.pid,
+            state='incomplete')
+        target = None
+        try:
+            _diagnostic_check(plan)
+            target = ObservedProcess.open(child.pid)
+            maps_fd = os.open(f'/proc/{target.pid}/maps', os.O_RDONLY | os.O_NONBLOCK)
+            try:
+                receipt['maps_identity'] = file_identity(maps_fd)
+                before = read_bytes(f'/proc/{target.pid}/maps')
+            finally:
+                os.close(maps_fd)
+            receipt.update(ticks=target.ticks, maps_sha256=hashlib.sha256(before).hexdigest())
+            receipt['objects'] = mapped_objects(plan, target)
+            if read_bytes(f'/proc/{target.pid}/maps') != before:
+                raise Refusal('recorder maps changed during snapshot')
+            _diagnostic_check(plan)
+            receipt.update(state='snapshot_obtained', ended=time.monotonic())
+        except BaseException as error:
+            receipt['reason'] = type(error).__name__+': '+str(error)[:512]
+            raise Refusal('mandatory sibling recorder snapshot incomplete') from error
+        finally:
+            if target is not None:
+                os.close(target.pidfd)
+            save(plan, 'sibling-recorder-maps.json', receipt)
+
+
     def worker(plan: RunPlan, channel: socket.socket, busy: int) -> None:
         plan.control = channel
         phase = 'bootstrap'
@@ -933,137 +1419,15 @@ setup:
             bind_runner(plan)
             send(channel, 'ready')
             phase = 'preflight'
-            perf = shutil.which('perf')
-            kernel_release = os.uname().release
-            entrypoint: dict[str, Any] = dict(selected_path=perf[:4096] if perf else None,
-                architecture=platform.machine()[:256], kernel_release=kernel_release[:256],
-                files=[], candidates=[], outcome='refused', known_launcher_match=None,
-                execution_binding='checked pathname; later path-based exec is not atomic')
-            selection_deadline = time.monotonic() + POLICY['read']
-
-            def inspect_perf(path: str) -> tuple[str, bytes, str] | None:
-                observation: dict[str, Any] = dict(path=path[:4096], links=[])
-                entrypoint['files'].append(observation)
-                pending = path.split('/')
-                resolved = '/'
-                steps = 0
-                while pending:
-                    steps += 1
-                    if (steps > POLICY['objects'] or len(os.fsencode(path)) > 4095
-                            or time.monotonic() > selection_deadline):
-                        raise Refusal('perf path or read limit')
-                    part = pending.pop(0)
-                    if part in ('', '.'):
-                        continue
-                    if part == '..':
-                        resolved = os.path.dirname(resolved)
-                        continue
-                    current = os.path.join(resolved, part)
-                    try:
-                        value = os.lstat(current)
-                    except FileNotFoundError:
-                        observation['missing'] = current
-                        if observation['links']:
-                            raise Refusal('perf package link target missing')
-                        return None
-                    if stat.S_ISLNK(value.st_mode):
-                        link = os.readlink(current)
-                        observation['links'].append(dict(path=current, target=link[:4096],
-                                                        stat=list(value)))
-                        if len(os.fsencode(link)) > 4095:
-                            raise Refusal('perf link limit')
-                        if link.startswith('/'):
-                            resolved = '/'
-                        pending = link.split('/') + pending
-                    else:
-                        resolved = current
-                observation['canonical_path'] = resolved
-                if not re.fullmatch(r'/usr/(?:bin/perf(?:_[A-Za-z0-9.+_-]{1,255})?'
-                                    r'|lib/linux-tools(?:/[A-Za-z0-9.+_-]{1,255}'
-                                    r'|-[A-Za-z0-9.+_-]{1,255})/perf)', resolved):
-                    raise Refusal('perf path outside approved system tools')
-                perf_fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-                try:
-                    before = file_identity(perf_fd)
-                    value = os.fstat(perf_fd)
-                    observation.update(stat=list(value), identity_before=before)
-                    if not stat.S_ISREG(value.st_mode) or not os.access(resolved, os.X_OK):
-                        raise Refusal('perf is not a regular executable')
-                    if value.st_mode & (stat.S_ISUID | stat.S_ISGID):
-                        raise Refusal('privileged perf exec would change parent-death semantics')
-                    try:
-                        capabilities = os.getxattr(perf_fd, 'security.capability')
-                    except OSError as error:
-                        observation['capability_errno'] = error.errno
-                        if error.errno not in (errno.ENODATA, errno.ENOTSUP):
-                            raise
-                    else:
-                        observation['capabilities'] = capabilities[:256].hex()
-                        if capabilities:
-                            raise Refusal('capability-bearing perf cannot preserve parent-death semantics')
-                    header = os.pread(perf_fd, 64, 0)
-                    observation['header'] = header.hex()
-                    digest = hash_fd(perf_fd)
-                    observation.update(sha256=digest, identity_after=file_identity(perf_fd))
-                    for checked_path in (path, resolved):
-                        value = os.stat(checked_path)
-                        if before != (value.st_dev, value.st_ino, value.st_size,
-                                      value.st_mtime_ns, value.st_ctime_ns):
-                            raise Refusal('perf path identity changed')
-                    if before != file_identity(perf_fd):
-                        raise Refusal('perf descriptor identity changed')
-                    if time.monotonic() > selection_deadline:
-                        raise Refusal('perf selection read deadline')
-                    return resolved, header, digest
-                finally:
-                    os.close(perf_fd)
-
-            try:
-                if not perf:
-                    raise Refusal('existing perf unavailable')
-                if not os.path.isabs(perf):
-                    raise Refusal('perf entrypoint path is not absolute')
-                inspected = inspect_perf(perf)
-                if inspected is None:
-                    raise Refusal('selected perf disappeared')
-                canonical, header, digest = inspected
-                if header[:4] != b'\x7fELF':
-                    # Ubuntu linux-tools-common 6.8.0-147.147 bytes, not an installed-version claim.
-                    entrypoint['known_launcher_match'] = digest == '2d0953085bf720a25efbe24f853e97d27b1f12f18a398255ff82cbafde254dad'
-                    if not entrypoint['known_launcher_match']:
-                        raise Refusal('unknown perf launcher bytes')
-                    if perf not in ('/usr/bin/perf', '/bin/perf') or canonical != '/usr/bin/perf':
-                        raise Refusal('known perf launcher at unsupported path')
-                    release = kernel_release
-                    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_-]{0,254}', release):
-                        raise Refusal('unsafe kernel release component')
-                    flavour_abi = release.split('-', 1)[-1]
-                    flavour = flavour_abi.split('-', 1)[-1]
-                    version = release.removesuffix('-' + flavour)
-                    candidates = [f'/usr/lib/linux-tools/{release}/perf', f'{perf}_{version}']
-                    entrypoint['candidates'] = candidates
-                    inspected = None
-                    for candidate in candidates:
-                        inspected = inspect_perf(candidate)
-                        if inspected is not None:
-                            break
-                    if inspected is None:
-                        raise Refusal('kernel-matched perf target missing')
-                    canonical, header, digest = inspected
-                if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
-                        or struct.unpack_from('<HHI', header, 16) not in ((2, 183, 1), (3, 183, 1))):
-                    raise Refusal('perf target is not ELF64 little-endian AArch64')
-                perf = canonical
-                entrypoint.update(outcome='selected', target=perf)
-                save(plan, 'perf-binary.json', dict(path=perf, sha256=digest))
-            except Exception as error:
-                entrypoint.update(outcome='refused', reason=f'{type(error).__name__}: {error}'[:512])
-                raise
-            finally:
-                save(plan, 'perf-entrypoint.json', entrypoint)
-            command(plan, [perf, '--version'], 'perf-version')
             preflight_start = time.monotonic()
+            plan.preflight_deadline = min(plan.started+POLICY['bootstrap'], preflight_start+POLICY['preflight'])
             send(channel, 'preflight')
+            plan.private = Path(tempfile.mkdtemp(prefix='native-perf-', dir=plan.work))
+            (plan.private / 'home').mkdir(mode=0o700)
+            plan.tool = _prepare_host_loaded_perf(plan)
+            perf = str(plan.tool.path)
+            command(plan, [perf, '--version'], 'perf-version')
+            save(plan, 'version-ok.json', dict(stage='version_ok', at=time.monotonic()))
             preflight = ObservedProcess.open(busy)
             try:
                 raw = record(plan, perf, busy, 'preflight', preflight.check, 1)
@@ -1079,7 +1443,11 @@ setup:
                 os.close(preflight.pidfd)
             if time.monotonic()-preflight_start > POLICY['preflight']:
                 raise Refusal('preflight deadline')
+            _diagnostic_check(plan)
+            save(plan, 'sibling-ok.json', dict(stage='sibling_ok', at=time.monotonic()))
+            plan.preflight_deadline = float('inf')
             send(channel, 'acquire')
+            save(plan, 'observing.json', dict(stage='observing', at=time.monotonic()))
             phase = 'acquisition'
             stage_seen = None
             trace_keys = {}
@@ -1157,16 +1525,24 @@ setup:
                     finally:
                         os.close(fd)
                 save(plan, 'inventory.json', inventory)
-                send(channel, 'done', outcome='captured' if not (quality['unknown_symbols'] or quality['unknown_dsos']) else 'incomplete',
+                result = dict(outcome='captured' if not (quality['unknown_symbols'] or quality['unknown_dsos']) else 'incomplete',
                      raw_capture=True, source_attribution='unresolved', samples=quality,
                      object_count=len(objects), reason='unknown symbols' if (quality['unknown_symbols'] or quality['unknown_dsos']) else None)
             finally:
                 os.close(target.pidfd)
                 os.close(observer.pidfd)
         except BaseException as error:
-            send(channel, 'done', outcome='incomplete' if phase == 'selected' else 'refused',
+            result = dict(outcome='incomplete' if phase == 'selected' else 'refused',
                  stage=phase, raw_capture=raw_capture, source_attribution='unresolved',
                  reason=type(error).__name__+': '+str(error)[:2000])
+        finally:
+            if plan.private is not None:
+                try:
+                    shutil.rmtree(plan.private)
+                    result['supply_cleanup'] = dict(complete=True, excluded_work=True)
+                except BaseException as error:
+                    result = dict(outcome='incomplete', reason='supply cleanup failed: '+str(error)[:512])
+        send(channel, 'done', **result)
 
 
     def supervise(plan: RunPlan, readiness: socket.socket, launcher: int) -> None:
@@ -1255,7 +1631,7 @@ setup:
                         state = 'armed'
                     elif event == 'preflight' and state == 'armed':
                         state = 'preflight'
-                        deadline = min(deadline, now+POLICY['preflight'])
+                        deadline = min(deadline, message['at']+POLICY['preflight'])
                     elif event == 'acquire' and state == 'preflight':
                         busy.signal(signal.SIGKILL)
                         state = 'acquire'
@@ -1267,7 +1643,7 @@ setup:
                         state = 'selected'
                         deadline = min(plan.started+POLICY['lifetime'], now+POLICY['selected'])
                     elif event == 'operation' and operation_deadline == float('inf'):
-                        if message['kind'] not in ('command', 'record'):
+                        if message['kind'] not in ('command', 'record', 'supply'):
                             raise Refusal('unknown operation budget')
                         operation_deadline = message['at']+POLICY[message['kind']]
                     elif event == 'operation_done' and operation_deadline != float('inf'):
