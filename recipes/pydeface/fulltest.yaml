@@ -495,16 +495,10 @@ setup:
         _diagnostic_check(plan)
         if plan.private is None:
             raise Refusal('diagnostic private directory missing')
-        if plan.tool is not None:
-            if args[0] != str(plan.tool.path):
-                raise Refusal('unexpected diagnostic executable')
-            plan.tool.check()
-            environment = plan.tool.environment
-        else:
-            if args[0] != '/usr/bin/dpkg-deb':
-                raise Refusal('unexpected supply decoder')
-            _executable_identity(Path(args[0]))
-            environment = _diagnostic_environment(plan.private)
+        if plan.tool is None or args[0] != str(plan.tool.path):
+            raise Refusal('unexpected diagnostic executable')
+        plan.tool.check()
+        environment = plan.tool.environment
         parent = os.getpid()
         pid = os.fork()
         if pid == 0:
@@ -524,71 +518,32 @@ setup:
 
 
     def command(plan: RunPlan, args: list[str], label: str,
-                timeout: float | None = None, *, supply_output: bool = False) -> bytes | Path:
-        nested_supply = plan.supply_deadline != float('inf')
-        if plan.control is not None and not nested_supply:
+                timeout: float | None = None) -> bytes:
+        if plan.control is not None:
             send(plan.control, 'operation', kind='command')
         started = time.monotonic()
-        if supply_output:
-            if plan.private is None or not nested_supply:
-                raise Refusal('supply output outside acquisition')
-            paths = [plan.private / 'data.tar', plan.retained / (label+'.err')]
-            caps = [12*1024**2, min(POLICY['text'], POLICY['total']-retained_size(plan.retained)-65536)]
-        else:
-            paths = [plan.retained / (label + suffix) for suffix in ('.out', '.err')]
-            caps = [min(POLICY['text'], (POLICY['total']-retained_size(plan.retained)-65536)//2)]*2
-        if min(caps) <= 0:
+        paths = [plan.retained / (label + suffix) for suffix in ('.out', '.err')]
+        file_cap = min(POLICY['text'], (POLICY['total']-retained_size(plan.retained)-65536)//2)
+        if file_cap <= 0:
             raise Refusal('command output admission limit')
         fds = []
-        error_pipe: tuple[int, int] | None = None
         try:
             for path in paths:
                 fds.append(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
-            if supply_output:
-                error_pipe = os.pipe2(os.O_CLOEXEC)
-                os.set_blocking(error_pipe[0], False)
-            child = spawn_command(args, fds[0], error_pipe[1] if error_pipe else fds[1],
-                                  file_cap=caps[0], plan=plan)
-        except BaseException:
-            if error_pipe:
-                os.close(error_pipe[0])
-            raise
+            child = spawn_command(args, *fds, file_cap=file_cap, plan=plan)
         finally:
-            if error_pipe:
-                os.close(error_pipe[1])
             for fd in fds:
                 os.close(fd)
-        error_size = 0
-
-        def drain_errors() -> None:
-            nonlocal error_size
-            if error_pipe is None:
-                return
-            with paths[1].open('ab') as stream:
-                for _ in range(16):
-                    try:
-                        block = os.read(error_pipe[0], 65536)
-                    except BlockingIOError:
-                        return
-                    if not block:
-                        return
-                    allowed = max(0, caps[1]-error_size)
-                    stream.write(block[:allowed])
-                    error_size += len(block)
-                    if error_size > caps[1]:
-                        raise Refusal('command stderr output limit')
-
         deadline = min(plan.started+POLICY['lifetime'], plan.preflight_deadline,
-                       plan.supply_deadline, started+min(timeout or POLICY['command'], POLICY['command']))
+                       started+min(timeout or POLICY['command'], POLICY['command']))
         reason = 'exited'
         try:
             while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
-                drain_errors()
                 plan.owner.check()
                 if time.monotonic() > deadline:
                     reason = 'deadline'
                     raise Refusal('command deadline')
-                if any(path.stat().st_size > cap for path, cap in zip(paths, caps)):
+                if any(path.stat().st_size > POLICY['text'] for path in paths):
                     reason = 'output_limit'
                     raise Refusal('command output limit')
                 retained_size(plan.retained)
@@ -599,22 +554,15 @@ setup:
         finally:
             child.signal(signal.SIGKILL)
             _, status = os.waitpid(child.pid, 0)
-            try:
-                drain_errors()
-            except Refusal:
-                reason = 'output_limit'
-            finally:
-                if error_pipe:
-                    os.close(error_pipe[0])
             save(plan, label+'.command.json', dict(argv=args, started=started,
                  ended=time.monotonic(), returncode=os.waitstatus_to_exitcode(status), reason=reason,
                  transient_mappings='unobserved', runtime_contract='trusted_host_os_not_closed',
-                 tool_identity=plan.tool.identity if plan.tool else None))
-        if status or reason == 'output_limit' or any(path.stat().st_size > cap for path, cap in zip(paths, caps)):
+                 tool_identity=plan.tool.identity))
+        if status or any(path.stat().st_size > POLICY['text'] for path in paths):
             raise Refusal('command failed or output limit ' + label)
         _diagnostic_check(plan)
-        output = paths[0] if supply_output else read_bytes(paths[0], POLICY['text'])
-        if plan.control is not None and not nested_supply:
+        output = read_bytes(paths[0], POLICY['text'])
+        if plan.control is not None:
             send(plan.control, 'operation_done')
         return output
 
@@ -1157,45 +1105,150 @@ setup:
             os.close(fd)
 
 
-    def _check_package(package: Path) -> dict[str, Any]:
+    def _package_data(plan: RunPlan, package: Path) -> tuple[bytes, dict[str, Any]]:
         fd = os.open(package, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
             before = file_identity(fd)
-            if before[2] != PERF_PACKAGE['size']:
+            if not stat.S_ISREG(os.fstat(fd).st_mode) or before[2] != PERF_PACKAGE['size']:
                 raise Refusal('package byte pin mismatch')
-            digest = hash_fd(fd)
+            blocks = []
+            offset = 0
+            deadline = time.monotonic()+POLICY['read']
+            while offset < PERF_PACKAGE['size']:
+                _diagnostic_check(plan)
+                if time.monotonic() > deadline:
+                    raise Refusal('package read deadline')
+                block = os.pread(fd, min(65536, PERF_PACKAGE['size']-offset), offset)
+                if not block:
+                    raise Refusal('package byte pin mismatch')
+                blocks.append(block)
+                offset += len(block)
+            snapshot = b''.join(blocks)
+            digest = hashlib.sha256(snapshot).hexdigest()
             if digest != PERF_PACKAGE['sha256']:
                 raise Refusal('package byte pin mismatch')
-            if os.pread(fd, 8, 0) != b'!<arch>\n':
-                raise Refusal('invalid package archive')
-            position = 8
-            names = []
-            while position < before[2]:
-                header = os.pread(fd, 60, position)
-                if len(header) != 60 or header[58:] != b'`\n':
-                    raise Refusal('invalid package member header')
-                name = header[:16].decode('ascii').strip().removesuffix('/')
-                try:
-                    size = int(header[48:58].decode('ascii').strip())
-                except ValueError:
-                    raise Refusal('invalid package member size') from None
-                if size < 0 or position+60+size > before[2] or len(names) >= 3:
-                    raise Refusal('package member size or count limit')
-                names.append(name)
-                if name == 'debian-binary' and os.pread(fd, size, position+60) != b'2.0\n':
-                    raise Refusal('unsupported package format')
-                position += 60+size
-                if size % 2:
-                    if os.pread(fd, 1, position) != b'\n':
-                        raise Refusal('invalid package padding')
-                    position += 1
-            if names != ['debian-binary', 'control.tar.zst', 'data.tar.zst'] or position != before[2]:
-                raise Refusal('unexpected package archive structure')
             if before != file_identity(fd):
                 raise Refusal('package identity changed')
-            return dict(identity=before, sha256=digest, members=names)
         finally:
             os.close(fd)
+        if snapshot[:8] != b'!<arch>\n':
+            raise Refusal('invalid package archive')
+        position = 8
+        names = []
+        data = b''
+        while position < len(snapshot):
+            _diagnostic_check(plan)
+            header = snapshot[position:position+60]
+            if len(header) != 60 or header[58:] != b'`\n':
+                raise Refusal('invalid package member header')
+            name = header[:16].decode('ascii').strip().removesuffix('/')
+            try:
+                size = int(header[48:58].decode('ascii').strip())
+            except ValueError:
+                raise Refusal('invalid package member size') from None
+            if size < 0 or position+60+size > len(snapshot) or len(names) >= 3:
+                raise Refusal('package member size or count limit')
+            names.append(name)
+            if name == 'debian-binary' and snapshot[position+60:position+60+size] != b'2.0\n':
+                raise Refusal('unsupported package format')
+            if name == 'data.tar.zst':
+                data = snapshot[position+60:position+60+size]
+            position += 60+size
+            if size % 2:
+                if snapshot[position:position+1] != b'\n':
+                    raise Refusal('invalid package padding')
+                position += 1
+        if names != ['debian-binary', 'control.tar.zst', 'data.tar.zst'] or position != len(snapshot):
+            raise Refusal('unexpected package archive structure')
+        return data, dict(identity=before, sha256=digest, members=names)
+
+
+    def _inflate_package_data(plan: RunPlan, package: Path) -> Path:
+        if plan.private is None:
+            raise Refusal('supply directory missing')
+        receipt: dict[str, Any] = dict(state='pending', started=time.monotonic(),
+            runtime_contract='trusted_host_os_not_closed',
+            transitive_loads='trusted, not exhaustively observed or authenticated')
+        try:
+            data, receipt['package'] = _package_data(plan, package)
+            if len(data) != 2668491:
+                raise Refusal('compressed data size mismatch')
+            _diagnostic_check(plan)
+            root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                library_path = '/usr/lib/aarch64-linux-gnu/libzstd.so.1'
+                fd = open_rooted(root, library_path)
+                try:
+                    before = file_identity(fd)
+                    canonical = Path(os.readlink(f'/proc/self/fd/{fd}'))
+                    observed = _executable_identity(canonical, executable=False)
+                    header = os.pread(fd, 64, 0)
+                    if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                            or struct.unpack_from('<HHI', header, 16) != (3, 183, 1)):
+                        raise Refusal('host zstd library is not ELF64 little-endian AArch64')
+                    if before != observed['identity'] or before != file_identity(fd):
+                        raise Refusal('host zstd library identity changed')
+                    observed['execution_binding'] = 'ctypes.CDLL through retained /proc/self/fd descriptor'
+                    receipt['library'] = observed
+                    _diagnostic_check(plan)
+                    library = ctypes.CDLL(f'/proc/self/fd/{fd}')
+                    library.ZSTD_decompress.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
+                                                       ctypes.c_void_p, ctypes.c_size_t]
+                    library.ZSTD_decompress.restype = ctypes.c_size_t
+                    library.ZSTD_isError.argtypes = [ctypes.c_size_t]
+                    library.ZSTD_isError.restype = ctypes.c_uint
+                    library.ZSTD_versionNumber.argtypes = []
+                    library.ZSTD_versionNumber.restype = ctypes.c_uint
+                    receipt['version_number'] = library.ZSTD_versionNumber()
+                    source = ctypes.create_string_buffer(data, len(data))
+                    destination = ctypes.create_string_buffer(8816640)
+                    _diagnostic_check(plan)
+                    size = library.ZSTD_decompress(destination, len(destination), source, len(data))
+                    _diagnostic_check(plan)
+                    receipt['result'] = size
+                    if library.ZSTD_isError(size):
+                        raise Refusal('host zstd decompression error')
+                    if size != len(destination):
+                        raise Refusal('expanded tar size mismatch')
+                    decoded = memoryview(destination).cast('B')
+                    digest = hashlib.sha256(decoded).hexdigest()
+                    receipt.update(expanded_bytes=size, sha256=digest)
+                    if digest != '1a47aadbc8c9c2ea7d56da36212622853758cbc6fb13f088c4f5a67600425f63':
+                        raise Refusal('expanded tar digest mismatch')
+                    again = open_rooted(root, library_path)
+                    try:
+                        if before != file_identity(again) or before != file_identity(fd):
+                            raise Refusal('host zstd library identity changed')
+                    finally:
+                        os.close(again)
+                    if hash_fd(fd) != observed['sha256']:
+                        raise Refusal('host zstd library digest changed')
+                    _diagnostic_check(plan)
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(root)
+            archive = plan.private / 'data.tar'
+            _diagnostic_check(plan)
+            outfd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                offset = 0
+                while offset < size:
+                    _diagnostic_check(plan)
+                    written = os.write(outfd, decoded[offset:offset+65536])
+                    if written <= 0:
+                        raise Refusal('expanded tar write failed')
+                    offset += written
+                _diagnostic_check(plan)
+            finally:
+                os.close(outfd)
+            receipt.update(state='decoded', ended=time.monotonic())
+            return archive
+        except BaseException as error:
+            receipt.update(state='refused', reason=type(error).__name__+': '+str(error)[:512])
+            raise
+        finally:
+            save(plan, 'supply-decode.json', receipt)
 
 
     def _select_perf(plan: RunPlan, archive: Path, destination: Path) -> dict[str, Any]:
@@ -1348,17 +1401,7 @@ setup:
             package = plan.private / 'perf.deb'
             _download_perf(plan, package)
             _diagnostic_check(plan)
-            receipt['package'] = _check_package(package)
-            receipt['decoder'] = _executable_identity(Path('/usr/bin/dpkg-deb'))
-            archive = command(plan, ['/usr/bin/dpkg-deb', '--fsys-tarfile', str(package)],
-                              'supply-decode', supply_output=True)
-            if not isinstance(archive, Path):
-                raise Refusal('decoder did not produce a bounded file')
-            _diagnostic_check(plan)
-            if _executable_identity(Path('/usr/bin/dpkg-deb')) != receipt['decoder']:
-                raise Refusal('decoder identity changed')
-            if _check_package(package) != receipt['package']:
-                raise Refusal('package changed during decoding')
+            archive = _inflate_package_data(plan, package)
             path = plan.private / 'perf'
             receipt['archive'] = _select_perf(plan, archive, path)
             admitted = _admit_perf(path)
