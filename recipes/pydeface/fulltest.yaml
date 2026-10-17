@@ -1400,10 +1400,23 @@ setup:
     import sys
     import threading
     import time
+    from typing import TypedDict
 
     import nibabel as nib
     import numpy as np
+    from nipype.interfaces.base import Bunch
     from nipype.interfaces.fsl import FLIRT
+
+
+    class ProcessSample(TypedDict):
+        pid: int
+        ppid: int
+        name: str
+        state: str
+        cpu_seconds: float
+        threads: int
+        start_ticks: int
+        rss_bytes: int
 
 
     started = time.monotonic()
@@ -1413,7 +1426,7 @@ setup:
     stream = trace.open("a", buffering=1)
 
 
-    def emit(event, **fields):
+    def emit(event: str, **fields: object) -> None:
         record = json.dumps(dict(event=event, time=time.time(),
                                  elapsed=time.monotonic() - started, **fields))
         with lock:
@@ -1421,7 +1434,7 @@ setup:
             print("[DEBUG-pydeface-3580] " + record, file=sys.stderr, flush=True)
 
 
-    def read(path):
+    def read(path: str | Path) -> str:
         try:
             return Path(path).read_text()
         except OSError as error:
@@ -1439,7 +1452,7 @@ setup:
     seen = set()
 
 
-    def stat(path):
+    def stat(path: Path) -> ProcessSample:
         value = path.read_text()
         fields = value[value.rindex(")") + 2:].split()
         return dict(pid=int(path.parent.name), ppid=int(fields[1]),
@@ -1449,7 +1462,7 @@ setup:
                     rss_bytes=int(fields[21]) * os.sysconf("SC_PAGE_SIZE"))
 
 
-    def sample():
+    def sample() -> None:
         processes = {}
         for path in Path("/proc").glob("[0-9]*/stat"):
             try:
@@ -1494,7 +1507,7 @@ setup:
         })
 
 
-    def heartbeat():
+    def heartbeat() -> None:
         while not stop.wait(15):
             sample()
 
@@ -1502,7 +1515,7 @@ setup:
     original_run = FLIRT._run_interface
 
 
-    def traced_run(self, runtime):
+    def traced_run(self: FLIRT, runtime: Bunch) -> Bunch:
         command = self.cmdline
         geometry = {}
         for name in ("in_file", "reference"):
