@@ -29,6 +29,1075 @@ test_data:
   output_dir: test_output
 
 setup:
+  host_script: |
+    python3 - "${output_dir}" "${t1w}" <<'NATIVE_PROFILE_PY'
+    """One read-only ARM diagnostic. Missing or pending evidence is incomplete."""
+    import ctypes
+    from dataclasses import dataclass
+    import errno
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import platform
+    import re
+    import resource
+    import select
+    import shlex
+    import shutil
+    import signal
+    import socket
+    import stat
+    import struct
+    import sys
+    import time
+
+    BASE = 'a3cd2eb0a42da42030d1547179b20dab066355a5'
+    EXE = '/opt/fsl-6.0.7.23/bin/flirt'
+    EXE_SHA = '1fe86d868e0bf0781b8afb9c4f0689f0bdb3e49edf67795bee346f1a48c7c17c'
+    TEMPLATE = '/opt/miniconda-py312_25.5.1-0/lib/python3.12/site-packages/pydeface/data/mean_reg2mean.nii.gz'
+    POLICY = dict(bootstrap=40, lifetime=1800, acquisition=45, selected=120,
+                  preflight=30, record=40, disabled=5, interval=30, command=10,
+                  read=3, service=.25, grace=1, admission=.250,
+                  traces=16, trace_bytes=16*1024**2, line=256*1024, records=20000,
+                  objects=32, total=64*1024**2, raw=32*1024**2, text=8*1024**2,
+                  metadata=1024**2, object_bytes=128*1024**2)
+    GEOMETRY = {
+        'in_file': dict(shape=[176, 256, 256], zooms=[1., .9765625, .9765625], affine=[
+            [.9985747337341309, .051109328866004944, .010212389752268791, -100.00589752197266],
+            [-.052333083003759384, .9752241373062134, -.0005352350417524576, -113.15837860107422],
+            [-.01047183945775032, 0., .9765089750289917, -121.88970184326172], [0., 0., 0., 1.]]),
+        'reference': dict(shape=[160, 192, 192], zooms=[1., 1.3333330154418945, 1.3333330154418945], affine=[
+            [1., 0., 0., -83.], [0., 1.3333330154418945, 0., -125.],
+            [0., 0., 1.3333330154418945, -136.], [0., 0., 0., 1.]])}
+
+
+    class Refusal(Exception):
+        pass
+
+
+    @dataclass(frozen=True)
+    class ObservedProcess:
+        pid: int
+        ticks: int
+        pidfd: int
+
+        @classmethod
+        def open(cls, pid):
+            before = process_stat(pid)
+            fd = os.pidfd_open(pid)
+            result = cls(pid, before['ticks'], fd)
+            try:
+                result.check()
+                return result
+            except BaseException:
+                os.close(fd)
+                raise
+
+        def check(self):
+            value = process_stat(self.pid)
+            if readable(self.pidfd) or value['ticks'] != self.ticks or value['state'] in ('Z', 'X'):
+                raise Refusal('process identity ended or changed')
+            return value
+
+
+    @dataclass(frozen=True)
+    class OwnedChild:
+        pid: int
+        group: bool = False
+
+        def signal(self, sig):
+            # The sole reaper keeps this child unreaped until the last signal.
+            try:
+                (os.killpg if self.group else os.kill)(self.pid, sig)
+            except ProcessLookupError:
+                pass
+
+
+    @dataclass
+    class RunPlan:
+        work: Path
+        output: Path
+        retained: Path
+        t1w: Path
+        owner: ObservedProcess
+        started: float
+        wall: float
+        boot: str
+        control: object = None
+
+
+    def readable(fd):
+        return bool(select.select([fd], [], [], 0)[0])
+
+
+    def read_bytes(path, cap=None):
+        cap = cap or POLICY['metadata']
+        deadline = time.monotonic() + POLICY['read']
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            data = bytearray()
+            while True:
+                if time.monotonic() > deadline:
+                    raise Refusal('read deadline')
+                block = os.read(fd, min(65536, cap + 1 - len(data)))
+                if not block:
+                    return bytes(data)
+                data.extend(block)
+                if len(data) > cap:
+                    raise Refusal('read byte limit')
+        finally:
+            os.close(fd)
+
+
+    def process_stat(pid):
+        text = read_bytes(f'/proc/{pid}/stat', 8192).decode()
+        fields = text.rsplit(')', 1)[1].split()
+        return dict(pid=pid, ticks=int(fields[19]), ppid=int(fields[1]), state=fields[0])
+
+
+    def argv(pid):
+        raw = read_bytes(f'/proc/{pid}/cmdline', 65536)
+        if not raw.endswith(b'\0'):
+            raise Refusal('incomplete live argv')
+        return raw[:-1].decode().split('\0')
+
+
+    def ancestry(pid, owner):
+        chain = []
+        for _ in range(POLICY['objects']):
+            item = process_stat(pid)
+            chain.append(item)
+            if pid == owner.pid:
+                owner.check()
+                return chain
+            pid = item['ppid']
+            if pid <= 1:
+                break
+        raise Refusal('process is not descended from verified runner')
+
+
+    def namespace(pid):
+        value = read_bytes(f'/proc/{pid}/status').decode()
+        match = re.search(r'^NSpid:\s+(.+)$', value, re.M)
+        if not match or match.group(1).split() != [str(pid)]:
+            raise Refusal('nested or unavailable PID mapping')
+        return os.readlink(f'/proc/{pid}/ns/pid')
+
+
+    def parent_arm(expected):
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(1, signal.SIGKILL, 0, 0, 0):
+            os._exit(90)
+        if os.getppid() != expected:
+            os._exit(91)
+
+
+    def detach(keep):
+        fd = os.open('/dev/null', os.O_RDWR)
+        for number in (0, 1, 2):
+            os.dup2(fd, number)
+        for name in os.listdir('/proc/self/fd'):
+            number = int(name)
+            if number > 2 and number not in keep:
+                try:
+                    os.close(number)
+                except OSError:
+                    pass
+
+
+    def send(channel, event, **fields):
+        data = json.dumps(dict(event=event, at=time.monotonic(), **fields)).encode()
+        if len(data) > 32768:
+            raise Refusal('control message limit')
+        os.write(channel.fileno(), data)
+
+
+    def receive(channel, deadline):
+        if not select.select([channel], [], [], max(0, deadline-time.monotonic()))[0]:
+            raise Refusal('readiness deadline')
+        data = os.read(channel.fileno(), 32769)
+        if not data or len(data) > 32768:
+            raise Refusal('readiness missing or oversized')
+        return json.loads(data)
+
+
+    def manifest(directory, outcome, **facts):
+        data = json.dumps(dict(outcome=outcome, release='DIAGNOSTICBLOCKED',
+                               baseline=BASE, at=time.monotonic(), **facts), sort_keys=True).encode()
+        if len(data) > 65536:
+            raise Refusal('manifest limit')
+        temporary = directory / 'manifest.tmp'
+        with temporary.open('wb') as stream:
+            stream.write(data)
+        temporary.replace(directory / 'manifest.json')
+
+
+    def retained_size(directory):
+        total = 131072
+        for path in directory.iterdir():
+            if path.name in ('manifest.json', 'manifest.tmp'):
+                continue
+            value = path.lstat()
+            if not stat.S_ISREG(value.st_mode):
+                raise Refusal('nonregular retained file')
+            total += value.st_size
+        if total > POLICY['total']:
+            raise Refusal('aggregate retained output limit')
+        return total
+
+
+    def save(plan, name, data):
+        if not isinstance(data, bytes):
+            data = json.dumps(data, sort_keys=True).encode()
+        if len(data) > POLICY['text'] or retained_size(plan.retained) + len(data) > POLICY['total']:
+            raise Refusal('retained output limit')
+        with (plan.retained / name).open('xb') as stream:
+            stream.write(data)
+
+
+    def hash_fd(fd):
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > POLICY['object_bytes']:
+            raise Refusal('object type or size limit')
+        deadline = time.monotonic() + POLICY['read']
+        digest = hashlib.sha256()
+        size = 0
+        os.lseek(fd, 0, os.SEEK_SET)
+        while True:
+            if time.monotonic() > deadline:
+                raise Refusal('hash deadline')
+            block = os.read(fd, 65536)
+            if not block:
+                break
+            size += len(block)
+            if size > POLICY['object_bytes']:
+                raise Refusal('hash size limit')
+            digest.update(block)
+        after = os.fstat(fd)
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise Refusal('object changed while hashing')
+        return digest.hexdigest()
+
+
+    def bind_runner(plan):
+        args = argv(plan.owner.pid)
+        indexes = [i for i, item in enumerate(args) if item.endswith('/builder/run_tests.py')]
+        if len(indexes) != 1:
+            raise Refusal('ambiguous runner argv')
+        index = indexes[0]
+        script = Path(args[index])
+        if index not in (1, 2) or (index == 2 and args[1] != '-u') or not script.is_absolute() or index+1 >= len(args):
+            raise Refusal('runner path unavailable')
+        options = {}
+        for key in ('--work-dir', '--container', '--jsonl'):
+            if args.count(key) != 1:
+                raise Refusal('runner binding option missing or duplicate')
+            options[key] = args[args.index(key)+1]
+        if Path(options['--work-dir']).resolve() != plan.work:
+            raise Refusal('runner work mismatch')
+        suite = Path(args[index+1])
+        if not suite.is_absolute() or suite.parent != plan.work.parent:
+            raise Refusal('staged suite outside managed run')
+        jsonl = Path(options['--jsonl'])
+        if jsonl.parent != plan.work.parent or not jsonl.is_file():
+            raise Refusal('runner JSONL identity unavailable')
+        container = Path(options['--container'])
+        if not container.is_absolute() or not container.is_file():
+            raise Refusal('runner container unavailable')
+        sources = {}
+        for relative, expected in {
+            'builder/run_tests.py': '7f41b48d9522c2f63f80785217e95c2058f8392ec116c6f036f5c66bbbdb2b68',
+            'builder/runtime_execution.py': '5238d9d7f7ee07015e857cc2f1573b969f412dbbc6857bfc0c621e541ab32c95',
+            'recipes/pydeface/build.yaml': '2f815b51e86ce05ac553bfe0dd93f1e951052c504851456c54e698d5a89bd4c6',
+        }.items():
+            digest = hashlib.sha256(read_bytes(script.parent.parent / relative)).hexdigest()
+            if digest != expected:
+                raise Refusal('runner/source baseline mismatch ' + relative)
+            sources[relative] = digest
+        source_suite = read_bytes(script.parent.parent / 'recipes/pydeface/fulltest.yaml')
+        staged = read_bytes(suite)
+        # The runner already requires PyYAML; semantic comparison tolerates its staging dump.
+        import yaml
+        source_mapping = yaml.safe_load(source_suite)
+        if yaml.safe_load(staged) != source_mapping:
+            raise Refusal('staged suite differs from source')
+        helper = source_mapping['setup']['host_script']
+        if 'def arm(' not in helper or len(source_mapping['tests']) != 62:
+            raise Refusal('unexpected diagnostic suite')
+        plan.owner.check()
+        if namespace(plan.owner.pid) != namespace(os.getpid()):
+            raise Refusal('runner PID namespace mismatch')
+        save(plan, 'launch.json', dict(owner=process_stat(plan.owner.pid), argv=args,
+             boot_id=plan.boot, work=str(plan.work), container=str(container),
+             container_stat=list(container.stat())[:10], jsonl=str(jsonl),
+             suite=str(suite), staged_sha256=hashlib.sha256(staged).hexdigest(),
+             source_sha256=hashlib.sha256(source_suite).hexdigest(),
+             helper_sha256=hashlib.sha256(helper.encode()).hexdigest(), sources=sources))
+
+
+    def snapshot(process):
+        process.check()
+        result = {name: read_bytes(f'/proc/{process.pid}/{name}').decode()
+                  for name in ('stat', 'maps', 'mountinfo', 'cgroup', 'status', 'cmdline')}
+        result['namespaces'] = {name: os.readlink(f'/proc/{process.pid}/ns/{name}')
+                                for name in ('pid', 'mnt', 'user')}
+        process.check()
+        return result
+
+
+    def parse_registration(records, plan, filename):
+        starts = [r for r in records if r.get('event') == 'start']
+        if len(starts) != 1:
+            raise Refusal('missing or duplicate observer start')
+        outer = ['test_output/diagnose_pydeface.py', str(plan.t1w), '--outfile',
+                 'test_output/t1w_defaced_mutualinfo.nii.gz', '--cost', 'mutualinfo', '--verbose']
+        if starts[0].get('argv') != outer:
+            return None
+        pid_match = re.fullmatch(r'pydeface-diagnostic-([0-9]+)\.jsonl', filename)
+        if not pid_match or starts[0].get('architecture') != 'aarch64':
+            raise Refusal('observer filename or architecture')
+        observer_pid = int(pid_match[1])
+        self_records = [r for r in records if r.get('event') == 'process' and r.get('pid') == observer_pid]
+        if not self_records:
+            return None
+        keys = {r['start_ticks'] for r in self_records}
+        if len(keys) != 1:
+            raise Refusal('observer identity discontinuity')
+        stages = [(i, r) for i, r in enumerate(records) if r.get('event') == 'flirt_start']
+        if not stages:
+            return None
+        if len(stages) != 1 or any(r.get('event') in ('flirt_end', 'flirt_error', 'end') for r in records):
+            raise Refusal('first registration no longer active')
+        offset, stage = stages[0]
+        command = shlex.split(stage['command'])
+        if len(command) != 11 or command[0] != 'flirt' or command[1::2] != ['-in', '-ref', '-out', '-omat', '-searchcost']:
+            raise Refusal('unexpected FLIRT flags')
+        if command[2] != TEMPLATE or command[4] != str(plan.t1w) or command[10] != 'mutualinfo':
+            raise Refusal('wrong template, reference or cost')
+        if not command[6].startswith('/tmp/') or not command[6].endswith('.nii.gz') or not command[8].startswith('/tmp/') or not command[8].endswith('.mat'):
+            raise Refusal('unexpected temporary output paths')
+        for key, expected in GEOMETRY.items():
+            actual = dict(stage['geometry'][key])
+            expected_path = TEMPLATE if key == 'in_file' else str(plan.t1w)
+            if actual.pop('path') != expected_path or actual != expected:
+                raise Refusal('geometry mismatch')
+        matches = [r for r in records[offset+1:] if r.get('event') == 'process'
+                   and r.get('argv', []) == command + ['']]
+        if not matches:
+            return dict(waiting=True, stage_time=stage['time'])
+        identities = {(r['pid'], r['start_ticks']) for r in matches}
+        if len(identities) != 1 or any(not r.get('owned') for r in matches):
+            raise Refusal('ambiguous or unowned target')
+        pid, ticks = identities.pop()
+        return dict(observer_pid=observer_pid, observer_ticks=keys.pop(), pid=pid,
+                    ticks=ticks, argv=command, stage_time=stage['time'], outer=outer)
+
+
+    def trace_records(path, plan):
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode) or before.st_mtime < plan.wall-1 or before.st_size > POLICY['trace_bytes']:
+                raise Refusal('stale, nonregular or oversized trace')
+            data = os.read(fd, POLICY['trace_bytes']+1)
+            after = os.fstat(fd)
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino) or len(data) > POLICY['trace_bytes']:
+                raise Refusal('trace identity or size changed')
+        finally:
+            os.close(fd)
+        lines = data.split(b'\n')
+        if len(lines) > POLICY['records'] or any(len(line) > POLICY['line'] for line in lines):
+            raise Refusal('trace record limit')
+        records = [json.loads(line) for line in lines[:-1]]
+        for row in records:
+            if not isinstance(row, dict) or not isinstance(row.get('time'), (float, int)) or row['time'] < plan.wall:
+                raise Refusal('malformed or stale trace record')
+        return records, data[:data.rfind(b'\n')+1], (before.st_dev, before.st_ino)
+
+
+    def verify_target(selected, plan, target, observer, trace, trace_key):
+        plan.owner.check()
+        if target.check()['ticks'] != selected['ticks'] or observer.check()['ticks'] != selected['observer_ticks']:
+            raise Refusal('target or observer start tick mismatch')
+        ns = namespace(os.getpid())
+        if any(namespace(pid) != ns for pid in (plan.owner.pid, observer.pid, target.pid)):
+            raise Refusal('PID namespace mismatch')
+        chain = ancestry(target.pid, plan.owner)
+        if observer.pid not in [row['pid'] for row in chain]:
+            raise Refusal('FLIRT not descended from observer')
+        ancestry(observer.pid, plan.owner)
+        live_outer = argv(observer.pid)
+        if len(live_outer) < 2 or live_outer[-len(selected['outer']):] != selected['outer']:
+            raise Refusal('observer live argv mismatch')
+        if argv(target.pid) != selected['argv'] or os.readlink(f'/proc/{target.pid}/exe') != EXE:
+            raise Refusal('live FLIRT argv or executable path mismatch')
+        fd = os.open(f'/proc/{target.pid}/exe', os.O_RDONLY)
+        try:
+            header = os.read(fd, 20)
+            if header[:6] != b'\x7fELF\x02\x01' or struct.unpack_from('<H', header, 18)[0] != 183 or hash_fd(fd) != EXE_SHA:
+                raise Refusal('FLIRT executable machine or digest mismatch')
+        finally:
+            os.close(fd)
+        rows, _, key = trace_records(trace, plan)
+        if key != trace_key or parse_registration(rows, plan, trace.name) != selected:
+            raise Refusal('stage or trace changed')
+        target.check()
+        observer.check()
+        plan.owner.check()
+        return chain
+
+
+    def spawn_command(args, stdout, stderr, pass_fds=(), file_cap=None):
+        parent = os.getpid()
+        pid = os.fork()
+        if pid == 0:
+            parent_arm(parent)
+            try:
+                detach(set(pass_fds) | {stdout, stderr})
+                os.dup2(stdout, 1)
+                os.dup2(stderr, 2)
+                for fd in pass_fds:
+                    os.set_inheritable(fd, True)
+                limit = file_cap or POLICY['text']
+                resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+                environment = dict(os.environ, LC_ALL='C', PERF_CONFIG='/dev/null',
+                                   PERF_BUILDID_DIR='/dev/null', DEBUGINFOD_URLS='')
+                os.execve(args[0], args, environment)
+            except BaseException:
+                os._exit(92)
+        return OwnedChild(pid)
+
+
+    def command(plan, args, label, timeout=None):
+        if plan.control is not None:
+            send(plan.control, 'operation', kind='command')
+        started = time.monotonic()
+        paths = [plan.retained / (label + suffix) for suffix in ('.out', '.err')]
+        file_cap = min(POLICY['text'], (POLICY['total']-retained_size(plan.retained)-65536)//2)
+        if file_cap <= 0:
+            raise Refusal('command output admission limit')
+        fds = [os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) for path in paths]
+        child = spawn_command(args, *fds, file_cap=file_cap)
+        for fd in fds:
+            os.close(fd)
+        deadline = min(plan.started+POLICY['lifetime'], started+(timeout or POLICY['command']))
+        reason = 'exited'
+        try:
+            while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                if time.monotonic() > deadline:
+                    reason = 'deadline'
+                    raise Refusal('command deadline')
+                if any(path.stat().st_size > POLICY['text'] for path in paths):
+                    reason = 'output_limit'
+                    raise Refusal('command output limit')
+                retained_size(plan.retained)
+                time.sleep(.02)
+        finally:
+            child.signal(signal.SIGKILL)
+            _, status = os.waitpid(child.pid, 0)
+            save(plan, label+'.command.json', dict(argv=args, started=started,
+                 ended=time.monotonic(), returncode=os.waitstatus_to_exitcode(status), reason=reason))
+        if status or any(path.stat().st_size > POLICY['text'] for path in paths):
+            raise Refusal('command failed or output limit ' + label)
+        output = read_bytes(paths[0], POLICY['text'])
+        if plan.control is not None:
+            send(plan.control, 'operation_done')
+        return output
+
+
+    def control(fd, ack, word, end, times):
+        times[word+'_send'] = time.monotonic()
+        os.write(fd, (word+'\n').encode())
+        if not select.select([ack], [], [], max(0, end-time.monotonic()))[0]:
+            raise Refusal('perf control acknowledgement deadline')
+        if os.read(ack, 128) != b'ack\n':
+            raise Refusal('invalid perf control acknowledgement')
+        times[word+'_ack'] = time.monotonic()
+
+
+    def record(plan, perf, pid, label, validate, duration):
+        if plan.control is not None:
+            send(plan.control, 'operation', kind='record')
+        control_read, control_write = os.pipe()
+        ack_read, ack_write = os.pipe()
+        raw = plan.retained / (label+'.data')
+        log = plan.retained / (label+'.record.log')
+        file_cap = min(POLICY['raw'], POLICY['text'],
+                       (POLICY['total']-retained_size(plan.retained)-65536)//2)
+        if file_cap <= 0:
+            raise Refusal('record output admission limit')
+        logfd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        args = [perf, 'record', '--no-buildid-cache', '--no-inherit', '-e', 'cpu-clock:u',
+                '-F', '49', '--strict-freq', '-m', '64', '-D', '-1',
+                '--control=fd:'+str(control_read)+','+str(ack_write), '-p', str(pid), '-o', str(raw)]
+        times = dict(pre_spawn=time.monotonic())
+        child = spawn_command(args, logfd, logfd, (control_read, ack_write), file_cap=file_cap)
+        os.close(logfd)
+        os.close(control_read)
+        os.close(ack_write)
+        end = times['pre_spawn']+POLICY['record']
+        status = None
+        try:
+            control(control_write, ack_read, 'ping', min(end, times['pre_spawn']+POLICY['disabled']), times)
+            validate()
+            times['last_validation'] = time.monotonic()
+            if times['last_validation'] > times['pre_spawn']+POLICY['disabled']:
+                raise Refusal('disabled attach deadline')
+            if time.monotonic()-times['last_validation'] > POLICY['admission']:
+                raise Refusal('enable admission deadline')
+            control(control_write, ack_read, 'enable', min(end, time.monotonic()+1), times)
+            if times['enable_send']-times['last_validation'] > POLICY['admission']:
+                raise Refusal('late enable')
+            deadline = times['enable_send']+duration
+            while time.monotonic() < deadline:
+                if os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                    raise Refusal('recorder exited early')
+                if (raw.exists() and raw.stat().st_size > POLICY['raw']) or log.stat().st_size > POLICY['text']:
+                    raise Refusal('record output limit')
+                retained_size(plan.retained)
+                time.sleep(min(.02, max(0, deadline-time.monotonic())))
+            control(control_write, ack_read, 'disable', min(end, time.monotonic()+1), times)
+            if times['disable_send']-deadline > POLICY['service']:
+                raise Refusal('record interval overrun')
+            child.signal(signal.SIGINT)
+            while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                if time.monotonic() > end:
+                    raise Refusal('record flush deadline')
+                time.sleep(.02)
+            validate()
+            times['post_identity'] = time.monotonic()
+        finally:
+            child.signal(signal.SIGKILL)
+            _, status = os.waitpid(child.pid, 0)
+            os.close(control_write)
+            os.close(ack_read)
+            times['ended'] = time.monotonic()
+            save(plan, label+'.timing.json', dict(argv=args, times=times, requested_interval=duration,
+                 returncode=os.waitstatus_to_exitcode(status), numeric_pid_attach_nonatomic=True))
+        if status or not raw.is_file() or not 0 < raw.stat().st_size <= POLICY['raw']:
+            raise Refusal('invalid recorder result')
+        if plan.control is not None:
+            send(plan.control, 'operation_done')
+        return raw
+
+
+    def sample_quality(text, dump, pid):
+        tids, events, dsos = {}, {}, {}
+        unknown = 0
+        unknown_dsos = 0
+        times = []
+        for line in text.decode().splitlines():
+            if not line.strip() or line.startswith('#'):
+                continue
+            match = re.fullmatch(r'\s*(\d+)/(\d+)\s+([0-9.]+):\s+(cpu-clock:u):\s+([0-9a-fA-F]+)\s+(.+)\s+\((.*)\)\s*', line)
+            if not match or int(match[1]) != pid:
+                raise Refusal('undecodable or foreign sample')
+            tid, event = match[2], match[4]
+            tids[tid] = tids.get(tid, 0)+1
+            events[event] = events.get(event, 0)+1
+            times.append(float(match[3]))
+            dsos[match[7]] = dsos.get(match[7], 0)+1
+            unknown += int('[unknown]' in match[6])
+            unknown_dsos += int('[unknown]' in match[7])
+        if not times:
+            raise Refusal('empty samples')
+        if re.search(rb'PERF_RECORD_COMM[^\n]*exec|PERF_RECORD_EXIT', dump, re.I):
+            raise Refusal('recorded process discontinuity')
+        summary = re.search(rb'(?m)^\s*TOTAL events:\s+(\d+)', dump)
+        samples = re.search(rb'(?m)^\s*SAMPLE events:\s+(\d+)', dump)
+        lost = re.search(rb'(?m)^\s*LOST events:\s+(\d+)', dump)
+        lost_samples = re.search(rb'(?m)^\s*LOST_SAMPLES events:\s+(\d+)', dump)
+        if not summary or not samples or not lost or not lost_samples:
+            raise Refusal('loss accounting unavailable')
+        if int(samples[1]) != len(times) or int(lost[1]) or int(lost_samples[1]):
+            raise Refusal('sample accounting mismatch or lost records')
+        return dict(total=len(times), tids=tids, events=events, dsos=dsos, lost=0,
+                    unknown_symbols=unknown, unknown_dsos=unknown_dsos, unknown_fraction=unknown/len(times),
+                    first_time=min(times), last_time=max(times))
+
+
+    def decode(plan, perf, raw, pid, label, root=None):
+        common = ['-i', str(raw)] + (['--symfs', root] if root else [])
+        samples = command(plan, [perf, 'script', '--no-inline', *common, '-F', 'pid,tid,time,event,ip,sym,dso'], label+'.samples')
+        dump = command(plan, [perf, 'report', '--no-inline', '-D', '--no-skip-empty', *common], label+'.dump')
+        for name in (label+'.samples.err', label+'.dump.err'):
+            errors = read_bytes(plan.retained/name, POLICY['text'])
+            if re.search(rb'warning|error|failed|lost|unknown', errors, re.I):
+                raise Refusal('decoder reported uncertainty')
+        quality = sample_quality(samples, dump, pid)
+        command(plan, [perf, 'report', '--no-inline', '--stdio', '--stdio-color=never', '--no-children', '--sort', 'comm,dso,symbol', *common], label+'.report')
+        save(plan, label+'.quality.json', quality)
+        return quality
+
+
+    def open_rooted(rootfd, name):
+        # Every component is opened relative to a pinned target directory.
+        pending = name.split('/')
+        stack = [os.dup(rootfd)]
+        links = 0
+        try:
+            while pending:
+                part = pending.pop(0)
+                if part in ('', '.'):
+                    continue
+                if part == '..':
+                    if len(stack) > 1:
+                        os.close(stack.pop())
+                    continue
+                value = os.stat(part, dir_fd=stack[-1], follow_symlinks=False)
+                if stat.S_ISLNK(value.st_mode):
+                    links += 1
+                    if links > 32:
+                        raise Refusal('rooted symlink limit')
+                    link = os.readlink(part, dir_fd=stack[-1])
+                    if link.startswith('/'):
+                        while len(stack) > 1:
+                            os.close(stack.pop())
+                    pending = link.split('/') + pending
+                elif pending:
+                    stack.append(os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                         dir_fd=stack[-1]))
+                else:
+                    return os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                   dir_fd=stack[-1])
+            return os.dup(stack[-1])
+        finally:
+            for fd in stack:
+                os.close(fd)
+
+
+    def build_id(fd):
+        header = os.pread(fd, 64, 0)
+        if header[:6] != b'\x7fELF\x02\x01' or len(header) != 64:
+            return None
+        phoff = struct.unpack_from('<Q', header, 32)[0]
+        size, count = struct.unpack_from('<HH', header, 54)
+        if size != 56 or count > 256:
+            raise Refusal('ELF program header limit')
+        for index in range(count):
+            ph = os.pread(fd, size, phoff+index*size)
+            if len(ph) != size:
+                raise Refusal('truncated ELF')
+            if struct.unpack_from('<I', ph)[0] != 4:
+                continue
+            offset = struct.unpack_from('<Q', ph, 8)[0]
+            length = struct.unpack_from('<Q', ph, 32)[0]
+            if length > POLICY['metadata']:
+                raise Refusal('ELF note limit')
+            notes = os.pread(fd, length, offset)
+            position = 0
+            while position+12 <= len(notes):
+                namesz, descsz, kind = struct.unpack_from('<III', notes, position)
+                position += 12
+                name = notes[position:position+namesz]
+                position += (namesz+3)&~3
+                value = notes[position:position+descsz]
+                position += (descsz+3)&~3
+                if name == b'GNU\0' and kind == 3:
+                    return value.hex()
+        return None
+
+
+    def mapped_objects(plan, target):
+        target.check()
+        rootfd = os.open(f'/proc/{target.pid}/root', os.O_RDONLY | os.O_DIRECTORY)
+        objects = []
+        try:
+            maps = read_bytes(f'/proc/{target.pid}/maps').decode()
+            paths = {}
+            for row in maps.splitlines():
+                fields = row.split(None, 5)
+                if len(fields) == 6 and 'x' in fields[1] and fields[5].startswith('/'):
+                    paths[fields[5]] = (fields[3], int(fields[4]))
+            if not paths or len(paths) > POLICY['objects']:
+                raise Refusal('mapped object count')
+            aggregate = 0
+            for name, (device, inode) in paths.items():
+                target.check()
+                fd = open_rooted(rootfd, name)
+                try:
+                    info = os.fstat(fd)
+                    actual = f'{os.major(info.st_dev):02x}:{os.minor(info.st_dev):02x}'
+                    if (actual, info.st_ino) != (device, inode):
+                        raise Refusal('mapped object device/inode mismatch')
+                    aggregate += info.st_size
+                    if aggregate > 256*1024**2:
+                        raise Refusal('aggregate mapped hash limit')
+                    report_file = os.stat(f'/proc/{target.pid}/root'+name)
+                    if (report_file.st_dev, report_file.st_ino) != (info.st_dev, info.st_ino):
+                        raise Refusal('perf symfs path differs from rooted object')
+                    digest = hash_fd(fd)
+                    objects.append(dict(path=name, device=device, inode=inode, sha256=digest,
+                                        build_id=build_id(fd), source_revision=None,
+                                        source_status='unresolved', package=None))
+                finally:
+                    os.close(fd)
+            metadata_dir = '/opt/fsl-6.0.7.23/conda-meta'
+            try:
+                metadata_fd = open_rooted(rootfd, metadata_dir)
+            except FileNotFoundError:
+                metadata_fd = None
+            if metadata_fd is not None:
+                try:
+                    names = os.listdir(metadata_fd)
+                    if len(names) > 512:
+                        raise Refusal('package metadata count limit')
+                    consumed = 0
+                    for name in names:
+                        if not name.endswith('.json'):
+                            continue
+                        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=metadata_fd)
+                        try:
+                            data = os.read(fd, POLICY['metadata']+1)
+                        finally:
+                            os.close(fd)
+                        consumed += len(data)
+                        if len(data) > POLICY['metadata'] or consumed > POLICY['text']:
+                            raise Refusal('package metadata byte limit')
+                        package = json.loads(data)
+                        for obj in objects:
+                            relative = obj['path'].removeprefix('/opt/fsl-6.0.7.23/')
+                            if relative in package.get('files', []):
+                                obj['package'] = {key: package.get(key) for key in ('name', 'version', 'build', 'sha256')}
+                                obj['package']['membership_record_sha256'] = hashlib.sha256(data).hexdigest()
+                                obj['package']['file_digest_verified'] = False
+                                for entry in package.get('paths_data', {}).get('paths', []):
+                                    if entry.get('_path') == relative:
+                                        obj['package']['file_digest_verified'] = entry.get('sha256') == obj['sha256']
+                finally:
+                    os.close(metadata_fd)
+            target.check()
+            if read_bytes(f'/proc/{target.pid}/maps').decode() != maps:
+                raise Refusal('maps changed during attribution')
+            return objects
+        finally:
+            os.close(rootfd)
+
+
+    def worker(plan, channel, busy):
+        plan.control = channel
+        phase = 'bootstrap'
+        raw_capture = False
+        try:
+            bind_runner(plan)
+            send(channel, 'ready')
+            phase = 'preflight'
+            perf = shutil.which('perf')
+            if not perf:
+                raise Refusal('existing perf unavailable')
+            perf_fd = os.open(perf, os.O_RDONLY)
+            try:
+                if os.fstat(perf_fd).st_mode & (stat.S_ISUID | stat.S_ISGID):
+                    raise Refusal('privileged perf exec would change parent-death semantics')
+                try:
+                    capabilities = os.getxattr(perf_fd, 'security.capability')
+                except OSError as error:
+                    if error.errno not in (errno.ENODATA, errno.ENOTSUP):
+                        raise
+                else:
+                    if capabilities:
+                        raise Refusal('capability-bearing perf cannot preserve parent-death semantics')
+                if os.read(perf_fd, 4) != b'\x7fELF':
+                    raise Refusal('perf wrapper cannot establish direct command lifetime')
+                save(plan, 'perf-binary.json', dict(path=perf, sha256=hash_fd(perf_fd)))
+            finally:
+                os.close(perf_fd)
+            command(plan, [perf, '--version'], 'perf-version')
+            preflight_start = time.monotonic()
+            send(channel, 'preflight')
+            preflight = ObservedProcess.open(busy)
+            try:
+                raw = record(plan, perf, busy, 'preflight', preflight.check, 1)
+                decode(plan, perf, raw, busy, 'preflight')
+            finally:
+                os.close(preflight.pidfd)
+            if time.monotonic()-preflight_start > POLICY['preflight']:
+                raise Refusal('preflight deadline')
+            send(channel, 'acquire')
+            phase = 'acquisition'
+            stage_seen = None
+            trace_keys = {}
+            selected_path = None
+            while True:
+                paths = sorted(plan.output.glob('pydeface-diagnostic-*.jsonl'))
+                if len(paths) > POLICY['traces']:
+                    raise Refusal('trace file limit')
+                candidates = []
+                total = 0
+                for path in paths:
+                    rows, data, key = trace_records(path, plan)
+                    total += len(data)
+                    if total > POLICY['trace_bytes']:
+                        raise Refusal('aggregate trace limit')
+                    if path in trace_keys and trace_keys[path] != key:
+                        raise Refusal('trace replaced')
+                    trace_keys[path] = key
+                    if not rows:
+                        continue
+                    selected = parse_registration(rows, plan, path.name)
+                    if selected:
+                        candidates.append((path, selected, data, key))
+                if len(candidates) > 1:
+                    raise Refusal('duplicate qualifying observer')
+                if candidates:
+                    path, selected, data, key = candidates[0]
+                    if stage_seen is None:
+                        stage_seen = time.monotonic()
+                        selected_path = path
+                        send(channel, 'stage', wall=selected['stage_time'])
+                    if path != selected_path:
+                        raise Refusal('retarget forbidden')
+                    if time.time()-selected['stage_time'] > POLICY['acquisition']:
+                        raise Refusal('target acquisition deadline')
+                    if not selected.get('waiting'):
+                        break
+                plan.owner.check()
+                if time.monotonic() > plan.started+POLICY['lifetime']:
+                    raise Refusal('helper lifetime')
+                time.sleep(POLICY['service'])
+            send(channel, 'selected')
+            phase = 'selected'
+            target = ObservedProcess.open(selected['pid'])
+            observer = ObservedProcess.open(selected['observer_pid'])
+            try:
+                validate = lambda: verify_target(selected, plan, target, observer, path, key)
+                chain = validate()
+                save(plan, 'selected-trace.jsonl', data)
+                save(plan, 'before.json', dict(target=snapshot(target), observer=snapshot(observer),
+                     owner=snapshot(plan.owner), ancestry=chain, selected=selected))
+                raw = record(plan, perf, target.pid, 'flirt', validate, POLICY['interval'])
+                raw_capture = True
+                save(plan, 'after.json', dict(target=snapshot(target), observer=snapshot(observer),
+                     owner=snapshot(plan.owner), ancestry=validate()))
+                objects = mapped_objects(plan, target)
+                save(plan, 'objects-before.json', objects)
+                quality = decode(plan, perf, raw, target.pid, 'flirt', f'/proc/{target.pid}/root')
+                after_objects = mapped_objects(plan, target)
+                save(plan, 'objects-after.json', after_objects)
+                if after_objects != objects:
+                    raise Refusal('mapped objects changed during reporting')
+                if any(name not in {obj['path'] for obj in objects} for name in quality['dsos']):
+                    raise Refusal('sample DSO cannot be bound to an opened mapped object')
+                validate()
+                inventory = []
+                for file in plan.retained.iterdir():
+                    if file.name.startswith('manifest.'):
+                        continue
+                    fd = os.open(file, os.O_RDONLY | os.O_NOFOLLOW)
+                    try:
+                        inventory.append(dict(path=file.name, size=os.fstat(fd).st_size, sha256=hash_fd(fd)))
+                    finally:
+                        os.close(fd)
+                save(plan, 'inventory.json', inventory)
+                send(channel, 'done', outcome='captured' if not (quality['unknown_symbols'] or quality['unknown_dsos']) else 'incomplete',
+                     raw_capture=True, source_attribution='unresolved', samples=quality,
+                     object_count=len(objects), reason='unknown symbols' if (quality['unknown_symbols'] or quality['unknown_dsos']) else None)
+            finally:
+                os.close(target.pidfd)
+                os.close(observer.pidfd)
+        except BaseException as error:
+            send(channel, 'done', outcome='incomplete' if phase == 'selected' else 'refused',
+                 stage=phase, raw_capture=raw_capture, source_attribution='unresolved',
+                 reason=type(error).__name__+': '+str(error)[:2000])
+
+
+    def supervise(plan, readiness, launcher):
+        parent_arm(launcher)
+        os.setsid()
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(36, 1, 0, 0, 0):
+            raise Refusal('subreaper unavailable')
+        up, down = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        busy_read, busy_write = os.pipe()
+        parent = os.getpid()
+        busy_pid = os.fork()
+        if busy_pid == 0:
+            parent_arm(parent)
+            detach({busy_write})
+            os.write(busy_write, b'R')
+            os.close(busy_write)
+            end = time.monotonic()+POLICY['bootstrap']
+            while time.monotonic() < end:
+                pass
+            os._exit(0)
+        busy = OwnedChild(busy_pid)
+        os.close(busy_write)
+        children = [busy]
+        handoff = {}
+        result = dict(outcome='incomplete', reason='startup pending')
+        worker_child = None
+        try:
+            if not select.select([busy_read], [], [], 1)[0] or os.read(busy_read, 1) != b'R':
+                raise Refusal('busy sibling failed to arm')
+            os.close(busy_read)
+            worker_pid = os.fork()
+            if worker_pid == 0:
+                parent_arm(parent)
+                os.setpgid(0, 0)
+                detach({down.fileno(), plan.owner.pidfd})
+                worker(plan, down, busy_pid)
+                os._exit(0)
+            worker_child = OwnedChild(worker_pid, True)
+            children.append(worker_child)
+            down.close()
+            deadline = plan.started+POLICY['bootstrap']
+            state = 'startup'
+            operation_deadline = float('inf')
+            while True:
+                if readable(plan.owner.pidfd):
+                    raise Refusal('runner ended')
+                now = time.monotonic()
+                if now > min(deadline, operation_deadline, plan.started+POLICY['lifetime']):
+                    raise Refusal(('operation' if now > operation_deadline else state)+' deadline')
+                if select.select([up], [], [], min(POLICY['service'], max(0, deadline-now)))[0]:
+                    message = receive(up, deadline)
+                    event = message['event']
+                    if event == 'ready' and state == 'startup':
+                        handoff['ready'] = time.monotonic()
+                        send(readiness, 'ready')
+                        if receive(readiness, deadline)['event'] != 'clear':
+                            raise Refusal('invalid detach request')
+                        if readable(plan.owner.pidfd):
+                            raise Refusal('owner ended before detach')
+                        if libc.prctl(1, 0, 0, 0, 0):
+                            raise Refusal('detach failed')
+                        handoff['cleared'] = time.monotonic()
+                        send(readiness, 'cleared')
+                        if receive(readiness, deadline)['event'] != 'ack':
+                            raise Refusal('detach not acknowledged')
+                        handoff['acknowledged'] = time.monotonic()
+                        readiness.close()
+                        state = 'armed'
+                        manifest(plan.retained, 'pending', stage=state, handoff=handoff)
+                    elif event == 'preflight' and state == 'armed':
+                        state = 'preflight'
+                        deadline = min(deadline, now+POLICY['preflight'])
+                    elif event == 'acquire' and state == 'preflight':
+                        busy.signal(signal.SIGKILL)
+                        state = 'acquire'
+                        deadline = plan.started+POLICY['lifetime']
+                    elif event == 'stage' and state == 'acquire':
+                        state = 'stage'
+                        deadline = min(deadline, now+max(0, POLICY['acquisition']-(time.time()-message['wall'])))
+                    elif event == 'selected' and state == 'stage':
+                        state = 'selected'
+                        deadline = min(plan.started+POLICY['lifetime'], now+POLICY['selected'])
+                    elif event == 'operation' and operation_deadline == float('inf'):
+                        if message['kind'] not in ('command', 'record'):
+                            raise Refusal('unknown operation budget')
+                        operation_deadline = message['at']+POLICY[message['kind']]
+                    elif event == 'operation_done' and operation_deadline != float('inf'):
+                        operation_deadline = float('inf')
+                    elif event == 'done':
+                        result = {k: v for k, v in message.items() if k not in ('event', 'at')}
+                        break
+                    else:
+                        raise Refusal('invalid worker transition')
+                if os.waitid(os.P_PID, worker_pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                    # A terminal packet can precede exit but still be queued.
+                    if not readable(up):
+                        raise Refusal('worker ended without terminal evidence')
+        except BaseException as error:
+            result = dict(outcome='incomplete', reason=type(error).__name__+': '+str(error)[:2000])
+        finally:
+            for child in children:
+                child.signal(signal.SIGTERM)
+            time.sleep(POLICY['grace'])
+            for child in children:
+                child.signal(signal.SIGKILL)
+            # A pre-arm child may not have established its group yet.
+            if worker_child:
+                OwnedChild(worker_child.pid).signal(signal.SIGKILL)
+            end = time.monotonic()+POLICY['grace']
+            reaped = []
+            complete = False
+            while time.monotonic() < end:
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    complete = True
+                    break
+                if pid:
+                    reaped.append(dict(pid=pid, status=status))
+                else:
+                    time.sleep(.01)
+            if not complete:
+                result = dict(outcome='incomplete', reason='owned descendants pending cleanup')
+            manifest(plan.retained, **result, handoff=handoff, cleanup=dict(reaped=reaped, complete=complete))
+
+
+    def arm(output_dir, t1w):
+        architecture = platform.machine()
+        work = Path.cwd().resolve()
+        directory = work.parent / 'native-profile'
+        directory.mkdir(mode=0o700)
+        if architecture not in ('aarch64', 'arm64'):
+            manifest(directory, 'outside_native_scope', architecture=architecture)
+            return
+        started, wall = time.monotonic(), time.time()
+        def bootstrap_alarm(*unused):
+            raise Refusal('bootstrap deadline')
+        signal.signal(signal.SIGALRM, bootstrap_alarm)
+        signal.setitimer(signal.ITIMER_REAL, POLICY['bootstrap'])
+        manifest(directory, 'pending', stage='bootstrap', architecture=architecture)
+        try:
+            pid = os.getppid()
+            owner = None
+            for _ in range(POLICY['objects']):
+                args = argv(pid)
+                if any(item.endswith('/builder/run_tests.py') for item in args):
+                    owner = ObservedProcess.open(pid)
+                    break
+                pid = process_stat(pid)['ppid']
+                if pid <= 1:
+                    break
+            if owner is None:
+                raise Refusal('actual runner ancestor unavailable')
+            output = Path(output_dir).resolve()
+            if output != work/'test_output' or not Path(t1w).is_absolute():
+                raise Refusal('unexpected work/input binding')
+            plan = RunPlan(work, output, directory, Path(t1w), owner, started, wall,
+                           read_bytes('/proc/sys/kernel/random/boot_id', 128).decode().strip())
+            parent, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            launcher = os.getpid()
+            # Detach before fork so even an unscheduled child inherits no capture pipes.
+            detach({parent.fileno(), child.fileno(), owner.pidfd})
+            supervisor = os.fork()
+            if supervisor == 0:
+                parent.close()
+                try:
+                    supervise(plan, child, launcher)
+                except BaseException:
+                    pass
+                os._exit(0)
+            child.close()
+            end = started+POLICY['bootstrap']
+            try:
+                if receive(parent, end)['event'] != 'ready':
+                    raise Refusal('supervisor not ready')
+                send(parent, 'clear')
+                if receive(parent, end)['event'] != 'cleared':
+                    raise Refusal('supervisor not detached')
+                send(parent, 'ack')
+            finally:
+                parent.close()
+                os.close(owner.pidfd)
+                signal.setitimer(signal.ITIMER_REAL, 0)
+        except BaseException as error:
+            # After fork only the supervisor writes its manifest.
+            if 'supervisor' not in locals():
+                manifest(directory, 'prerequisite_failed', reason=type(error).__name__+': '+str(error)[:2000])
+
+
+    if __name__ == '__main__':
+        try:
+            arm(Path(sys.argv[1]), Path(sys.argv[2]))
+        except BaseException:
+            pass
+    NATIVE_PROFILE_PY
+    true
   script: |
     #!/usr/bin/env bash
     set -e
