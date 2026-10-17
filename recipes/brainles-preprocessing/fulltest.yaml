@@ -112,268 +112,16 @@ tests:
       guaranteed crash into a working call. A crude head-like phantom is
       enough; what is being checked is that inference runs and returns a
       non-empty binary mask, not that the mask is anatomically right.
-      Temporary ARM diagnostic for PR 3610. Records the unchanged inference
-      within the existing timeout and deliberately fails on ARM even if it
-      completes, pending diagnosis and removal of the instrumentation.
     command: |
       python -u <<'PYTHON'
-      import faulthandler
       import hashlib
-      import importlib.metadata as md
-      import json
-      import os
-      import platform
-      import re
-      import resource
-      import threading
-      import time
 
-      if platform.machine() == 'aarch64':
-          os.environ['ONEDNN_VERBOSE'] = '2'
-
-      faulthandler.dump_traceback_later(120, repeat=True)
-      started = time.perf_counter()
-      print('[DEBUG-synthstrip-3610] importing inference packages', flush=True)
       import numpy as np, nibabel as nib, tempfile, pathlib
-      import torch
       from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
       from brainles_preprocessing.utils.zenodo import SYNTHSTRIP_FOLDER
 
-      def report(event, **details):
-          usage = resource.getrusage(resource.RUSAGE_SELF)
-          print('[DEBUG-synthstrip-3610]', json.dumps(dict(
-              event=event, elapsed_s=time.perf_counter() - started,
-              user_s=usage.ru_utime, system_s=usage.ru_stime,
-              maxrss_kib=usage.ru_maxrss, major_faults=usage.ru_majflt,
-              torch_threads=torch.get_num_threads(), **details,
-          )), flush=True)
-
-      def telemetry_read(path, limit=1024):
-          sample = {'path': str(path), 'limit_bytes': limit}
-          try:
-              with pathlib.Path(path).open('rb') as stream:
-                  data = stream.read(limit + 1)
-              sample.update(status='truncated' if len(data) > limit else 'ok',
-                            raw=data[:limit].decode('utf-8', errors='replace'))
-          except (OSError, ValueError) as error:
-              sample.update(status='unavailable', error=type(error).__name__,
-                            errno=getattr(error, 'errno', None))
-          return sample
-
-
-      def cgroup_resources():
-          membership = telemetry_read('/proc/self/cgroup', 16384)
-          mountinfo = telemetry_read('/proc/self/mountinfo', 65536)
-          result = dict(membership=membership,
-                        mountinfo={k: v for k, v in mountinfo.items() if k != 'raw'},
-                        visibility='Visible cgroup v2 mount only; hidden ancestors and namespace '
-                                   'root are not established. Raw samples are not atomic or '
-                                   'global effective limits.',
-                        max_levels=16, levels=[], v2_mounts=[], mounts_capped=False)
-          if membership['status'] != 'ok' or mountinfo['status'] != 'ok':
-              return dict(result, status='unavailable_resolution_inputs')
-          entries = [line.split(':', 2) for line in membership['raw'].splitlines()]
-          if any(len(entry) != 3 or not entry[0].isdigit() for entry in entries):
-              return dict(result, status='malformed_membership')
-          unified = [entry[2] for entry in entries if entry[:2] == ['0', '']]
-          result['other_hierarchies'] = 'unsupported' if any(e[0] != '0' for e in entries) else 'none'
-          if not unified:
-              return dict(result, status='unsupported_or_missing_v2_membership')
-          if len(unified) != 1:
-              return dict(result, status='malformed_membership')
-          member = pathlib.PurePosixPath(unified[0])
-          if not member.is_absolute() or '..' in member.parts or '\x00' in str(member):
-              return dict(result, status='unresolved_membership_namespace_path')
-          candidates = []
-          mounts = {}
-          unsupported = 0
-          for line in mountinfo['raw'].splitlines():
-              before, separator, after = line.partition(' - ')
-              filesystem = after.split()
-              fields = before.split()
-              if not separator or len(fields) < 6 or len(filesystem) < 3:
-                  return dict(result, status='malformed_v2_mountinfo' if filesystem[:1] == ['cgroup2']
-                              else 'malformed_mountinfo')
-              if not fields[0].isdigit() or not fields[1].isdigit() or fields[0] in mounts:
-                  return dict(result, status='unresolved_mount_visibility',
-                              reason='invalid_or_duplicate_mount_id', mount_id=fields[0])
-              root, point = [pathlib.PurePosixPath(re.sub(
-                  r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)) for value in fields[3:5]]
-              mount = dict(id=fields[0], parent=fields[1], root=str(root),
-                           point=str(point), filesystem=filesystem[0])
-              mounts[fields[0]] = mount
-              if filesystem[0] == 'cgroup2':
-                  if len(result['v2_mounts']) < 8:
-                      result['v2_mounts'].append(mount)
-                  else:
-                      result['mounts_capped'] = True
-              if any(not p.is_absolute() or '..' in p.parts or '\x00' in str(p) for p in [root, point]):
-                  unsupported += 1
-                  result['unresolved_path_mount'] = mount
-                  continue
-              if filesystem[0] == 'cgroup2' and (member == root or root in member.parents):
-                  candidates.append((root, point, fields[0]))
-          result['unsupported_mount_paths'] = unsupported
-          result['matching_mounts'] = len(candidates)
-          if not candidates:
-              return dict(result, status='unresolved_v2_mount_or_namespace')
-          if unsupported:
-              return dict(result, status='unresolved_mount_visibility', reason='unsupported_mount_path')
-          root, point, mount_id = min(candidates, key=lambda m: (len(m[0].parts), str(m[1])))
-          result['mount'] = dict(id=mount_id, root=str(root), point=str(point),
-                                 selection='widest matching root; visibility checked before counter reads')
-          current = point / member.relative_to(root)
-          result['leaf'] = str(current)
-          counters = ['cpu.max', 'cpu.stat', 'cpu.pressure', 'cpuset.cpus',
-                      'cpuset.cpus.effective', 'cpuset.mems.effective', 'memory.max',
-                      'memory.high', 'memory.current', 'memory.events',
-                      'memory.events.local', 'memory.swap.max', 'memory.swap.current',
-                      'memory.pressure']
-          ancestors = set()
-          mount = mounts[mount_id]
-          while True:
-              ancestors.add(mount['id'])
-              if mount['parent'] == mount['id'] and mount['point'] == '/':
-                  result['parent_chain'] = 'namespace_root'
-                  break
-              parent = mounts.get(mount['parent'])
-              if parent is None:
-                  result['parent_chain'] = 'unlisted_parent; visibility checked only within process root'
-                  result['unlisted_parent_id'] = mount['parent']
-                  break
-              parent_point = pathlib.PurePosixPath(parent['point'])
-              if parent['id'] in ancestors or parent_point not in pathlib.PurePosixPath(mount['point']).parents:
-                  return dict(result, status='unresolved_mount_visibility',
-                              reason='stacked_or_inconsistent_parent_chain', unresolved_mount=mount)
-              mount = parent
-          paths = []
-          for _ in range(result['max_levels']):
-              paths.extend(current / name for name in counters)
-              if current == point:
-                  break
-              current = current.parent
-          for mount in mounts.values():
-              if mount['id'] in ancestors:
-                  continue
-              mounted_at = pathlib.PurePosixPath(mount['point'])
-              if any(mounted_at == path or mounted_at in path.parents for path in paths):
-                  return dict(result, status='unresolved_mount_visibility',
-                              reason='mount_obscures_sample_path', unresolved_mount=mount)
-          current = point / member.relative_to(root)
-          for _ in range(result['max_levels']):
-              result['levels'].append(dict(path=str(current), counters={
-                  name: telemetry_read(current / name) for name in counters}))
-              if current == point:
-                  return dict(result, status='sampled_to_visible_mount_root')
-              current = current.parent
-          return dict(result, status='ancestor_depth_limit', next_unsampled_ancestor=str(current))
-
-
-      def loaded_libraries():
-          sample = telemetry_read('/proc/self/maps', 262144)
-          raw = sample.pop('raw', '')
-          sample.update(paths=[], max_paths=64, max_path_bytes=16384, paths_capped=False)
-          prefixes = ('libtorch', 'libc10', 'libgomp', 'libomp', 'libiomp',
-                      'libmkl', 'libopenblas', 'libscipy_openblas', 'libblas',
-                      'libcblas', 'liblapack', 'libdnnl', 'libmkldnn')
-          seen = set()
-          path_bytes = 0
-          lines = raw.splitlines()
-          if sample['status'] == 'truncated':
-              lines = lines[:-1]
-          for line in lines:
-              fields = line.split(None, 5)
-              if len(fields) != 6 or not fields[5].startswith('/'):
-                  continue
-              path = fields[5]
-              name = path.rsplit('/', 1)[-1].lower()
-              if not name.startswith(prefixes) or '.so' not in name or path in seen:
-                  continue
-              size = len(path.encode('utf-8'))
-              if len(seen) == sample['max_paths'] or path_bytes + size > sample['max_path_bytes']:
-                  sample['paths_capped'] = True
-                  break
-              seen.add(path)
-              path_bytes += size
-              sample['paths'].append(path)
-          sample['scope'] = 'Filtered mapped paths only; absence does not exclude a provider or static linkage.'
-          return sample
-
-
-      def resources():
-          process = telemetry_read('/proc/self/status', 16384)
-          memory = telemetry_read('/proc/meminfo', 16384)
-          for sample, prefixes in [(process, ('VmRSS:', 'VmSwap:', 'Threads:', 'Cpus_allowed_list:')),
-                                   (memory, ('MemTotal:', 'MemAvailable:', 'SwapTotal:', 'SwapFree:'))]:
-              sample['lines'] = [line for line in sample.pop('raw', '').splitlines()
-                                 if line.startswith(prefixes)]
-          try:
-              load = os.getloadavg()
-          except OSError as error:
-              load = dict(status='unavailable', error=type(error).__name__)
-          report('resources', load=load, cgroup=cgroup_resources(), process=process,
-                 memory=memory, loaded_libraries=loaded_libraries())
-
-      finished = threading.Event()
-      def heartbeat():
-          while not finished.wait(60):
-              resources()
-
-      threading.Thread(target=heartbeat, daemon=True).start()
-      report('runtime', machine=platform.machine(), affinity=sorted(os.sched_getaffinity(0)),
-             interop_threads=torch.get_num_interop_threads(),
-             versions={p: md.version(p) for p in ['brainles-preprocessing',
-                       'nipreps-synthstrip', 'torch', 'numpy', 'nibabel', 'nitransforms', 'scipy']},
-             thread_env={k: os.environ.get(k) for k in ['OMP_NUM_THREADS',
-                         'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS']},
-             torch_config=torch.__config__.show())
-      resources()
       weights = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in SYNTHSTRIP_FOLDER.rglob('*.pt')}
-      report('bundled_weights', sha256=weights)
-
-      class DiagnosticExtractor(SynthStripExtractor):
-          def _setup_model(self, device):
-              report('model_setup_start', device=str(device))
-              model = super()._setup_model(device)
-              report('model_setup_done')
-              names = {module: name for name, module in model.named_modules()}
-              conv_started = {}
-
-              def before_conv(module, args):
-                  tensor = args[0]
-                  try:
-                      backend = str(torch._C._select_conv_backend(
-                          tensor, module.weight, module.bias, module.stride,
-                          module.padding, module.dilation, False, [0, 0, 0], module.groups))
-                  except (AttributeError, RuntimeError, TypeError) as error:
-                      backend = str(error)
-                  conv_started[module] = time.perf_counter()
-                  report('conv_start', layer=names[module], shape=list(tensor.shape),
-                         stride=list(tensor.stride()), dtype=str(tensor.dtype),
-                         backend=backend)
-
-              def after_conv(module, args, output):
-                  report('conv_done', layer=names[module], shape=list(output.shape),
-                         duration_s=time.perf_counter() - conv_started.pop(module))
-
-              for module in names:
-                  if isinstance(module, torch.nn.Conv3d):
-                      module.register_forward_pre_hook(before_conv)
-                      module.register_forward_hook(after_conv)
-              return model
-
-          def _conform(self, image):
-              report('conform_start', shape=image.shape, affine=image.affine.tolist())
-              conformed = super()._conform(image)
-              report('conform_done', shape=conformed.shape, affine=conformed.affine.tolist())
-              return conformed
-
-          def _resample_like(self, image, target, **kwargs):
-              report('resample_start', shape=image.shape)
-              result = super()._resample_like(image, target, **kwargs)
-              report('resample_done', shape=result.shape)
-              return result
 
       d = pathlib.Path(tempfile.mkdtemp())
       g = np.mgrid[:96, :96, :96].astype(float)
@@ -381,7 +129,7 @@ tests:
       vol = np.where(r < 34, 800.0, 0.0) + np.where((r >= 34) & (r < 40), 300.0, 0.0)
       nib.save(nib.Nifti1Image(vol.astype(np.float32), np.eye(4)), d / 'in.nii.gz')
       source_digest = hashlib.sha256((d / 'in.nii.gz').read_bytes()).hexdigest()
-      DiagnosticExtractor().extract(
+      SynthStripExtractor().extract(
           input_image_path=str(d / 'in.nii.gz'),
           masked_image_path=str(d / 'brain.nii.gz'),
           brain_mask_path=str(d / 'mask.nii.gz'),
@@ -399,13 +147,7 @@ tests:
       assert hashlib.sha256((d / 'in.nii.gz').read_bytes()).hexdigest() == source_digest
       assert {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in SYNTHSTRIP_FOLDER.rglob('*.pt')} == weights
-      report('inference_and_assertions_done', mask_voxels=int((m > 0).sum()))
-      resources()
-      finished.set()
-      faulthandler.cancel_dump_traceback_later()
       print('synthstrip-cpu-run ok', int((m > 0).sum()), 'voxels')
-      if platform.machine() == 'aarch64':
-          raise SystemExit('ARM diagnostic only: review the measurements before removing this gate')
       PYTHON
     expected_output_contains: "synthstrip-cpu-run ok"
     # Model load plus inference does not fit the suite's default 120 s budget,
