@@ -591,11 +591,21 @@ setup:
                 times: dict[str, float]) -> None:
         times[word+'_send'] = time.monotonic()
         os.write(fd, (word+'\n').encode())
-        if not select.select([ack], [], [], max(0, end-time.monotonic()))[0]:
-            raise Refusal('perf control acknowledgement deadline')
-        if os.read(ack, 128) != b'ack\n':
+        response = b''
+        while len(response) < 5:
+            remaining = end-time.monotonic()
+            if remaining <= 0 or not select.select([ack], [], [], remaining)[0]:
+                raise Refusal('perf control acknowledgement deadline')
+            chunk = os.read(ack, 5-len(response))
+            if not chunk:
+                raise Refusal('invalid perf control acknowledgement')
+            response += chunk
+        if response != b'ack\n\0':
             raise Refusal('invalid perf control acknowledgement')
-        times[word+'_ack'] = time.monotonic()
+        acknowledged = time.monotonic()
+        if acknowledged >= end:
+            raise Refusal('perf control acknowledgement deadline')
+        times[word+'_ack'] = acknowledged
 
 
     def record(plan: RunPlan, perf: str, pid: int, label: str,
