@@ -1,6 +1,10 @@
 builder: neurodocker
 
 directives:
+  - file:
+      name: openrecon_metadata.py
+      filename: openrecon_metadata.py
+
   - workdir: /opt/code
 
   - install:
@@ -68,6 +72,7 @@ directives:
   - run:
       - git clone https://github.com/astewartau/python-ismrmrd-server
       - git -C python-ismrmrd-server checkout {{ context.openrecon_server_commit | default("33362f2139701fbf5ea855808a325eb59b7db2ae") }}
+      - cp {{ get_file("openrecon_metadata.py") }} /opt/code/python-ismrmrd-server/openrecon_metadata.py
       - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
       - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
     # replace 'invertcontrast' in main.py with 'default_replace_with_valid_name' to avoid running 

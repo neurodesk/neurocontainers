@@ -27,6 +27,7 @@ import ismrmrd
 import nibabel as nib
 import numpy as np
 
+from openrecon_metadata import new_uid, processing_metadata, stamp_derived
 import qsmxt_regional_report
 
 try:
@@ -204,38 +205,38 @@ SWI_LIKE_OUTPUTS = {"swi", *SMWI_OUTPUTS}
 QSMXT_OUTPUTS = {
     "qsm": {
         "suffix": "Chimap",
-        "token": "QSMXT_CHIMAP",
+        "token": "OR_QSM_CHIMAP",
         "series": "QSMxT QSM",
         "units": "ppm",
     },
     "mask": {
         "suffix": "mask",
-        "token": "QSMXT_MASK",
+        "token": "OR_QSM_MASK",
         "series": "QSMxT mask",
         "units": "binary",
     },
     "magnitude": {
         "suffix": "CombinedMagnitude",
         "fallback_suffixes": ("magnitude",),
-        "token": "QSMXT_MAGNITUDE",
+        "token": "OR_QSM_MAG",
         "series": "QSMxT magnitude",
         "units": "a.u.",
     },
     "swi": {
         "suffix": "swi",
-        "token": "QSMXT_SWI",
+        "token": "OR_QSM_SWI",
         "series": "QSMxT SWI",
         "units": "a.u.",
     },
     "t2star": {
         "suffix": "T2starmap",
-        "token": "QSMXT_T2STAR",
+        "token": "OR_QSM_T2STAR",
         "series": "QSMxT T2star",
         "units": "s",
     },
     "r2star": {
         "suffix": "R2starmap",
-        "token": "QSMXT_R2STAR",
+        "token": "OR_QSM_R2STAR",
         "series": "QSMxT R2star",
         "units": "Hz",
     },
@@ -248,14 +249,18 @@ for output_id, descriptor, series in (
 ):
     QSMXT_OUTPUTS[output_id] = {
         "suffix": f"desc-{descriptor}_Chimap",
-        "token": f"QSMXT_{descriptor.upper()}",
+        "token": {
+            "paramagnetic": "OR_QSM_PARA",
+            "diamagnetic": "OR_QSM_DIA",
+            "total": "OR_QSM_TOTAL",
+        }[descriptor],
         "series": series,
         "units": "ppm",
     }
 
 for output_id, descriptor, series, token in (
-    ("smwi-paramagnetic", "paramagnetic", "QSMxT SMWI paramagnetic", "QSMXT_SMWI_PARA"),
-    ("smwi-diamagnetic", "diamagnetic", "QSMxT SMWI diamagnetic", "QSMXT_SMWI_DIA"),
+    ("smwi-paramagnetic", "paramagnetic", "QSMxT SMWI paramagnetic", "OR_QSM_SMWI_PARA"),
+    ("smwi-diamagnetic", "diamagnetic", "QSMxT SMWI diamagnetic", "OR_QSM_SMWI_DIA"),
 ):
     QSMXT_OUTPUTS[output_id] = {
         "suffix": f"desc-{descriptor}_smwi",
@@ -650,8 +655,29 @@ def write_bids_dataset(
         phase_paths[0],
     )
     source_geometry_images = _sorted_stack_images(magnitude_echo_groups[0])
+    model_manifest = (
+        Path(os.environ.get("QSM_MODEL_DIR", "/opt/qsmxt/models")) / "models.sha256"
+    )
+    if not model_manifest.is_file():
+        logging.warning(
+            "QSMxT model manifest unavailable at %s; model provenance is incomplete",
+            model_manifest,
+        )
     return {
         "settings": settings,
+        "processing": processing_metadata("QSMxT", __file__, {
+            **settings,
+            "resolved_field_strength_t": field_strength,
+            "resolved_b0_dir": resolved_b0_dir or DEFAULT_B0_DIR,
+            "n_echoes": n_echoes,
+            "resolved_echo_times_s": echo_times,
+            "model_dir": str(model_manifest.parent),
+            "model_cache": os.environ.get("QSM_MODEL_CACHE", ""),
+            "models_manifest_sha256": (
+                hashlib.sha256(model_manifest.read_bytes()).hexdigest()
+                if model_manifest.is_file() else "unavailable"
+            ),
+        }),
         "bids_dir": bids_dir,
         "anat_dir": anat_dir,
         "subject": "01",
@@ -1051,6 +1077,7 @@ def _build_output_images(
                 spec["units"],
                 source_geometry_images=conversion.get("source_geometry_images"),
                 input_variant=conversion["input_variant"],
+                processing=conversion.get("processing"),
             )
         )
     return output_images
@@ -1092,22 +1119,15 @@ def _build_regional_report_image(pages, conversion, series_index) -> ismrmrd.Ima
         if key in SOURCE_SCALING_META_KEYS | {"IceMiniHead"} or key.startswith("QSMxT"):
             del meta[key]
     title = f"QSMxT Regional QSM table {conversion['input_short_label']}"
-    series_uid = _derived_series_uid(source, series_index, title)
-    image_type = "DERIVED\\PRIMARY\\M\\QSMXT_REGIONAL_TABLE"
+    series_uid = new_uid()
     meta.update({
         "DataRole": "Segmentation",
         "ImageProcessingHistory": ["PYTHON", "QSMXT", "SYNTHSEG", "REGIONAL_TABLE"],
-        "ImageType": image_type,
-        "DicomImageType": image_type,
-        "ImageTypeValue4": "QSMXT_REGIONAL_TABLE",
-        "ComplexImageComponent": "MAGNITUDE",
         "SeriesDescription": title,
         "SequenceDescription": title,
         "ProtocolName": title,
         "SequenceDescriptionAdditional": "openrecon",
         "SeriesNumberRangeNameUID": _derived_series_grouping(title, series_index),
-        "SeriesInstanceUID": series_uid,
-        "SOPInstanceUID": _derived_instance_uid(source, series_uid, series_index, title),
         "QSMxTOutput": "regionalqsmtable",
         "QSMxTInputSeries": conversion["input_variant"],
         "ImageComment": "Native Chimap regional values in ppm; report pixels contain text",
@@ -1122,6 +1142,11 @@ def _build_regional_report_image(pages, conversion, series_index) -> ismrmrd.Ima
         "WindowWidth": "4096",
         **_header_geometry_meta(header),
     })
+    stamp_derived(
+        meta, _meta_from_image(source), "OR_QSM_REPORT", series_uid,
+        conversion.get("processing") or processing_metadata("QSMxT", __file__, {}),
+    )
+    meta["SOPInstanceUID"] = meta["OpenReconImageUID"]
     for field in ORIGINAL_STORAGE_FIELDS:
         if field != "NumberInSeries":
             meta[field] = "0"
@@ -1156,9 +1181,9 @@ def _validate_regional_report_image(report, input_images) -> None:
         raise ValueError("Regional QSM report must have magnitude image type")
     for key, expected in {
         "DataRole": "Segmentation", "Keep_image_geometry": "0", "partition_count": "1",
-        "ImageType": "DERIVED\\PRIMARY\\M\\QSMXT_REGIONAL_TABLE",
-        "DicomImageType": "DERIVED\\PRIMARY\\M\\QSMXT_REGIONAL_TABLE",
-        "ImageTypeValue4": "QSMXT_REGIONAL_TABLE", "ComplexImageComponent": "MAGNITUDE",
+        "ImageType": "DERIVED\\PRIMARY\\M\\OR_QSM_REPORT",
+        "DicomImageType": "DERIVED\\PRIMARY\\M\\OR_QSM_REPORT",
+        "ImageTypeValue4": "OR_QSM_REPORT", "ComplexImageComponent": "MAGNITUDE",
         "slice_count": str(page_count), "NumberOfSlices": str(page_count),
         "ImagesInAcquisition": str(page_count), "NumberInSeries": "1",
         "WindowCenter": "2048", "WindowWidth": "4096",
@@ -1221,11 +1246,7 @@ def _build_original_passthrough_images(input_images):
             "series_index": series_index,
             "series_name": series_name,
             "series_grouping": _derived_series_grouping(series_name, series_index),
-            "series_uid": _derived_series_uid(
-                group_images[0],
-                series_index,
-                series_name,
-            ),
+            "series_uid": new_uid(),
         }
         partition_count = _source_partition_count_hint(group_images)
         slice_count = _source_slice_count_hint(group_images)
@@ -1591,7 +1612,10 @@ def _nifti_to_mrd_images(
     *,
     source_geometry_images=None,
     input_variant=None,
+    processing=None,
 ):
+    series_uid = new_uid()
+    processing = processing or processing_metadata("QSMxT", __file__, {})
     nifti = nib.load(str(nifti_path))
     data_xyz = np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
     data_xyz = np.squeeze(data_xyz)
@@ -1697,6 +1721,8 @@ def _nifti_to_mrd_images(
             source_geometry=use_source_geometry,
             slice_number=slice_number,
             input_variant=input_variant,
+            series_uid=series_uid,
+            processing=processing,
         ).serialize()
         output_images.append(output)
 
@@ -2854,9 +2880,11 @@ def _output_meta(
     slice_count,
     display_meta,
     *,
+    series_uid,
     source_geometry=False,
     slice_number=None,
     input_variant=None,
+    processing=None,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2867,15 +2895,6 @@ def _output_meta(
     if "IceMiniHead" in meta:
         del meta["IceMiniHead"]
 
-    series_uid = _derived_series_uid(source_image, series_index, series_name)
-    sop_uid = _derived_instance_uid(
-        source_image,
-        series_uid,
-        series_index,
-        series_name,
-        slice_index,
-    )
-    image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
     physical_center, physical_width = _window_center_width(
         [
             display_meta["window_input_min"],
@@ -2891,18 +2910,12 @@ def _output_meta(
 
     meta["DataRole"] = ["Image", "Quantitative"]
     meta["ImageProcessingHistory"] = ["PYTHON", "QSMXT"]
-    meta["ImageType"] = image_type
-    meta["DicomImageType"] = image_type
-    meta["ImageTypeValue4"] = image_type_token
-    meta["ComplexImageComponent"] = "MAGNITUDE"
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["ImageComments"] = image_comment
     meta["ImageComment"] = image_comment
     meta["SeriesNumberRangeNameUID"] = _derived_series_grouping(series_name, series_index)
-    meta["SeriesInstanceUID"] = series_uid
-    meta["SOPInstanceUID"] = sop_uid
     meta["SequenceDescriptionAdditional"] = "openrecon"
     meta["Keep_image_geometry"] = "1" if source_geometry else "0"
     meta["partition_count"] = "1"
@@ -2967,6 +2980,11 @@ def _output_meta(
         )
     meta.update(_header_geometry_meta(header))
     _strip_scanner_write_unsafe_meta(meta)
+    stamp_derived(
+        meta, _meta_from_image(source_image), image_type_token, series_uid,
+        processing or processing_metadata("QSMxT", __file__, {}),
+    )
+    meta["SOPInstanceUID"] = meta["OpenReconImageUID"]
     return meta
 
 
@@ -3884,11 +3902,6 @@ def _source_series_name(source_image):
     return ""
 
 
-def _source_series_uid(source_image):
-    meta = _meta_from_image(source_image)
-    return _meta_text(meta, "SeriesInstanceUID")
-
-
 def _source_sop_uid(source_image):
     meta = _meta_from_image(source_image)
     return _meta_text(meta, "SOPInstanceUID")
@@ -3911,38 +3924,6 @@ def _strip_scanner_write_unsafe_meta(meta):
 
 def _derived_series_grouping(series_name, series_index):
     return f"{_sanitize_bids_label(series_name) or RECIPE_NAME}_{int(series_index)}"
-
-
-def _derived_series_uid(source_image, series_index, series_name):
-    seed = "|".join(
-        [
-            RECIPE_NAME,
-            _source_series_uid(source_image) or _source_series_name(source_image) or "source",
-            str(int(series_index)),
-            series_name,
-        ]
-    )
-    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
-
-
-def _derived_instance_uid(
-    source_image,
-    series_uid,
-    series_index,
-    series_name,
-    output_index=0,
-):
-    seed = "|".join(
-        [
-            f"{RECIPE_NAME}-instance",
-            series_uid,
-            _source_sop_uid(source_image) or "source",
-            str(int(series_index)),
-            series_name,
-            str(int(output_index)),
-        ]
-    )
-    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
 
 
 def _derived_original_instance_uid(

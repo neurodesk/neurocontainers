@@ -58,6 +58,8 @@ tests:
       command -v meica.py | grep -x /usr/local/bin/meica.py
       test "${MEICA_SOURCE_TAG}" = '${upstream_version}'
       test "${MEICA_RUNTIME_TAG}" = '${upstream_version}'
+      test "${OPENRECON_SOFTWARE_VERSION}" = '${upstream_version}'
+      test "${OPENRECON_CONTAINER_VERSION}" = '${version}'
       meica.py -h > "${output_dir}/meica-help.txt"
       grep -q '^Usage: meica.py \[options\]' "${output_dir}/meica-help.txt"
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
@@ -301,6 +303,11 @@ tests:
           image.setHead(header)
           meta = ismrmrd.Meta()
           meta["SequenceDescription"] = "multi_echo_epi"
+          meta["ImageType"] = "ORIGINAL\\PRIMARY\\M\\ND"
+          meta["DicomImageType"] = "ORIGINAL\\PRIMARY\\M\\ND"
+          meta["SeriesInstanceUID"] = "1.2.3"
+          meta["SOPInstanceUID"] = f"1.2.3.{echo}.{repetition}"
+          meta["SoftwareVersions"] = "scanner-version"
           image.attribute_string = meta.serialize()
           return image
 
@@ -332,6 +339,7 @@ tests:
           assert original.getHead() == source.getHead()
           meta = ismrmrd.Meta.deserialize(original.attribute_string)
           assert meta["Keep_image_geometry"] == "1"
+          assert meta["ImageType"] == "ORIGINAL\\PRIMARY\\M\\ND"
           echo = int(source.getHead().contrast) + 1
           expected_label = f"MEICA original magnitude te{echo}_multi_echo_epi"
           for key in ("SequenceDescription", "SeriesDescription", "ProtocolName"):
@@ -339,6 +347,8 @@ tests:
           assert meta["SequenceDescriptionAdditional"] == "openrecon"
           source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
           assert source_meta["SequenceDescription"] == "multi_echo_epi"
+          assert meta["SeriesInstanceUID"] != source_meta["SeriesInstanceUID"]
+          assert meta["SOPInstanceUID"] != source_meta["SOPInstanceUID"]
 
       original_groups = {
           ismrmrd.Meta.deserialize(image.attribute_string)["SeriesNumberRangeNameUID"]
@@ -347,6 +357,8 @@ tests:
       assert len(original_groups) == 3
 
       by_role = {}
+      derived_series_uids = set()
+      derived_sop_uids = set()
       for derived in connection.sent[1:]:
           roles = {
               ismrmrd.Meta.deserialize(image.attribute_string)["ImageTypeValue4"]
@@ -354,12 +366,19 @@ tests:
           }
           assert len(roles) == 1
           by_role[roles.pop()] = derived
+          series_uids = {
+              ismrmrd.Meta.deserialize(image.attribute_string)["SeriesInstanceUID"]
+              for image in derived
+          }
+          assert len(series_uids) == 1
+          assert derived_series_uids.isdisjoint(series_uids)
+          derived_series_uids.update(series_uids)
           assert len({int(image.getHead().image_series_index) for image in derived}) == 1
           for image in derived:
               meta = ismrmrd.Meta.deserialize(image.attribute_string)
               expected_label = {
-                  "MEICA_DR2S": "MEICA denoised BOLD dR2*",
-                  "MEICA_T2S": "MEICA T2* map",
+                  "OR_MEICA_DR2S": "MEICA denoised BOLD dR2*",
+                  "OR_MEICA_T2S": "MEICA T2* map",
               }[meta["ImageTypeValue4"]]
               for key in ("SequenceDescription", "SeriesDescription", "ProtocolName"):
                   assert meta[key] == expected_label, (key, meta)
@@ -371,14 +390,24 @@ tests:
               assert meta["DataRole"] == ["Image", "Quantitative"]
               assert meta["RescaleType"] == "US"
               assert int(meta["WindowWidth"]) >= 1
+              assert meta["ImageType"] == ["DERIVED", "PRIMARY", "M", meta["ImageTypeValue4"]]
+              assert meta["DicomImageType"] == "\\".join(meta["ImageType"])
+              assert len(meta["ImageTypeValue4"]) <= 16
+              assert "SOPInstanceUID" not in meta
+              assert meta["OpenReconImageUID"] not in derived_sop_uids
+              derived_sop_uids.add(meta["OpenReconImageUID"])
+              assert meta["OpenReconSoftwareVersion"] == os.environ["OPENRECON_SOFTWARE_VERSION"]
+              assert meta["SoftwareVersions"] == "scanner-version"
+              assert "product=OR_MEICA_" in meta["DerivationDescription"]
+              assert meta["OpenReconGeometrySourceSeriesInstanceUID"] == "1.2.3"
 
-      assert set(by_role) == {"MEICA_DR2S", "MEICA_T2S"}
-      assert len(by_role["MEICA_DR2S"]) == 4
-      assert {int(image.getHead().repetition) for image in by_role["MEICA_DR2S"]} == {0, 1}
-      assert {int(image.getHead().slice) for image in by_role["MEICA_DR2S"]} == {0, 1}
-      assert len(by_role["MEICA_T2S"]) == 2
-      assert {int(image.getHead().repetition) for image in by_role["MEICA_T2S"]} == {0}
-      assert {int(image.getHead().slice) for image in by_role["MEICA_T2S"]} == {0, 1}
+      assert set(by_role) == {"OR_MEICA_DR2S", "OR_MEICA_T2S"}
+      assert len(by_role["OR_MEICA_DR2S"]) == 4
+      assert {int(image.getHead().repetition) for image in by_role["OR_MEICA_DR2S"]} == {0, 1}
+      assert {int(image.getHead().slice) for image in by_role["OR_MEICA_DR2S"]} == {0, 1}
+      assert len(by_role["OR_MEICA_T2S"]) == 2
+      assert {int(image.getHead().repetition) for image in by_role["OR_MEICA_T2S"]} == {0}
+      assert {int(image.getHead().slice) for image in by_role["OR_MEICA_T2S"]} == {0, 1}
 
       derived_only = Connection(images)
       meica.process(
@@ -398,7 +427,12 @@ tests:
           ismrmrd.Meta.deserialize(series[0].attribute_string)["ImageTypeValue4"]
           for series in derived_only.sent
       }
-      assert derived_only_roles == {"MEICA_DR2S", "MEICA_T2S"}
+      assert derived_only_roles == {"OR_MEICA_DR2S", "OR_MEICA_T2S"}
+      for series in derived_only.sent:
+          for image in series:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta["SeriesInstanceUID"] not in derived_series_uids
+              assert meta["OpenReconImageUID"] not in derived_sop_uids
 
       def decoded(series):
           """Apply the published DICOM rescale and return zyxt physical values."""
@@ -424,7 +458,7 @@ tests:
       t2s[:3] = [0.0, 500.0, -3.0]
       t2s = np.transpose(t2s.reshape(xyzt_shape[:3]), (2, 1, 0))[..., np.newaxis]
 
-      volume, meta, slope = decoded(by_role["MEICA_DR2S"])
+      volume, meta, slope = decoded(by_role["OR_MEICA_DR2S"])
       assert slope <= 0.01, "BOLD-scale dR2* needs sub-0.01 1/s storage steps"
       assert np.allclose(volume, dr2s, atol=slope / 2 + 1e-6)
       assert meta["MEICAUnits"] == "1/s"
@@ -432,7 +466,7 @@ tests:
       assert meta["MEICADisplayClippedVoxels"] == "0"
       assert int(meta["WindowCenter"]) == 0
 
-      volume, meta, slope = decoded(by_role["MEICA_T2S"])
+      volume, meta, slope = decoded(by_role["OR_MEICA_T2S"])
       assert slope <= 1.0
       assert np.allclose(volume, np.maximum(t2s, 0.0), atol=slope / 2 + 1e-6)
       assert meta["MEICAUnits"] == "ms"

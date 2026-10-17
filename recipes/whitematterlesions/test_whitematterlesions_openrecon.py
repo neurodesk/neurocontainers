@@ -6,6 +6,7 @@ Set WHITEMATTERLESIONS_TEST_FLAIR to a FLAIR NIfTI to also run the real
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import subprocess
@@ -77,6 +78,12 @@ def nifti_to_mrd_images(volume_xyz, affine, series_index=3, description="t2_flai
         meta = ismrmrd.Meta()
         meta["SeriesDescription"] = description
         meta["SOPInstanceUID"] = f"1.2.3.{k}"
+        meta["SeriesInstanceUID"] = "1.2.3"
+        meta["SOPClassUID"] = "1.2.840.10008.5.1.4.1.1.4"
+        meta["ImageType"] = "ORIGINAL\\PRIMARY\\M\\ND"
+        meta["DicomImageType"] = "ORIGINAL\\PRIMARY\\M\\ND"
+        meta["SoftwareVersions"] = "scanner-version"
+        meta["SeriesNumberRangeNameUID"] = "source-flair"
         meta["WindowCenter"] = "2048"
         meta["WindowWidth"] = "4096"
         meta["RescaleSlope"] = "2"
@@ -192,6 +199,25 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
         self.assertIn("12 lesions, 1.21 ml", connection.logs[0][1])
         series = connection.series()
         self.assertEqual(sorted(series), [4, 5, 6, 7, 8])
+        series_uids = set()
+        instance_uids = set()
+        for index, group in series.items():
+            metas = [ismrmrd.Meta.deserialize(image.attribute_string) for image in group]
+            uids = {meta["SeriesInstanceUID"] for meta in metas}
+            self.assertEqual(len(uids), 1)
+            self.assertTrue(series_uids.isdisjoint(uids))
+            series_uids.update(uids)
+            for meta in metas:
+                if index == 4:
+                    self.assertEqual(meta["ImageType"], "ORIGINAL\\PRIMARY\\M\\ND")
+                else:
+                    self.assertNotIn("SOPInstanceUID", meta)
+                    self.assertNotIn(meta["OpenReconImageUID"], instance_uids)
+                    instance_uids.add(meta["OpenReconImageUID"])
+                    self.assertTrue(meta["ImageType"].startswith("DERIVED\\PRIMARY\\M\\OR_WML_"))
+                    self.assertLessEqual(len(meta["ImageTypeValue4"]), 16)
+                    self.assertNotEqual(meta["SeriesNumberRangeNameUID"], "source-flair")
+                    self.assertEqual(meta["SequenceDescription"], meta["SeriesDescription"])
         descriptions = {
             index: ismrmrd.Meta.deserialize(images[0].attribute_string)["SeriesDescription"]
             for index, images in series.items()
@@ -221,7 +247,12 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             expected_overlay = np.where(outline[:, :, k].T, peak, source_plane)
             np.testing.assert_array_equal(np.squeeze(overlay.data), expected_overlay)
             meta = ismrmrd.Meta.deserialize(mask.attribute_string)
-            self.assertNotIn("SOPInstanceUID", meta.keys())
+            self.assertNotIn("SOPInstanceUID", meta)
+            self.assertEqual(meta["ImageType"], "DERIVED\\PRIMARY\\M\\OR_WML_MASK")
+            self.assertEqual(meta["DicomImageType"], meta["ImageType"])
+            self.assertEqual(meta["SoftwareVersions"], "scanner-version")
+            self.assertEqual(meta["OpenReconGeometrySourceSOPInstanceUID"], f"1.2.3.{k}")
+            self.assertEqual(json.loads(meta["OpenReconParameters"])["model"], "ensemble")
             self.assertIn(wml.RESEARCH_WARNING, meta["ImageComment"])
             for image, display_max in ((mask, 1), (probability, 1000)):
                 meta = ismrmrd.Meta.deserialize(image.attribute_string)
@@ -405,7 +436,8 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
         self.assertEqual(meta["NumberInSeries"], "1")
         self.assertEqual((meta["WindowCenter"], meta["WindowWidth"]), ("2040", "4080"))
         self.assertNotEqual(meta["SeriesInstanceUID"], "1.2.3.6")
-        self.assertNotEqual(meta["SOPInstanceUID"], "1.2.3.3")
+        self.assertNotIn("SOPInstanceUID", meta)
+        self.assertTrue(meta["OpenReconImageUID"].startswith("2.25."))
         self.assertEqual(meta["StudyInstanceUID"], "1.2.3.7")
         for key in (
             "IceMiniHead", "DicomEngineDimString", "MFInstanceNumber",
@@ -413,7 +445,7 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             "RescaleSlope", "RescaleIntercept",
         ):
             self.assertNotIn(key, meta)
-        self.assertEqual(meta["ImageComments"], "1 lesions, 0.01 ml")
+        self.assertTrue(meta["ImageComments"].startswith("1 lesions, 0.01 ml; OpenRecon FLAMeS"))
 
     def test_metrics_renderer_paginates_without_losing_rows(self):
         rows = [wml.LesionMetric(i, 10, 0.012345, (-12.5, 23.5, 34.5)) for i in range(1, 81)]
