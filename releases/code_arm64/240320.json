@@ -1,7 +1,7 @@
 {
   "apps": {
     "code_arm64 240320": {
-      "version": "20261014",
+      "version": "20261016",
       "exec": "",
       "apptainer_args": []
     }
