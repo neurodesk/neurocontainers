@@ -690,17 +690,13 @@ build:
         env_name: brainles
         env_exists: "false"
 
-    - condition: arch == "aarch64"
+    - condition: arch == "x86_64"
       run:
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}" --index-url https://download.pytorch.org/whl/cpu
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir --no-binary=antspyx "antspyx=={{ context.antspyx_version }}"
-        - ln -sf /usr/lib/aarch64-linux-gnu/libstdc++.so.6 /opt/miniconda-py311_24.9.2-0/envs/brainles/lib/libstdc++.so.6
-
-    - run:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.upstream_version }}
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # SynthStrip is one of the two brain extractors this package exposes and
         # its weights are baked in below, but it lives behind an optional extra:
         # brain_extraction/synthstrip.py imports nipreps.synthstrip, so without
@@ -714,13 +710,12 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2"
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
 
-    - condition: arch == "aarch64"
+    - condition: arch == "x86_64"
       run:
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_native_niftyreg.py") }}
-    - run:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip check
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # The `preprocessor` console script fails on every invocation as
         # shipped. See the patch.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }}
@@ -757,13 +752,15 @@ build:
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import inspect, torch; from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor as S; assert inspect.signature(S.extract).parameters['device'].default is None, 'device default not patched'; torch.cuda.is_available=lambda: False; assert S._resolve_device(None)==torch.device('cpu'), S._resolve_device(None); torch.cuda.is_available=lambda: True; assert S._resolve_device(None)==torch.device('cuda'), S._resolve_device(None); assert S._resolve_device('cpu')==torch.device('cpu'); assert S._resolve_device(torch.device('cuda:1'))==torch.device('cuda:1'); print('synthstrip picks a device')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # python itself is deliberately not exported (see deploy), so give the
         # library a named interpreter rather than no route in at all.
         - install -m 0755 {{ get_file("preprocessing_python_helper") }} /usr/local/bin/brainles-preprocessing-python
         - brainles-preprocessing-python -c "import brainles_preprocessing; print('wrapper ok')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # Bake the atlases and SynthStrip weights into the image.
         #
         # Without this the container cannot do the one job it exists for. Both
@@ -792,7 +789,8 @@ build:
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_synthstrip; p=fetch_synthstrip(); assert p.is_dir() and any(p.iterdir()), p; print('synthstrip resolves to', p)"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # The --help gates prove the console scripts start; N2 was a command
         # that starts and cannot finish. This is the next rung: one synthetic
         # volume through the exported hd-bet command at the CPU profile the
@@ -810,85 +808,125 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} check /tmp/hdbet_gate_bet_mask.nii.gz
         - rm -f /tmp/hdbet_gate*.nii.gz
 
+    # Keep the original Torch payload and its replacement in one ARM layer.
+    # Subshells retain the former RUN scopes; CBLAS still runs last.
     - condition: arch == "aarch64"
       run:
-      - install -d /opt/brainles-cblas-inputs/headers /opt/brainles-cblas-inputs/debs /opt/brainles-cblas-inputs/wheels
-      - cp {{ get_file("cblas/build-native.sh") }} /opt/brainles-cblas-inputs/build-native.sh
-      - cp {{ get_file("cblas/check-config.py") }} /opt/brainles-cblas-inputs/check-config.py
-      - cp {{ get_file("cblas/provider.cmake") }} /opt/brainles-cblas-inputs/provider.cmake
-      - cp {{ get_file("cblas/headers/cblas.h") }} /opt/brainles-cblas-inputs/headers/cblas.h
-      - cp {{ get_file("cblas/headers/openblas_config.h") }} /opt/brainles-cblas-inputs/headers/openblas_config.h
-      - cp {{ get_file("cblas/reference.whl") }} /opt/brainles-cblas-inputs/reference.whl
-      - cp {{ get_file("cblas/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libc6_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc6_2.39-0ubuntu8.9_arm64.deb
-      - cp {{ get_file("cblas/debs/libcrypt1_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt1_4.4.36-4build1_arm64.deb
-      - cp {{ get_file("cblas/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
-      - cp {{ get_file("cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
-      - cp {{ get_file("cblas/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libjansson4_2.14-2build2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libjansson4_2.14-2build2_arm64.deb
-      - cp {{ get_file("cblas/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/libctf0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libctf0_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/binutils_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils_2.42-4ubuntu2.10_arm64.deb
-      - cp {{ get_file("cblas/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libisl23_0.26-3build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libisl23_0.26-3build1.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libmpfr6_4.2.1-1build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libmpfr6_4.2.1-1build1.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libmpc3_1.3.1-1build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libmpc3_1.3.1-1build1.1_arm64.deb
-      - cp {{ get_file("cblas/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
-      - cp {{ get_file("cblas/debs/linux-libc-dev_6.8.0-147.147_arm64.deb") }} /opt/brainles-cblas-inputs/debs/linux-libc-dev_6.8.0-147.147_arm64.deb
-      - cp {{ get_file("cblas/debs/libcrypt-dev_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt-dev_4.4.36-4build1_arm64.deb
-      - cp {{ get_file("cblas/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb") }} /opt/brainles-cblas-inputs/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
-      - cp {{ get_file("cblas/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb
-      - cp {{ get_file("cblas/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
-      - cp {{ get_file("cblas/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/SCons-4.7.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/SCons-4.7.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/certifi-2025.4.26-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/certifi-2025.4.26-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/filelock-3.18.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/filelock-3.18.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/fsspec-2025.3.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/fsspec-2025.3.2-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/idna-3.10-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/idna-3.10-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/jinja2-3.1.6-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/jinja2-3.1.6-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/mpmath-1.3.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/mpmath-1.3.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/networkx-3.4.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/networkx-3.4.2-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/packaging-25.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/packaging-25.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/pip-24.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/pip-24.2-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-      - cp {{ get_file("cblas/wheels/requests-2.32.4-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/requests-2.32.4-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/setuptools-80.9.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/setuptools-80.9.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/six-1.17.0-py2.py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/six-1.17.0-py2.py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/sympy-1.13.3-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/sympy-1.13.3-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/typing_extensions-4.15.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/typing_extensions-4.15.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/urllib3-2.4.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/urllib3-2.4.0-py3-none-any.whl
-      - cp {{ get_file("cblas/wheels/wheel-0.45.1-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/wheel-0.45.1-py3-none-any.whl
-      - cp {{ get_file("cblas/pins.json") }} /opt/brainles-cblas-inputs/pins.json
-      - bash /opt/brainles-cblas-inputs/build-native.sh
-      - rm -rf /opt/brainles-cblas-inputs
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}" --index-url https://download.pytorch.org/whl/cpu &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir --no-binary=antspyx "antspyx=={{ context.antspyx_version }}" &&
+          ln -sf /usr/lib/aarch64-linux-gnu/libstdc++.so.6 /opt/miniconda-py311_24.9.2-0/envs/brainles/lib/libstdc++.so.6 )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.upstream_version }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_native_niftyreg.py") }} )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip check )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_hdbet_cli") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_synthstrip_device") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/preprocessor --help > /dev/null && echo "preprocessor --help ok" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet --help > /dev/null && echo "hd-bet --help ok" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import typer; from brainles_preprocessing import cli; c=typer.main.get_command(cli.app); n=set(); [n.update(p.opts+p.secondary_opts) for p in c.params]; need={'--bet-mode','--bet-device','--bet-tta','--no-bet-tta'}; assert need <= n, 'missing '+str(sorted(need-n)); print('bet profile selectable')" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.hd_bet import HDBetExtractor; from brainles_preprocessing.cli import _ProfiledHDBetExtractor as E; seen={}; HDBetExtractor.extract=lambda self,*a,**k: seen.update(k); E(mode='fast',device='cpu',do_tta=False).extract(); assert seen=={'mode':'fast','device':'cpu','do_tta':False}, seen; seen.clear(); E().extract(); assert seen=={'mode':'accurate','device':0,'do_tta':True}, seen; print('bet profile reaches hd-bet')" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import inspect, torch; from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor as S; assert inspect.signature(S.extract).parameters['device'].default is None, 'device default not patched'; torch.cuda.is_available=lambda: False; assert S._resolve_device(None)==torch.device('cpu'), S._resolve_device(None); torch.cuda.is_available=lambda: True; assert S._resolve_device(None)==torch.device('cuda'), S._resolve_device(None); assert S._resolve_device('cpu')==torch.device('cpu'); assert S._resolve_device(torch.device('cuda:1'))==torch.device('cuda:1'); print('synthstrip picks a device')" )
+        - >-
+          ( install -m 0755 {{ get_file("preprocessing_python_helper") }} /usr/local/bin/brainles-preprocessing-python &&
+          brainles-preprocessing-python -c "import brainles_preprocessing; print('wrapper ok')" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }} {{ get_file("synthstrip_weights") }} {{ context.synthstrip_version }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_hdbet_models.py") }} {{ get_file("hdbet_0_model") }} {{ get_file("hdbet_1_model") }} {{ get_file("hdbet_2_model") }} {{ get_file("hdbet_3_model") }} {{ get_file("hdbet_4_model") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib; from brainles_hd_bet.utils import folder_with_parameter_files as d; f=sorted(pathlib.Path(d).glob('*.model')); assert len(f)==5, [x.name for x in f]; print('hd-bet folds:', [x.name for x in f])" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_atlases; from brainles_preprocessing.constants import Atlas; p=fetch_atlases()/Atlas.BRATS_SRI24.value; assert p.is_file(), p; print('atlases resolve to', p)" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_synthstrip; p=fetch_synthstrip(); assert p.is_dir() and any(p.iterdir()), p; print('synthstrip resolves to', p)" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} make /tmp/hdbet_gate.nii.gz &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet -i /tmp/hdbet_gate.nii.gz -o /tmp/hdbet_gate_bet.nii.gz -mode fast -device cpu -tta 0 &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} check /tmp/hdbet_gate_bet_mask.nii.gz &&
+          rm -f /tmp/hdbet_gate*.nii.gz )
+        - >-
+          ( install -d /opt/brainles-cblas-inputs/headers /opt/brainles-cblas-inputs/debs /opt/brainles-cblas-inputs/wheels &&
+          cp {{ get_file("cblas/build-native.sh") }} /opt/brainles-cblas-inputs/build-native.sh &&
+          cp {{ get_file("cblas/check-config.py") }} /opt/brainles-cblas-inputs/check-config.py &&
+          cp {{ get_file("cblas/provider.cmake") }} /opt/brainles-cblas-inputs/provider.cmake &&
+          cp {{ get_file("cblas/headers/cblas.h") }} /opt/brainles-cblas-inputs/headers/cblas.h &&
+          cp {{ get_file("cblas/headers/openblas_config.h") }} /opt/brainles-cblas-inputs/headers/openblas_config.h &&
+          cp {{ get_file("cblas/reference.whl") }} /opt/brainles-cblas-inputs/reference.whl &&
+          cp {{ get_file("cblas/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libc6_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc6_2.39-0ubuntu8.9_arm64.deb &&
+          cp {{ get_file("cblas/debs/libcrypt1_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt1_4.4.36-4build1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb &&
+          cp {{ get_file("cblas/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libjansson4_2.14-2build2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libjansson4_2.14-2build2_arm64.deb &&
+          cp {{ get_file("cblas/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libctf0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libctf0_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/binutils_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libisl23_0.26-3build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libisl23_0.26-3build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libmpfr6_4.2.1-1build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libmpfr6_4.2.1-1build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libmpc3_1.3.1-1build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libmpc3_1.3.1-1build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb &&
+          cp {{ get_file("cblas/debs/linux-libc-dev_6.8.0-147.147_arm64.deb") }} /opt/brainles-cblas-inputs/debs/linux-libc-dev_6.8.0-147.147_arm64.deb &&
+          cp {{ get_file("cblas/debs/libcrypt-dev_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt-dev_4.4.36-4build1_arm64.deb &&
+          cp {{ get_file("cblas/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb") }} /opt/brainles-cblas-inputs/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb &&
+          cp {{ get_file("cblas/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb &&
+          cp {{ get_file("cblas/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/SCons-4.7.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/SCons-4.7.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/certifi-2025.4.26-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/certifi-2025.4.26-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/filelock-3.18.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/filelock-3.18.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/fsspec-2025.3.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/fsspec-2025.3.2-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/idna-3.10-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/idna-3.10-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/jinja2-3.1.6-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/jinja2-3.1.6-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/mpmath-1.3.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/mpmath-1.3.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/networkx-3.4.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/networkx-3.4.2-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/packaging-25.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/packaging-25.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/pip-24.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/pip-24.2-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/requests-2.32.4-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/requests-2.32.4-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/setuptools-80.9.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/setuptools-80.9.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/six-1.17.0-py2.py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/six-1.17.0-py2.py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/sympy-1.13.3-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/sympy-1.13.3-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/typing_extensions-4.15.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/typing_extensions-4.15.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/urllib3-2.4.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/urllib3-2.4.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/wheel-0.45.1-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/wheel-0.45.1-py3-none-any.whl &&
+          cp {{ get_file("cblas/pins.json") }} /opt/brainles-cblas-inputs/pins.json &&
+          bash /opt/brainles-cblas-inputs/build-native.sh &&
+          rm -rf /opt/brainles-cblas-inputs )
 
     - environment:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
