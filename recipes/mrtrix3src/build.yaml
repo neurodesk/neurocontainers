@@ -1,6 +1,6 @@
 variables:
   install_version: "latest"
-  upstream_commit: 6735cfa33db19b38464a67638e6bd4e1f67c0e34
+  upstream_commit: "414c2b38962ee2d67a392f9b39db7853675dfd4f"
 
 name: mrtrix3src
 version: latest
