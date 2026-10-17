@@ -27,6 +27,8 @@ import ismrmrd
 import nibabel as nib
 import numpy as np
 
+import qsmxt_regional_report
+
 try:
     import constants
 except ImportError:
@@ -395,6 +397,27 @@ def process(connection, config, metadata):
                         "QSMxT completed for %s input but no requested output files were found",
                         variant,
                     )
+                if pair_settings["regional_qsm_table"]:
+                    try:
+                        pages = qsmxt_regional_report.build_pages(
+                            output_dir,
+                            input_variant=variant,
+                            requested_reference=pair_settings["qsm_reference"],
+                        )
+                        report = _build_regional_report_image(
+                            pages, conversion,
+                            _reserve_series_index(used_series, OUTPUT_SERIES_START),
+                        )
+                        _validate_regional_report_image(report, input_images)
+                    except Exception:
+                        message = (
+                            f"Optional regional QSM table missing for {variant} input.\n"
+                            + traceback.format_exc()
+                        )
+                        logging.error(message)
+                        connection.send_logging(constants.MRD_LOGGING_ERROR, message)
+                        continue
+                    connection.send_image(report)
 
     except Exception:
         message = traceback.format_exc()
@@ -877,6 +900,8 @@ def _qsmxt_command(bids_dir, output_dir, settings):
         cmd.extend(["--do-chisep", "--chisep", settings["source_separation"]])
     if settings["no_qsm"]:
         cmd.append("--no-qsm")
+    if settings["regional_qsm_table"]:
+        cmd.append("--do-analysis")
     if do_swi:
         cmd.append("--do-swi")
     if do_t2starmap:
@@ -1029,6 +1054,155 @@ def _build_output_images(
             )
         )
     return output_images
+
+
+def _build_regional_report_image(pages, conversion, series_index) -> ismrmrd.Image:
+    if not pages or any(
+        page.ndim != 2 or page.shape != pages[0].shape or page.dtype != np.uint16
+        for page in pages
+    ):
+        raise ValueError("Regional QSM report requires equal-size uint16 pages")
+    volume = np.stack([np.rot90(page, 2) for page in pages])
+    page_count, height, width = volume.shape
+    report = ismrmrd.Image.from_array(volume, transpose=False)
+    source = conversion["anchor_image"]
+    header = copy.deepcopy(source.getHead())
+    header.data_type = report.data_type
+    header.channels = 1
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_series_index = int(series_index)
+    header.image_index = 1
+    for field in ("slice", "contrast", "phase", "repetition", "set", "average", "flags"):
+        setattr(header, field, 0)
+    for field, values in (
+        ("matrix_size", (width, height, page_count)),
+        ("field_of_view", (float(width), float(height), float(page_count))),
+        ("position", (0.0, 0.0, 0.0)),
+        ("read_dir", (1.0, 0.0, 0.0)),
+        ("phase_dir", (0.0, 1.0, 0.0)),
+        ("slice_dir", (0.0, 0.0, 1.0)),
+    ):
+        _set_header_sequence_field(header, field, values)
+    report.setHead(header)
+
+    meta = _meta_from_image(source)
+    _strip_source_parent_refs(meta)
+    _strip_scanner_write_unsafe_meta(meta)
+    for key in list(meta):
+        if key in SOURCE_SCALING_META_KEYS | {"IceMiniHead"} or key.startswith("QSMxT"):
+            del meta[key]
+    title = f"QSMxT Regional QSM table {conversion['input_short_label']}"
+    series_uid = _derived_series_uid(source, series_index, title)
+    image_type = "DERIVED\\PRIMARY\\M\\QSMXT_REGIONAL_TABLE"
+    meta.update({
+        "DataRole": "Segmentation",
+        "ImageProcessingHistory": ["PYTHON", "QSMXT", "SYNTHSEG", "REGIONAL_TABLE"],
+        "ImageType": image_type,
+        "DicomImageType": image_type,
+        "ImageTypeValue4": "QSMXT_REGIONAL_TABLE",
+        "ComplexImageComponent": "MAGNITUDE",
+        "SeriesDescription": title,
+        "SequenceDescription": title,
+        "ProtocolName": title,
+        "SequenceDescriptionAdditional": "openrecon",
+        "SeriesNumberRangeNameUID": _derived_series_grouping(title, series_index),
+        "SeriesInstanceUID": series_uid,
+        "SOPInstanceUID": _derived_instance_uid(source, series_uid, series_index, title),
+        "QSMxTOutput": "regionalqsmtable",
+        "QSMxTInputSeries": conversion["input_variant"],
+        "ImageComment": "Native Chimap regional values in ppm; report pixels contain text",
+        "ImageComments": "Native Chimap regional values in ppm; report pixels contain text",
+        "Keep_image_geometry": "0",
+        "partition_count": "1",
+        "slice_count": str(page_count),
+        "NumberOfSlices": str(page_count),
+        "ImagesInAcquisition": str(page_count),
+        "NumberInSeries": "1",
+        "WindowCenter": "2048",
+        "WindowWidth": "4096",
+        **_header_geometry_meta(header),
+    })
+    for field in ORIGINAL_STORAGE_FIELDS:
+        if field != "NumberInSeries":
+            meta[field] = "0"
+    report.attribute_string = meta.serialize()
+    return report
+
+
+def _validate_regional_report_image(report, input_images) -> None:
+    header = report.getHead()
+    meta = _meta_from_image(report)
+    data = np.asarray(report.data)
+    if data.ndim != 4 or data.shape[0] != 1 or min(data.shape) < 1:
+        raise ValueError("Regional QSM report must contain one channel of page volumes")
+    _, page_count, height, width = data.shape
+    if data.dtype != np.uint16 or int(header.data_type) != ismrmrd.DATATYPE_USHORT:
+        raise ValueError("Regional QSM report pixels must be uint16")
+    if data.max() > SCANNER_DISPLAY_MAX or int(header.channels) != 1:
+        raise ValueError("Regional QSM report must use one channel and pixels in 0..4095")
+    for field, expected in (
+        ("matrix_size", (width, height, page_count)),
+        ("field_of_view", (width, height, page_count)),
+        ("position", (0, 0, 0)),
+        ("read_dir", (1, 0, 0)),
+        ("phase_dir", (0, 1, 0)),
+        ("slice_dir", (0, 0, 1)),
+    ):
+        if not np.array_equal(getattr(header, field), expected):
+            raise ValueError(f"Regional QSM report has invalid {field}")
+    if int(header.slice) != 0 or int(header.image_index) != 1:
+        raise ValueError("Regional QSM report must be one explicit-volume message")
+    if int(header.image_type) != ismrmrd.IMTYPE_MAGNITUDE:
+        raise ValueError("Regional QSM report must have magnitude image type")
+    for key, expected in {
+        "DataRole": "Segmentation", "Keep_image_geometry": "0", "partition_count": "1",
+        "ImageType": "DERIVED\\PRIMARY\\M\\QSMXT_REGIONAL_TABLE",
+        "DicomImageType": "DERIVED\\PRIMARY\\M\\QSMXT_REGIONAL_TABLE",
+        "ImageTypeValue4": "QSMXT_REGIONAL_TABLE", "ComplexImageComponent": "MAGNITUDE",
+        "slice_count": str(page_count), "NumberOfSlices": str(page_count),
+        "ImagesInAcquisition": str(page_count), "NumberInSeries": "1",
+        "WindowCenter": "2048", "WindowWidth": "4096",
+        "QSMxTOutput": "regionalqsmtable",
+        **{field: "0" for field in ORIGINAL_STORAGE_FIELDS if field != "NumberInSeries"},
+    }.items():
+        if meta.get(key) != expected:
+            raise ValueError(f"Regional QSM report has invalid {key}")
+    for key, expected in _header_geometry_meta(header).items():
+        if meta.get(key) != expected:
+            raise ValueError(f"Regional QSM report metadata disagrees with {key}")
+    forbidden = (
+        SOURCE_SCALING_META_KEYS | SCANNER_WRITE_UNSAFE_META_KEYS
+        | SOURCE_PARENT_REFERENCE_META_KEYS | {"IceMiniHead"}
+    ) - {"WindowCenter", "WindowWidth", "SOPInstanceUID"}
+    for key in meta:
+        if key in forbidden or key.startswith(SOURCE_PARENT_REFERENCE_META_PREFIXES):
+            raise ValueError(f"Regional QSM report keeps unsafe source metadata {key}")
+        if key.startswith("QSMxT") and key not in {"QSMxTOutput", "QSMxTInputSeries"}:
+            raise ValueError(f"Regional QSM report keeps physical map metadata {key}")
+    variant = _meta_text(meta, "QSMxTInputSeries")
+    short_label = {DISTORTION_CORRECTED: "DC", NON_DISTORTION_CORRECTED: "ND"}.get(variant)
+    if short_label is None:
+        raise ValueError("Regional QSM report has invalid input variant")
+    title = f"QSMxT Regional QSM table {short_label}"
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        if _meta_text(meta, key) != title:
+            raise ValueError(f"Regional QSM report has invalid {key}")
+    if _meta_text(meta, "SeriesNumberRangeNameUID") != _derived_series_grouping(
+        title, header.image_series_index,
+    ):
+        raise ValueError("Regional QSM report has invalid series grouping")
+    for key in ("SeriesInstanceUID", "SOPInstanceUID"):
+        uid = _meta_text(meta, key)
+        if not re.fullmatch(r"2\.25\.[0-9]+", uid):
+            raise ValueError(f"Regional QSM report has invalid {key}")
+        if uid in {_meta_text(_meta_from_image(image), key) for image in input_images}:
+            raise ValueError(f"Regional QSM report reuses source {key}")
+    if meta["SeriesInstanceUID"] == meta["SOPInstanceUID"]:
+        raise ValueError("Regional QSM report reuses its series UID for its instance")
+    if int(header.image_series_index) in {
+        int(image.getHead().image_series_index) for image in input_images
+    }:
+        raise ValueError("Regional QSM report reuses a source series index")
 
 
 def _build_original_passthrough_images(input_images):
@@ -1951,6 +2125,9 @@ def _settings_from_config(config, metadata=None):
     no_qsm = _config_bool(params, "noqsm", False)
     if source_separation != "off" and no_qsm:
         raise ValueError("Source separation requires QSM; disable noqsm")
+    regional_qsm_table = _config_bool(params, "regionalqsmtable", False)
+    if regional_qsm_table and no_qsm:
+        raise ValueError("Regional QSM table requires QSM; disable noqsm")
     pipeline_preset, algorithm_settings = _algorithm_settings(params)
     mask_cleanup = _optional_choice(params, "maskcleanup") or DEFAULT_MASK_CLEANUP
     try:
@@ -1964,6 +2141,7 @@ def _settings_from_config(config, metadata=None):
         "input_series": input_series,
         "send_outputs": str(params.get("sendoutputs", "qsm") or "qsm"),
         "source_separation": source_separation,
+        "regional_qsm_table": regional_qsm_table,
         "max_echoes": _config_int(params, "maxechoes", 0),
         "echo_times_ms": _config_text(params, "echotimesms", ""),
         "echo_time_ms": _config_float(params, "echotimems", DEFAULT_ECHO_TIME_MS),

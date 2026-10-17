@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "spm25 26.10.01": {
+      "version": "20261016",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "structural imaging"
+  ]
+}

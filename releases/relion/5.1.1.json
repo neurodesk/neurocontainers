@@ -1,7 +1,7 @@
 {
   "apps": {
     "relion 5.1.1": {
-      "version": "20261012",
+      "version": "20261015",
       "exec": "",
       "apptainer_args": []
     }
