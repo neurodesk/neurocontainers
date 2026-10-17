@@ -62,6 +62,8 @@ setup:
     # Any is confined to heterogeneous JSON record values.
     from typing import Any, Callable, Literal, Mapping, Sequence
 
+    from typing import Generic, TypeVar
+
     StopOutcome = Literal['not_attempted', 'in_flight', 'requested', 'absent', 'raised']
 
     BASE = 'a3cd2eb0a42da42030d1547179b20dab066355a5'
@@ -1894,6 +1896,7 @@ setup:
         raw_capture = False
         try:
             bind_runner(plan)
+            _stage_inert_mmap(plan)
             send(channel, 'ready')
             phase = 'preflight'
             preflight_start = time.monotonic()
@@ -2212,6 +2215,886 @@ setup:
                 manifest(directory, 'prerequisite_failed', reason=type(error).__name__+': '+str(error)[:2000])
 
 
+    _ProbeValue = TypeVar('_ProbeValue')
+
+
+    _DescriptorRole = Literal['probe_root', 'mmap_source', 'focused_rooted_reopen', 'map_files_reopen']
+
+
+    @dataclass(frozen=True)
+    class _Blob:
+        name: str
+        size: int
+        sha256: str
+
+
+    @dataclass(frozen=True)
+    class _Read(Generic[_ProbeValue]):
+        value: _ProbeValue
+        started: float
+        finished: float
+
+
+    @dataclass(frozen=True)
+    class _Missing:
+        operation: str
+        reason: str
+        errno: int | None
+        kind: Literal['unavailable', 'deferred']
+
+
+    @dataclass(frozen=True)
+    class _Origin:
+        work: Path
+        t1w: Path
+        source_suite_sha256: str
+        staged_suite_sha256: str
+        setup_script_sha256: str
+        host_script_sha256: str
+        program_sha256: str
+        launch_receipt: _Blob
+        runner: _Process
+        capsule_id: str
+
+
+    @dataclass(frozen=True)
+    class _Process:
+        pid: int
+        start_ticks: int
+        boot_id: str
+        pid_namespace: str
+        mount_namespace: str
+        user_namespace: str
+
+
+    @dataclass(frozen=True)
+    class _Stat:
+        device: int
+        inode: int
+        mode: int
+        size: int
+        mtime_ns: int
+        ctime_ns: int
+
+
+    @dataclass(frozen=True)
+    class _Descriptor:
+        owner: _Process
+        role: _DescriptorRole
+        number: int
+        stat: _Read[_Stat]
+        fdinfo: _Read[_Blob] | _Missing
+        link: _Read[str] | _Missing
+        fstatfs: _Missing
+
+
+    @dataclass(frozen=True)
+    class _HeldMapping:
+        mapper: _Process
+        range_row: _Mapping
+        maps_before: _Blob
+        maps_live: _Blob
+        maps_after: _Read[_Blob] | _Missing
+        source_before: _Descriptor
+        source_live: _Descriptor
+        source_after: _Read[_Descriptor] | _Missing
+        root: _Descriptor
+        focused_reopen: _Descriptor
+        map_files_reopen: _Read[_Descriptor] | _Missing
+        requested_length: int
+        requested_offset: Literal[0]
+        protection: Literal['PROT_READ|PROT_EXEC']
+        flags: Literal['MAP_PRIVATE']
+
+
+    @dataclass(frozen=True)
+    class _Equal:
+        observed: _HeldMapping
+        kind: Literal['observed_identity_equality'] = 'observed_identity_equality'
+
+
+    @dataclass(frozen=True)
+    class _Mismatch:
+        observed: _HeldMapping
+        unequal_pairs: tuple[str, ...]
+        kind: Literal['observed_identity_mismatch'] = 'observed_identity_mismatch'
+
+
+    @dataclass(frozen=True)
+    class _Partial:
+        last_operation: str
+        reason: str
+        retained: tuple[_Blob, ...]
+        kind: Literal['partial_observation'] = 'partial_observation'
+
+
+    _Focus = _Equal | _Mismatch | _Missing | _Partial
+
+
+    @dataclass(frozen=True)
+    class _InventoryReturned:
+        objects: _Blob
+        flirt_record: _Read[Mapping[str, object]] | _Missing
+        kind: Literal['inventory_returned'] = 'inventory_returned'
+
+
+    @dataclass(frozen=True)
+    class _InventoryRefused:
+        exception_type: str
+        reason: str
+        first_identity_refusal: _Read[_Blob] | _Missing
+        kind: Literal['inventory_refused'] = 'inventory_refused'
+
+
+    @dataclass(frozen=True)
+    class _InventoryInterrupted:
+        reason: str
+        retained: tuple[_Blob, ...]
+        kind: Literal['inventory_not_completed'] = 'inventory_not_completed'
+
+
+    _Inventory = _InventoryReturned | _InventoryRefused | _InventoryInterrupted
+
+
+    @dataclass(frozen=True)
+    class _Observation:
+        origin: _Origin
+        process: _Read[_Process] | _Missing
+        focus: _Focus
+        inventory: _Inventory
+        topology: tuple[_Blob, ...]
+        missing_topology: tuple[_Missing, ...]
+        claim: Literal['new_inert_mapping_only'] = 'new_inert_mapping_only'
+
+
+    @dataclass(frozen=True)
+    class _Reaped:
+        child_pid: int
+        raw_wait_status: int
+        stopped_for: Literal['normal', 'deadline', 'cancellation', 'failure']
+
+
+    @dataclass(frozen=True)
+    class _CleanupUnconfirmed:
+        child_pid: int
+        reason: str
+
+
+    @dataclass(frozen=True)
+    class _Omitted:
+        name: str
+        reason: str
+        size: int | None
+        sha256: str | None
+
+
+    @dataclass(frozen=True)
+    class _Envelope:
+        child: _Read[_Observation] | _Missing | _Partial
+        cleanup: _Reaped | _CleanupUnconfirmed | _Missing
+        actual_files: tuple[_Blob, ...]
+        omitted_files: tuple[_Omitted, ...]
+        native_acceptance: Literal[False] = False
+        scientific_acceptance: Literal[False] = False
+        release_pass: Literal[False] = False
+        merge_eligible: Literal[False] = False
+
+
+    def _stage_inert_mmap(plan: RunPlan) -> None:
+        plan.owner.check()
+        if time.monotonic() >= plan.started + POLICY['bootstrap']:
+            raise Refusal('bootstrap deadline before inert staging')
+        slot = plan.work / '.pydeface-inert-r46'
+        created = []
+        claimed = False
+        sealed = False
+        result = {}
+        try:
+            import yaml
+            launch_raw = read_bytes(plan.retained / 'launch.json')
+            launch = json.loads(launch_raw)
+            args = launch['argv']
+            scripts = [Path(item) for item in args if item.endswith('/builder/run_tests.py')]
+            if len(scripts) != 1 or not scripts[0].is_absolute():
+                raise Refusal('inert launch script binding')
+            source = read_bytes(scripts[0].parent.parent / 'recipes/pydeface/fulltest.yaml')
+            staged = read_bytes(Path(launch['suite']))
+            source_mapping = yaml.safe_load(source)
+            if yaml.safe_load(staged) != source_mapping:
+                raise Refusal('inert staged suite differs')
+            helper = source_mapping['setup']['host_script'].encode()
+            setup = source_mapping['setup']['script'].encode()
+            digests = dict(source_sha256=hashlib.sha256(source).hexdigest(),
+                           staged_sha256=hashlib.sha256(staged).hexdigest(),
+                           helper_sha256=hashlib.sha256(helper).hexdigest())
+            if any(launch[key] != value for key, value in digests.items()):
+                raise Refusal('inert launch digest changed')
+            if (launch['work'] != str(plan.work) or launch['boot_id'] != plan.boot
+                    or launch['owner']['pid'] != plan.owner.pid
+                    or launch['owner']['ticks'] != plan.owner.ticks
+                    or args != argv(plan.owner.pid)):
+                raise Refusal('inert launch context changed')
+            boot = read_bytes('/proc/sys/kernel/random/boot_id', 128).decode().strip()
+            runner_before = process_stat(plan.owner.pid)
+            runner = _Process(plan.owner.pid, plan.owner.ticks, boot,
+                              os.readlink(f'/proc/{plan.owner.pid}/ns/pid'),
+                              os.readlink(f'/proc/{plan.owner.pid}/ns/mnt'),
+                              os.readlink(f'/proc/{plan.owner.pid}/ns/user'))
+            if (boot != plan.boot or runner_before['ticks'] != plan.owner.ticks
+                    or process_stat(plan.owner.pid)['ticks'] != plan.owner.ticks):
+                raise Refusal('inert runner identity changed')
+            marker = b"<<'NATIVE_PROFILE_PY'\n"
+            ending = b'\nNATIVE_PROFILE_PY\n'
+            if helper.count(marker) != 1 or helper.count(ending) != 1:
+                raise Refusal('inert program extraction ambiguous')
+            program = helper.split(marker, 1)[1].split(ending, 1)[0] + b'\n'
+            if not program or len(program) > POLICY['metadata']:
+                raise Refusal('inert program length')
+            origin = _Origin(plan.work, plan.t1w, digests['source_sha256'],
+                             digests['staged_sha256'], hashlib.sha256(setup).hexdigest(),
+                             digests['helper_sha256'], hashlib.sha256(program).hexdigest(),
+                             _Blob('launch.json', len(launch_raw), hashlib.sha256(launch_raw).hexdigest()),
+                             runner, os.urandom(16).hex())
+            origin_data = dict(origin=asdict(origin), launch=launch,
+                               launch_bytes_hex=launch_raw.hex(),
+                               image_context=dict(path=launch['container'],
+                                                  stat=list(Path(launch['container']).stat())[:10]),
+                               staged_at=time.monotonic())
+            origin_raw = json.dumps(origin_data, sort_keys=True, default=str).encode()
+            if len(origin_raw) > POLICY['metadata']:
+                raise Refusal('inert origin length')
+            slot.mkdir(mode=0o700)
+            claimed = True
+            blobs = []
+            for name, data in (('program.py', program), ('origin.json', origin_raw)):
+                if time.monotonic() >= plan.started + POLICY['bootstrap']:
+                    raise Refusal('inert staging exhausted bootstrap')
+                fd = os.open(slot / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                created.append(slot / name)
+                try:
+                    if os.write(fd, data) != len(data):
+                        raise Refusal('inert staging short write')
+                finally:
+                    os.close(fd)
+                blobs.append(_Blob(name, len(data), hashlib.sha256(data).hexdigest()))
+            seal = json.dumps(dict(capsule_id=origin.capsule_id, files=[asdict(blob) for blob in blobs],
+                                   setup_script_sha256=origin.setup_script_sha256), sort_keys=True).encode()
+            fd = os.open(slot / 'seal.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            created.append(slot / 'seal.json')
+            try:
+                if os.write(fd, seal) != len(seal):
+                    raise Refusal('inert seal short write')
+            finally:
+                os.close(fd)
+            sealed = True
+            result = dict(status='staged', origin=asdict(origin),
+                          files=[asdict(blob) for blob in blobs + [
+                              _Blob('seal.json', len(seal), hashlib.sha256(seal).hexdigest())]])
+        except Exception as error:
+            result = dict(status='unavailable', operation='optional_inert_staging',
+                          reason=type(error).__name__ + ': ' + str(error)[:512],
+                          errno=getattr(error, 'errno', None), claimed=claimed, sealed=sealed)
+        finally:
+            if claimed and not sealed:
+                failures = []
+                for path in reversed(created):
+                    try:
+                        path.unlink()
+                    except OSError as error:
+                        failures.append(dict(name=path.name, errno=error.errno, reason=str(error)[:256]))
+                try:
+                    slot.rmdir()
+                except OSError as error:
+                    failures.append(dict(name=slot.name, errno=error.errno, reason=str(error)[:256]))
+                result['cleanup_failures'] = failures
+        plan.owner.check()
+        if time.monotonic() >= plan.started + POLICY['bootstrap']:
+            raise Refusal('bootstrap deadline after inert staging')
+        save(plan, 'inert-stage.json', json.dumps(result, sort_keys=True, default=str).encode())
+
+
+    def _run_inert_mmap(work: Path, entry_deadline: float) -> None:
+        if not math.isfinite(entry_deadline) or time.monotonic() >= entry_deadline:
+            raise Refusal('inert entry deadline before controller')
+        slot = work / '.pydeface-inert-r46'
+        directory_fd = os.open(slot, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        inputs = {}
+        try:
+            for name in ('origin.json', 'seal.json'):
+                fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory_fd)
+                try:
+                    before = os.fstat(fd)
+                    if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= POLICY['metadata']:
+                        raise Refusal('inert controller input size or type')
+                    deadline = min(entry_deadline, time.monotonic() + POLICY['read'])
+                    data = bytearray()
+                    while True:
+                        if time.monotonic() >= deadline:
+                            raise Refusal('inert controller input deadline')
+                        block = os.read(fd, min(65536, POLICY['metadata'] + 1 - len(data)))
+                        if not block:
+                            break
+                        data.extend(block)
+                        if len(data) > POLICY['metadata']:
+                            raise Refusal('inert controller input cap')
+                    after = os.fstat(fd)
+                    if (before.st_mode != after.st_mode or len(data) != after.st_size
+                            or file_identity(fd) != (before.st_dev, before.st_ino, before.st_size,
+                                                     before.st_mtime_ns, before.st_ctime_ns)):
+                        raise Refusal('inert controller input changed')
+                    inputs[name] = bytes(data)
+                finally:
+                    os.close(fd)
+        finally:
+            os.close(directory_fd)
+        seal = json.loads(inputs['seal.json'])
+        document = json.loads(inputs['origin.json'])
+        raw_origin = document['origin']
+        records = {item['name']: item for item in seal['files']}
+        if (set(records) != {'program.py', 'origin.json'} or len(seal['files']) != 2
+                or records['origin.json']['sha256'] != hashlib.sha256(inputs['origin.json']).hexdigest()
+                or records['origin.json']['size'] != len(inputs['origin.json'])
+                or records['program.py']['sha256'] != raw_origin['program_sha256']
+                or seal['capsule_id'] != raw_origin['capsule_id']
+                or seal['setup_script_sha256'] != raw_origin['setup_script_sha256']):
+            raise Refusal('inert controller origin mismatch')
+        origin = _Origin(Path(raw_origin['work']), Path(raw_origin['t1w']),
+                         raw_origin['source_suite_sha256'], raw_origin['staged_suite_sha256'],
+                         raw_origin['setup_script_sha256'], raw_origin['host_script_sha256'],
+                         raw_origin['program_sha256'], _Blob(**raw_origin['launch_receipt']),
+                         _Process(**raw_origin['runner']), raw_origin['capsule_id'])
+        if (origin.work != work or origin.runner.boot_id !=
+                read_bytes('/proc/sys/kernel/random/boot_id', 128).decode().strip()):
+            raise Refusal('inert controller work or boot mismatch')
+        if time.monotonic() >= entry_deadline:
+            raise Refusal('inert entry deadline before detach')
+        detach(set())
+        controller = slot / 'controller'
+        try:
+            controller.mkdir(mode=0o700)
+        except FileExistsError:
+            return
+        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(InterruptedError('controller cancelled')))
+        signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(InterruptedError('controller cancelled')))
+        child_pid = None
+        wait_status = None
+        stopped_for = 'normal'
+        failure = None
+        child_deadline = min(time.monotonic() + 10, entry_deadline - 3)
+        controller_pid = os.getpid()
+        try:
+            if time.monotonic() >= child_deadline:
+                raise Refusal('inert entry has no observation budget')
+            child_pid = os.fork()
+            if child_pid == 0:
+                parent_arm(controller_pid)
+                signal.signal(signal.SIGTERM, signal.SIG_DFL)
+                signal.signal(signal.SIGINT, signal.SIG_DFL)
+                try:
+                    child_started = time.monotonic()
+                    observation = _observe_inert_mmap(origin, slot / 'observations', child_deadline)
+                    terminal = json.dumps(asdict(_Read(observation, child_started, time.monotonic())),
+                                          sort_keys=True, default=str).encode()
+                    if len(terminal) > POLICY['text'] or time.monotonic() >= child_deadline:
+                        raise Refusal('inert terminal cap or deadline')
+                    fd = os.open(slot / 'observations' / 'terminal.json',
+                                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    try:
+                        if os.write(fd, terminal) != len(terminal):
+                            raise Refusal('inert terminal short write')
+                    finally:
+                        os.close(fd)
+                    if time.monotonic() >= child_deadline:
+                        raise Refusal('inert terminal deadline')
+                    os._exit(0)
+                except BaseException:
+                    os._exit(92)
+            while time.monotonic() < child_deadline:
+                pid, status = os.waitpid(child_pid, os.WNOHANG)
+                if pid:
+                    wait_status = status
+                    break
+                time.sleep(min(.01, max(0, child_deadline - time.monotonic())))
+            if wait_status is None:
+                stopped_for = 'deadline'
+        except InterruptedError as error:
+            stopped_for = 'cancellation'
+            failure = str(error)
+        except Exception as error:
+            stopped_for = 'failure'
+            failure = type(error).__name__ + ': ' + str(error)[:512]
+        finally:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            if child_pid is not None and wait_status is None:
+                for sig, reserve in ((signal.SIGTERM, 2), (signal.SIGKILL, 1)):
+                    if wait_status is not None or time.monotonic() >= entry_deadline:
+                        break
+                    OwnedChild(child_pid).signal(sig)
+                    until = min(time.monotonic() + 1, entry_deadline - reserve)
+                    while time.monotonic() < until:
+                        pid, status = os.waitpid(child_pid, os.WNOHANG)
+                        if pid:
+                            wait_status = status
+                            break
+                        time.sleep(min(.01, max(0, until - time.monotonic())))
+        if time.monotonic() >= entry_deadline:
+            return
+        collection_deadline = min(time.monotonic() + 1, entry_deadline)
+        cleanup = (_Missing('fork', failure or 'child not started', None, 'unavailable') if child_pid is None else
+                   _CleanupUnconfirmed(child_pid, 'owned child not reaped within entry deadline') if wait_status is None else
+                   _Reaped(child_pid, wait_status, stopped_for))
+        actual = []
+        omitted = []
+        terminal = None
+        closes = None
+        consumed = 0
+        if isinstance(cleanup, _Reaped):
+            try:
+                directory_fd = os.open(slot / 'observations', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            except OSError as error:
+                omitted.append(_Omitted('observations', str(error)[:512], None, None))
+            else:
+                try:
+                    names = os.listdir(directory_fd)
+                    if len(names) > 128:
+                        raise Refusal('inert observation file count')
+                    for name in sorted(names):
+                        if time.monotonic() >= collection_deadline:
+                            return
+                        size = None
+                        digest = None
+                        try:
+                            if not re.fullmatch(r'[a-zA-Z0-9_.-]{1,160}', name):
+                                raise Refusal('inert observation filename')
+                            fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory_fd)
+                            try:
+                                before = os.fstat(fd)
+                                size = before.st_size
+                                if not stat.S_ISREG(before.st_mode) or size > POLICY['text']:
+                                    raise Refusal('inert observation size or type')
+                                consumed += size
+                                if consumed > POLICY['total']:
+                                    raise Refusal('inert observation aggregate cap')
+                                data = bytearray()
+                                while True:
+                                    if time.monotonic() >= collection_deadline:
+                                        raise Refusal('inert collection deadline')
+                                    block = os.read(fd, min(65536, POLICY['text'] + 1 - len(data)))
+                                    if not block:
+                                        break
+                                    data.extend(block)
+                                    if len(data) > POLICY['text']:
+                                        raise Refusal('inert observation cap')
+                                if (len(data) != before.st_size or file_identity(fd) !=
+                                        (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)):
+                                    raise Refusal('inert observation changed')
+                                digest = hashlib.sha256(data).hexdigest()
+                            finally:
+                                os.close(fd)
+                            actual.append(_Blob('observations/' + name, len(data), digest))
+                            if name.endswith('.json'):
+                                value = json.loads(data)
+                                if name == 'terminal.json':
+                                    terminal = value
+                                elif name == 'cleanup.json':
+                                    closes = value
+                        except Exception as error:
+                            omitted.append(_Omitted('observations/' + name,
+                                                    type(error).__name__ + ': ' + str(error)[:256], size, digest))
+                finally:
+                    os.close(directory_fd)
+        child = _Missing('terminal', 'no validated normal terminal evidence', None, 'unavailable')
+        envelope = asdict(_Envelope(child, cleanup, tuple(actual), tuple(omitted)))
+        status = 'partial_collection'
+        try:
+            if (not isinstance(cleanup, _Reaped) or cleanup.raw_wait_status != 0 or stopped_for != 'normal'
+                    or omitted or not isinstance(terminal, dict)
+                    or set(terminal) != {'value', 'started', 'finished'}
+                    or not math.isfinite(terminal['started']) or not math.isfinite(terminal['finished'])
+                    or not 0 <= terminal['started'] <= terminal['finished'] < child_deadline
+                    or terminal['value']['origin'] != raw_origin
+                    or terminal['value']['claim'] != 'new_inert_mapping_only'
+                    or closes is None or closes.get('complete') is not True or closes.get('failures') != []):
+                raise Refusal('inert terminal or cleanup incomplete')
+            indexed = {item.name.removeprefix('observations/'): asdict(item) for item in actual}
+            pending = [terminal['value'][name] for name in ('focus', 'inventory', 'topology')]
+            while pending:
+                value = pending.pop()
+                if isinstance(value, dict):
+                    if set(value) == {'name', 'size', 'sha256'}:
+                        item = indexed.get(value['name'])
+                        if item is None or (item['size'], item['sha256']) != (value['size'], value['sha256']):
+                            raise Refusal('inert terminal references unavailable or changed bytes')
+                    else:
+                        pending.extend(value.values())
+                elif isinstance(value, list):
+                    pending.extend(value)
+                if time.monotonic() >= collection_deadline:
+                    raise Refusal('inert terminal validation deadline')
+            envelope['child'] = terminal
+            if (terminal['value']['focus']['kind'] in ('observed_identity_equality', 'observed_identity_mismatch')
+                    and terminal['value']['inventory']['kind'] in ('inventory_returned', 'inventory_refused')):
+                status = 'complete_observation'
+        except (KeyError, TypeError, ValueError, Refusal) as error:
+            envelope['child'] = asdict(_Missing('terminal', str(error)[:512], None, 'unavailable'))
+        envelope.update(status=status, capsule_id=origin.capsule_id, failure=failure,
+                        child_deadline=child_deadline, entry_deadline=entry_deadline,
+                        collection_deadline=collection_deadline,
+                        collected_at=time.monotonic())
+        if time.monotonic() >= collection_deadline:
+            return
+        data = json.dumps(envelope, sort_keys=True).encode()
+        if len(data) > POLICY['text']:
+            raise Refusal('inert envelope cap')
+        fd = os.open(controller / 'envelope.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            if time.monotonic() >= collection_deadline or os.write(fd, data) != len(data):
+                raise Refusal('inert envelope deadline or short write')
+        finally:
+            os.close(fd)
+        if not isinstance(cleanup, _Reaped) or time.monotonic() >= collection_deadline:
+            return
+        sealed = json.dumps(dict(capsule_id=origin.capsule_id, status=status,
+                                 origin_sha256=hashlib.sha256(inputs['origin.json']).hexdigest(),
+                                 program_sha256=origin.program_sha256,
+                                 envelope=asdict(_Blob('envelope.json', len(data), hashlib.sha256(data).hexdigest())),
+                                 sealed_at=time.monotonic(), entry_deadline=entry_deadline), sort_keys=True).encode()
+        fd = os.open(controller / 'seal.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            if time.monotonic() >= collection_deadline or os.write(fd, sealed) != len(sealed):
+                raise Refusal('inert controller seal deadline or short write')
+        finally:
+            os.close(fd)
+
+
+    def _observe_probe_descriptor(
+        fd: int, role: _DescriptorRole, owner: _Process, plan: RunPlan,
+    ) -> _Descriptor:
+        _diagnostic_check(plan)
+        started = time.monotonic()
+        value = os.fstat(fd)
+        observed = _Read(_Stat(value.st_dev, value.st_ino, value.st_mode, value.st_size,
+                               value.st_mtime_ns, value.st_ctime_ns), started, time.monotonic())
+        label = f'fd-{role}-{fd}-{time.monotonic_ns()}'
+        started = time.monotonic()
+        try:
+            data = read_bytes(f'/proc/{owner.pid}/fdinfo/{fd}', 8192)
+            finished = time.monotonic()
+            _diagnostic_check(plan)
+            name = label + '.txt'
+            save(plan, name, data)
+            fdinfo = _Read(_Blob(name, len(data), hashlib.sha256(data).hexdigest()), started, finished)
+        except (OSError, Refusal) as error:
+            fdinfo = _Missing('fdinfo', str(error)[:512], getattr(error, 'errno', None), 'unavailable')
+            data = b''
+        _diagnostic_check(plan)
+        started = time.monotonic()
+        try:
+            link = os.readlink(f'/proc/{owner.pid}/fd/{fd}')
+            if len(os.fsencode(link)) > 4096:
+                raise Refusal('descriptor link byte limit')
+            link = _Read(link, started, time.monotonic())
+        except OSError as error:
+            link = _Missing('proc_fd_link', str(error)[:512], error.errno, 'unavailable')
+        _diagnostic_check(plan)
+        started = time.monotonic()
+        try:
+            namespace_before = os.readlink(f'/proc/{owner.pid}/ns/mnt')
+            mountinfo = read_bytes(f'/proc/{owner.pid}/mountinfo', 256 * 1024)
+            finished = time.monotonic()
+            if os.readlink(f'/proc/{owner.pid}/ns/mnt') != namespace_before:
+                raise Refusal('descriptor mount namespace changed')
+            match = re.search(rb'^mnt_id:\s+(\d+)\s*$', data, re.M)
+            mount_id = int(match[1]) if match else None
+            rows = [line.decode() for line in mountinfo.splitlines()
+                    if mount_id is not None and line.split(b' ', 1)[0] == str(mount_id).encode()]
+            _diagnostic_check(plan)
+            save(plan, label + '-mountinfo.txt', mountinfo)
+            mounts = dict(owner=asdict(owner), mount_namespace=namespace_before,
+                          started=started, finished=finished, mnt_id=mount_id, matching_rows=rows,
+                          raw=asdict(_Blob(label + '-mountinfo.txt', len(mountinfo),
+                                           hashlib.sha256(mountinfo).hexdigest())))
+        except (OSError, Refusal) as error:
+            mounts = asdict(_Missing('descriptor_mountinfo', str(error)[:512],
+                                      getattr(error, 'errno', None), 'unavailable'))
+        _diagnostic_check(plan)
+        save(plan, label + '-mount.json', mounts)
+        return _Descriptor(owner, role, fd, observed, fdinfo, link,
+                           _Missing('fstatfs', 'native ABI not verified', None, 'deferred'))
+
+
+    def _observe_inert_mmap(
+        origin: _Origin, evidence: Path, observation_deadline: float,
+    ) -> _Observation:
+        import mmap
+        started = time.monotonic()
+        if started >= observation_deadline:
+            raise Refusal('inert observation deadline before entry')
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
+        signal.setitimer(signal.ITIMER_REAL, observation_deadline - started)
+        evidence.mkdir(mode=0o700)
+        target = None
+        plan = None
+        rootfd = sourcefd = reopenfd = mapfd = None
+        mapping = None
+        retained = []
+        topology = []
+        missing_topology = []
+        process = _Missing('self_process', 'not observed', None, 'unavailable')
+        focus = _Missing('mapping', 'not attempted', None, 'unavailable')
+        inventory = _InventoryInterrupted('not attempted', ())
+        cleanup_failures = []
+        operation = 'self_process'
+        held_fields = None
+        try:
+            target = ObservedProcess.open(os.getpid())
+            boot = read_bytes('/proc/sys/kernel/random/boot_id', 128).decode().strip()
+            owner = _Process(target.pid, target.ticks, boot,
+                             os.readlink('/proc/self/ns/pid'), os.readlink('/proc/self/ns/mnt'),
+                             os.readlink('/proc/self/ns/user'))
+            target.check()
+            process = _Read(owner, started, time.monotonic())
+            plan = RunPlan(origin.work, origin.work / 'test_output', evidence, origin.t1w,
+                           target, started, observation_deadline - started, boot,
+                           preflight_deadline=observation_deadline, supply_deadline=observation_deadline)
+            _diagnostic_check(plan)
+            context = dict(process=asdict(process), uname=list(os.uname()),
+                           task_ids=sorted(os.listdir('/proc/self/task')),
+                           observation_deadline=observation_deadline,
+                           fstatfs=asdict(_Missing('fstatfs', 'native ABI not verified', None, 'deferred')))
+            raw = json.dumps(context, sort_keys=True).encode()
+            save(plan, 'context.json', raw)
+            topology.append(_Blob('context.json', len(raw), hashlib.sha256(raw).hexdigest()))
+            for name, path, cap in (('self-mountinfo.txt', '/proc/self/mountinfo', 256 * 1024),
+                                    ('kernel-version.txt', '/proc/version', 8192)):
+                _diagnostic_check(plan)
+                read_started = time.monotonic()
+                try:
+                    raw = read_bytes(path, cap)
+                    read_finished = time.monotonic()
+                    _diagnostic_check(plan)
+                    save(plan, name, raw)
+                    blob = _Blob(name, len(raw), hashlib.sha256(raw).hexdigest())
+                    topology.append(blob)
+                    save(plan, name + '.json', asdict(_Read(blob, read_started, read_finished)))
+                except (OSError, Refusal) as error:
+                    missing_topology.append(_Missing(path, str(error)[:512], getattr(error, 'errno', None), 'unavailable'))
+            _diagnostic_check(plan)
+            read_started = time.monotonic()
+            try:
+                runner = origin.runner
+                if (runner.boot_id != boot or process_stat(runner.pid)['ticks'] != runner.start_ticks
+                        or [os.readlink(f'/proc/{runner.pid}/ns/{name}') for name in ('pid', 'mnt', 'user')]
+                        != [runner.pid_namespace, runner.mount_namespace, runner.user_namespace]):
+                    raise Refusal('runner context unavailable in mapper namespace')
+                raw = read_bytes(f'/proc/{runner.pid}/mountinfo', 256 * 1024)
+                if (process_stat(runner.pid)['ticks'] != runner.start_ticks
+                        or [os.readlink(f'/proc/{runner.pid}/ns/{name}') for name in ('pid', 'mnt', 'user')]
+                        != [runner.pid_namespace, runner.mount_namespace, runner.user_namespace]):
+                    raise Refusal('runner context changed during mountinfo')
+                read_finished = time.monotonic()
+                _diagnostic_check(plan)
+                save(plan, 'runner-mountinfo.txt', raw)
+                blob = _Blob('runner-mountinfo.txt', len(raw), hashlib.sha256(raw).hexdigest())
+                topology.append(blob)
+                save(plan, 'runner-mountinfo.txt.json', dict(owner=asdict(runner),
+                     observation=asdict(_Read(blob, read_started, read_finished))))
+            except (OSError, Refusal) as error:
+                missing_topology.append(_Missing('runner_mountinfo', str(error)[:512],
+                                                 getattr(error, 'errno', None), 'unavailable'))
+            try:
+                _diagnostic_check(plan)
+                operation = 'open_root'
+                rootfd = os.open('/proc/self/root', os.O_RDONLY | os.O_DIRECTORY)
+                root = _observe_probe_descriptor(rootfd, 'probe_root', owner, plan)
+                operation = 'open_mmap_source'
+                sourcefd = open_rooted(rootfd, EXE)
+                source_before = _observe_probe_descriptor(sourcefd, 'mmap_source', owner, plan)
+                source_identity = file_identity(sourcefd)
+                save(plan, 'source-before.json', asdict(source_before))
+                if (not stat.S_ISREG(source_before.stat.value.mode)
+                        or not 0 < source_before.stat.value.size <= POLICY['object_bytes']
+                        or not isinstance(source_before.link, _Read) or source_before.link.value != EXE):
+                    raise Refusal('source is not a bounded exact-path regular file')
+                operation = 'baseline_maps'
+                read_started = time.monotonic()
+                before = read_bytes('/proc/self/maps', 128 * 1024)
+                read_finished = time.monotonic()
+                _diagnostic_check(plan)
+                save(plan, 'maps-before.txt', before)
+                maps_before = _Blob('maps-before.txt', len(before), hashlib.sha256(before).hexdigest())
+                retained.append(maps_before)
+                save(plan, 'maps-before.txt.json', asdict(_Read(maps_before, read_started, read_finished)))
+                before_rows = _parse_busy_maps(before)
+                source_pair = ((os.major(source_identity[0]), os.minor(source_identity[0])), source_identity[1])
+                if any(row.name in (EXE, EXE + ' (deleted)') or (row.device, row.inode) == source_pair
+                       for row in before_rows):
+                    raise Refusal('source mapping preexists or is aliased')
+                if len(context['task_ids']) != 1:
+                    raise Refusal('mapper is not single threaded')
+                operation = 'executable_mmap'
+                requested = source_before.stat.value.size
+                _diagnostic_check(plan)
+                mapping = mmap.mmap(sourcefd, requested, flags=mmap.MAP_PRIVATE,
+                                    prot=mmap.PROT_READ | mmap.PROT_EXEC, offset=0)
+                save(plan, 'mmap-call.json', dict(fd=sourcefd, owner=asdict(owner), length=requested,
+                     offset=0, protection='PROT_READ|PROT_EXEC', flags='MAP_PRIVATE',
+                     source_identity=source_identity, at=time.monotonic()))
+                operation = 'live_maps'
+                read_started = time.monotonic()
+                live = read_bytes('/proc/self/maps', 128 * 1024)
+                read_finished = time.monotonic()
+                _diagnostic_check(plan)
+                save(plan, 'maps-live.txt', live)
+                maps_live = _Blob('maps-live.txt', len(live), hashlib.sha256(live).hexdigest())
+                retained.append(maps_live)
+                save(plan, 'maps-live.txt.json', asdict(_Read(maps_live, read_started, read_finished)))
+                rows = _parse_busy_maps(live)
+                candidates = [row for row in rows if row.name in (EXE, EXE + ' (deleted)')]
+                rounded = (requested + mmap.PAGESIZE - 1) // mmap.PAGESIZE * mmap.PAGESIZE
+                operation = 'focused_reopen'
+                source_live = _observe_probe_descriptor(sourcefd, 'mmap_source', owner, plan)
+                save(plan, 'source-live.json', asdict(source_live))
+                reopenfd = open_rooted(rootfd, EXE)
+                reopen = _observe_probe_descriptor(reopenfd, 'focused_rooted_reopen', owner, plan)
+                save(plan, 'focused-descriptors.json', dict(root=asdict(root), source=asdict(source_live),
+                                                           reopen=asdict(reopen)))
+                operation = 'select_unique_mapping'
+                if (len(candidates) != 1 or candidates[0].name != EXE
+                        or candidates[0].permissions != 'r-xp' or candidates[0].offset != 0
+                        or candidates[0].end - candidates[0].start != rounded
+                        or candidates[0] in before_rows
+                        or any((item.device, item.inode) == source_pair and item.name != EXE for item in rows)):
+                    raise Refusal('new executable mapping is missing, changed or ambiguous')
+                row = candidates[0]
+                operation = 'focused_reopen'
+                map_files = _Missing('map_files_open', 'not attempted', None, 'unavailable')
+                read_started = time.monotonic()
+                try:
+                    mapfd = os.open(f'/proc/self/map_files/{row.start:x}-{row.end:x}',
+                                    os.O_RDONLY | os.O_NONBLOCK)
+                    map_files = _Read(_observe_probe_descriptor(mapfd, 'map_files_reopen', owner, plan),
+                                      read_started, time.monotonic())
+                except (OSError, Refusal) as error:
+                    map_files = _Missing('map_files_open', str(error)[:512], getattr(error, 'errno', None), 'unavailable')
+                _diagnostic_check(plan)
+                reopen_after = _observe_probe_descriptor(reopenfd, 'focused_rooted_reopen', owner, plan)
+                root_after = _observe_probe_descriptor(rootfd, 'probe_root', owner, plan)
+                save(plan, 'descriptor-stability.json', dict(root_before=asdict(root), root_after=asdict(root_after),
+                     reopen_before=asdict(reopen), reopen_after=asdict(reopen_after)))
+                if (root.stat.value != root_after.stat.value or reopen.stat.value != reopen_after.stat.value
+                        or source_before.stat.value != source_live.stat.value
+                        or file_identity(sourcefd) != source_identity
+                        or not isinstance(reopen.link, _Read) or reopen.link.value != EXE):
+                    raise Refusal('focused descriptor changed')
+                held_fields = dict(mapper=owner, range_row=row, maps_before=maps_before, maps_live=maps_live,
+                                   maps_after=_Missing('final_maps', 'not yet observed', None, 'unavailable'),
+                                   source_before=source_before, source_live=source_live,
+                                   source_after=_Missing('final_source', 'not yet observed', None, 'unavailable'),
+                                   root=root, focused_reopen=reopen, map_files_reopen=map_files,
+                                   requested_length=requested, requested_offset=0,
+                                   protection='PROT_READ|PROT_EXEC', flags='MAP_PRIVATE')
+                map_pair = (row.device, row.inode)
+                reopen_stat = reopen.stat.value
+                reopen_pair = ((os.major(reopen_stat.device), os.minor(reopen_stat.device)), reopen_stat.inode)
+                pairs = {'maps/source': (map_pair, source_pair), 'maps/focused-reopen': (map_pair, reopen_pair),
+                         'source/focused-reopen': (source_pair, reopen_pair)}
+                unequal = tuple(name for name, (left, right) in pairs.items() if left != right)
+                held = _HeldMapping(**held_fields)
+                focus = _Mismatch(held, unequal) if unequal else _Equal(held)
+                save(plan, 'numeric-pairs.json', {name: dict(left=left, right=right, equal=left == right)
+                                                for name, (left, right) in pairs.items()})
+            except (OSError, Refusal, ValueError) as error:
+                focus = (_Missing(operation, str(error)[:512], error.errno, 'unavailable')
+                         if isinstance(error, OSError) else _Partial(operation, str(error)[:512], tuple(retained)))
+            finally:
+                for fd in (mapfd, reopenfd):
+                    if fd is not None:
+                        try:
+                            os.close(fd)
+                        except OSError as error:
+                            cleanup_failures.append(dict(fd=fd, errno=error.errno, reason=str(error)[:256]))
+                mapfd = reopenfd = None
+            _diagnostic_check(plan)
+            save(plan, 'focus.json', asdict(focus))
+            operation = 'complete_mapped_objects'
+            read_started = time.monotonic()
+            try:
+                objects = mapped_objects(plan, target)
+            except Exception as error:
+                refusal = _Missing('first_identity_refusal', 'canonical receipt not produced', None, 'unavailable')
+                try:
+                    read_started = time.monotonic()
+                    raw = read_bytes(evidence / 'mapped-object-refusal.json', POLICY['text'])
+                    refusal = _Read(_Blob('mapped-object-refusal.json', len(raw), hashlib.sha256(raw).hexdigest()),
+                                    read_started, time.monotonic())
+                except (OSError, Refusal) as receipt_error:
+                    refusal = _Missing('first_identity_refusal', str(receipt_error)[:512],
+                                       getattr(receipt_error, 'errno', None), 'unavailable')
+                inventory = _InventoryRefused(type(error).__name__, str(error)[:512], refusal)
+            else:
+                read_finished = time.monotonic()
+                _diagnostic_check(plan)
+                raw = json.dumps(objects, sort_keys=True).encode()
+                save(plan, 'objects.json', raw)
+                member = [item for item in objects if item['path'] == EXE]
+                flirt = (_Read(member[0], read_started, read_finished) if len(member) == 1 else
+                         _Missing('exact_path_inventory_member', 'exact path absent or duplicated', None, 'unavailable'))
+                inventory = _InventoryReturned(_Blob('objects.json', len(raw), hashlib.sha256(raw).hexdigest()), flirt)
+            _diagnostic_check(plan)
+            save(plan, 'inventory-outcome.json', asdict(inventory))
+            operation = 'final_held_observations'
+            read_started = time.monotonic()
+            after = read_bytes('/proc/self/maps', 128 * 1024)
+            read_finished = time.monotonic()
+            _diagnostic_check(plan)
+            save(plan, 'maps-after.txt', after)
+            maps_after = _Read(_Blob('maps-after.txt', len(after), hashlib.sha256(after).hexdigest()),
+                               read_started, read_finished)
+            save(plan, 'maps-after.txt.json', asdict(maps_after))
+            source_after = _Missing('final_source', 'source was not opened', None, 'unavailable')
+            if sourcefd is not None:
+                read_started = time.monotonic()
+                source_after = _Read(_observe_probe_descriptor(sourcefd, 'mmap_source', owner, plan),
+                                     read_started, time.monotonic())
+                save(plan, 'source-after.json', asdict(source_after))
+            if held_fields is not None:
+                held_fields.update(maps_after=maps_after, source_after=source_after)
+                if (not isinstance(source_after, _Read) or file_identity(sourcefd) != source_identity
+                        or source_before.stat.value != source_after.value.stat.value
+                        or not isinstance(source_after.value.link, _Read) or source_after.value.link.value != EXE
+                        or sorted(os.listdir('/proc/self/task')) != context['task_ids']
+                        or [item for item in _parse_busy_maps(after) if item.name in (EXE, EXE + ' (deleted)')] != [row]):
+                    focus = _Partial(operation, 'held source or mapping changed', tuple(retained))
+                elif isinstance(focus, (_Equal, _Mismatch)):
+                    held = _HeldMapping(**held_fields)
+                    focus = _Mismatch(held, unequal) if unequal else _Equal(held)
+        except Exception as error:
+            focus = (_Missing(operation, str(error)[:512], error.errno, 'unavailable')
+                     if isinstance(error, OSError) else _Partial(operation, str(error)[:512], tuple(retained)))
+        finally:
+            if mapping is not None:
+                try:
+                    mapping.close()
+                except Exception as error:
+                    cleanup_failures.append(dict(operation='mmap_close', reason=str(error)[:256]))
+            for fd in (mapfd, reopenfd, sourcefd, rootfd, target.pidfd if target is not None else None):
+                if fd is not None:
+                    try:
+                        os.close(fd)
+                    except OSError as error:
+                        cleanup_failures.append(dict(fd=fd, errno=error.errno, reason=str(error)[:256]))
+        if time.monotonic() >= observation_deadline:
+            raise Refusal('inert observation deadline after cleanup')
+        if plan is not None:
+            save(plan, 'cleanup.json', dict(complete=not cleanup_failures, failures=cleanup_failures,
+                                          at=time.monotonic(), deadline=observation_deadline))
+        if cleanup_failures:
+            focus = _Partial('cleanup', 'one or more owned closes failed', tuple(retained))
+        return _Observation(origin, process, focus, inventory, tuple(topology), tuple(missing_topology))
+
+
     if __name__ == '__main__':
         try:
             arm(Path(sys.argv[1]), Path(sys.argv[2]))
@@ -2395,6 +3278,107 @@ setup:
         stop.set()
         emit("end")
     PYTHON
+    case "$(uname -m)" in
+      aarch64|arm64)
+        if python3 - <<'INERT_MMAP_SETUP_PY'
+    import time
+    entry_deadline = time.monotonic() + 15
+    import signal
+    signal.signal(signal.SIGALRM, signal.SIG_DFL)
+    if time.monotonic() >= entry_deadline:
+        raise SystemExit('inert setup deadline')
+    signal.setitimer(signal.ITIMER_REAL, entry_deadline - time.monotonic())
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import stat
+    import sys
+    from types import ModuleType
+
+
+    def _read_inert_input(
+        directory_fd: int, name: str, cap: int, entry_deadline: float,
+    ) -> bytes:
+        if not name or '/' in name or name in ('.', '..'):
+            raise ValueError('inert input name')
+        deadline = min(entry_deadline, time.monotonic() + 3)
+        fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory_fd)
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= cap:
+                raise ValueError('inert input type or cap')
+            data = bytearray()
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('inert input deadline')
+                block = os.read(fd, min(65536, cap + 1 - len(data)))
+                if not block:
+                    break
+                data.extend(block)
+                if len(data) > cap:
+                    raise ValueError('inert input cap')
+            for after in (os.fstat(fd), os.stat(name, dir_fd=directory_fd, follow_symlinks=False)):
+                if (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                        after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                    raise ValueError('inert input changed')
+            if len(data) != before.st_size or time.monotonic() >= deadline:
+                raise ValueError('inert input incomplete or expired')
+            return bytes(data)
+        finally:
+            os.close(fd)
+
+
+    work = Path.cwd()
+    directory_fd = os.open(work / '.pydeface-inert-r46', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        seal_raw = _read_inert_input(directory_fd, 'seal.json', 65536, entry_deadline)
+        origin_raw = _read_inert_input(directory_fd, 'origin.json', 1024 ** 2, entry_deadline)
+        program = _read_inert_input(directory_fd, 'program.py', 1024 ** 2, entry_deadline)
+    finally:
+        os.close(directory_fd)
+    seal = json.loads(seal_raw)
+    document = json.loads(origin_raw)
+    origin = document['origin']
+    records = {item['name']: item for item in seal['files']}
+    if set(records) != {'program.py', 'origin.json'} or len(seal['files']) != 2:
+        raise ValueError('inert seal members')
+    for name, data in (('program.py', program), ('origin.json', origin_raw)):
+        if records[name] != dict(name=name, size=len(data), sha256=hashlib.sha256(data).hexdigest()):
+            raise ValueError('inert input digest mismatch')
+    if (origin['work'] != str(work) or origin['capsule_id'] != seal['capsule_id']
+            or origin['program_sha256'] != records['program.py']['sha256']
+            or origin['setup_script_sha256'] != seal['setup_script_sha256']):
+        raise ValueError('inert origin binding')
+    launch_raw = bytes.fromhex(document['launch_bytes_hex'])
+    if (origin['launch_receipt'] != dict(name='launch.json', size=len(launch_raw),
+                                        sha256=hashlib.sha256(launch_raw).hexdigest())
+            or json.loads(launch_raw) != document['launch']):
+        raise ValueError('inert launch binding')
+    launch = document['launch']
+    if (launch['work'] != origin['work'] or launch['boot_id'] != origin['runner']['boot_id']
+            or launch['source_sha256'] != origin['source_suite_sha256']
+            or launch['staged_sha256'] != origin['staged_suite_sha256']
+            or launch['helper_sha256'] != origin['host_script_sha256']
+            or launch['owner']['pid'] != origin['runner']['pid']
+            or launch['owner']['ticks'] != origin['runner']['start_ticks']):
+        raise ValueError('inert launch context')
+    if time.monotonic() >= entry_deadline:
+        raise TimeoutError('inert setup deadline before compilation')
+    probe = ModuleType('_pydeface_inert_r46')
+    sys.modules[probe.__name__] = probe
+    exec(compile(program, '<pydeface-inert-r46:' + origin['program_sha256'] + '>', 'exec'), probe.__dict__)
+    if time.monotonic() >= entry_deadline:
+        raise TimeoutError('inert setup deadline after compilation')
+    probe._run_inert_mmap(Path.cwd(), entry_deadline)
+    INERT_MMAP_SETUP_PY
+        then
+          :
+        else
+          printf '%s\n' 'PYDEFACE_INERT_R46 setup unavailable'
+        fi
+        ;;
+    esac
 
 tests:
   # ==========================================================================
@@ -2921,6 +3905,182 @@ tests:
   - name: Native ARM diagnosis requires review
     description: Temporary failure gate until the native registration evidence is reviewed and diagnostics are removed
     command: |
+      case "$(uname -m)" in
+        aarch64|arm64)
+          if python3 - <<'INERT_MMAP_REPORT_PY'
+      import time
+      report_deadline = time.monotonic() + 3
+      import signal
+      signal.signal(signal.SIGALRM, signal.SIG_DFL)
+      if time.monotonic() >= report_deadline:
+          raise SystemExit('inert reporter deadline')
+      signal.setitimer(signal.ITIMER_REAL, report_deadline - time.monotonic())
+      import base64
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import re
+      import stat
+      import sys
+
+
+      def _read_inert_member(
+          directory_fd: int, name: str, cap: int, report_deadline: float,
+      ) -> bytes:
+          if not name or '/' in name or name in ('.', '..'):
+              raise ValueError('inert member name')
+          fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory_fd)
+          try:
+              before = os.fstat(fd)
+              if not stat.S_ISREG(before.st_mode) or before.st_size > cap:
+                  raise ValueError('inert member type or cap')
+              data = bytearray()
+              while True:
+                  if time.monotonic() >= report_deadline:
+                      raise TimeoutError('inert reporter deadline')
+                  block = os.read(fd, min(65536, cap + 1 - len(data)))
+                  if not block:
+                      break
+                  data.extend(block)
+                  if len(data) > cap:
+                      raise ValueError('inert member cap')
+              for after in (os.fstat(fd), os.stat(name, dir_fd=directory_fd, follow_symlinks=False)):
+                  if (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                          after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                      raise ValueError('inert member changed')
+              if len(data) != before.st_size or time.monotonic() >= report_deadline:
+                  raise ValueError('inert member incomplete or expired')
+              return bytes(data)
+          finally:
+              os.close(fd)
+
+
+      frame = dict(namespace='pydeface.inert-mmap.r46', status='unsealed', members=[], omitted_files=[],
+                   native_acceptance=False, scientific_acceptance=False, release_pass=False, merge_eligible=False)
+      raw_total = 0
+      payloads = {}
+      expected = {}
+      directories = {}
+      try:
+          directories[''] = os.open(Path.cwd() / '.pydeface-inert-r46', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+          for name in ('controller', 'observations'):
+              try:
+                  directories[name] = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                              dir_fd=directories[''])
+              except OSError as error:
+                  frame['omitted_files'].append(dict(name=name, reason=str(error)[:256], size=None, sha256=None))
+          members = [('', 'seal.json'), ('', 'origin.json'), ('controller', 'seal.json'),
+                     ('controller', 'envelope.json'), ('', 'program.py')]
+          if 'observations' in directories:
+              names = os.listdir(directories['observations'])
+              if len(names) > 128:
+                  raise ValueError('inert report file count')
+              allowed = {'context.json', 'self-mountinfo.txt', 'self-mountinfo.txt.json',
+                         'kernel-version.txt', 'kernel-version.txt.json', 'runner-mountinfo.txt',
+                         'runner-mountinfo.txt.json', 'source-before.json', 'source-live.json', 'source-after.json',
+                         'maps-before.txt', 'maps-before.txt.json', 'maps-live.txt', 'maps-live.txt.json',
+                         'maps-after.txt', 'maps-after.txt.json', 'mmap-call.json', 'descriptor-stability.json', 'focused-descriptors.json',
+                         'numeric-pairs.json', 'focus.json', 'objects.json', 'mapped-object-refusal.json',
+                         'inventory-outcome.json', 'cleanup.json', 'terminal.json'}
+              for name in sorted(names):
+                  if name in allowed or re.fullmatch(
+                          r'fd-(probe_root|mmap_source|focused_rooted_reopen|map_files_reopen)-\d{1,12}-\d{1,24}'
+                          r'(\.txt|-mountinfo\.txt|-mount\.json)', name):
+                      members.append(('observations', name))
+                  else:
+                      frame['omitted_files'].append(dict(name='observations/' + name[:160],
+                                                        reason='not an allowed observation member', size=None, sha256=None))
+          for directory, name in members:
+              path = directory + '/' + name if directory else name
+              size = digest = None
+              try:
+                  directory_fd = directories[directory]
+                  info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                  size = info.st_size
+                  data = _read_inert_member(directory_fd, name, min(4 * 1024 ** 2 - raw_total, 8 * 1024 ** 2), report_deadline)
+                  digest = hashlib.sha256(data).hexdigest()
+                  if path in expected and (expected[path]['size'] != len(data) or expected[path]['sha256'] != digest):
+                      raise ValueError('inert member differs from recorded bytes')
+                  payloads[path] = data
+                  if path == 'seal.json':
+                      value = json.loads(data)
+                      if len(value['files']) != 2 or {item['name'] for item in value['files']} != {'program.py', 'origin.json'}:
+                          raise ValueError('inert stage seal members')
+                      expected.update({item['name']: item for item in value['files']})
+                  elif path == 'controller/seal.json':
+                      value = json.loads(data)
+                      if value['envelope']['name'] != 'envelope.json':
+                          raise ValueError('inert controller seal member')
+                      expected['controller/envelope.json'] = value['envelope']
+                  elif path == 'controller/envelope.json':
+                      value = json.loads(data)
+                      if len(value['actual_files']) > 128:
+                          raise ValueError('inert controller file count')
+                      for item in value['actual_files']:
+                          if not re.fullmatch(r'observations/[a-zA-Z0-9_.-]{1,160}', item['name']):
+                              raise ValueError('inert controller member name')
+                          expected[item['name']] = item
+                  frame['members'].append(dict(name=path, size=len(data), sha256=digest,
+                                               base64=base64.b64encode(data).decode('ascii')))
+                  raw_total += len(data)
+              except (OSError, ValueError, KeyError, TypeError) as error:
+                  payloads.pop(path, None)
+                  frame['omitted_files'].append(dict(name=path, reason=type(error).__name__ + ': ' + str(error)[:256],
+                                                    size=size, sha256=digest))
+          try:
+              origin = json.loads(payloads['origin.json'])['origin']
+              stage = json.loads(payloads['seal.json'])
+              seal = json.loads(payloads['controller/seal.json'])
+              envelope = json.loads(payloads['controller/envelope.json'])
+              if (origin['work'] != str(Path.cwd()) or origin['capsule_id'] != stage['capsule_id']
+                      or origin['capsule_id'] != seal['capsule_id'] or origin['capsule_id'] != envelope['capsule_id']
+                      or origin['program_sha256'] != hashlib.sha256(payloads['program.py']).hexdigest()
+                      or seal['program_sha256'] != origin['program_sha256']
+                      or seal['origin_sha256'] != hashlib.sha256(payloads['origin.json']).hexdigest()
+                      or stage['setup_script_sha256'] != origin['setup_script_sha256']
+                      or seal['status'] != envelope['status'] or not seal['sealed_at'] < seal['entry_deadline']):
+                  raise ValueError('inert capsule binding')
+              frame['status'] = 'sealed'
+              frame['collection_status'] = envelope['status']
+              frame['capsule_id'] = origin['capsule_id']
+          except (KeyError, ValueError, TypeError) as error:
+              frame['seal_validation'] = type(error).__name__ + ': ' + str(error)[:256]
+          exported = {item['name'] for item in frame['members']}
+          for name, item in expected.items():
+              if name not in exported and name not in {item['name'] for item in frame['omitted_files']}:
+                  frame['omitted_files'].append(dict(name=name, reason='recorded member not exported', size=None, sha256=None))
+      except (OSError, ValueError, KeyError, TypeError) as error:
+          frame['reason'] = type(error).__name__ + ': ' + str(error)[:256]
+      finally:
+          for fd in directories.values():
+              os.close(fd)
+      frame['raw_exported_bytes'] = raw_total
+      if frame['status'] == 'sealed' and frame['omitted_files']:
+          frame['status'] = 'sealed_partial_export'
+      prefix = b'PYDEFACE_INERT_R46_BEGIN\n'
+      suffix = b'\nPYDEFACE_INERT_R46_END\n'
+      encoded = prefix + json.dumps(frame, sort_keys=True, separators=(',', ':')).encode() + suffix
+      while len(encoded) > 6 * 1024 ** 2 and frame['members']:
+          member = frame['members'].pop()
+          raw_total -= member['size']
+          frame['omitted_files'].append({key: value for key, value in member.items() if key != 'base64'} | dict(reason='encoded frame cap'))
+          frame['raw_exported_bytes'] = raw_total
+          if frame['status'] == 'sealed':
+              frame['status'] = 'sealed_partial_export'
+          encoded = prefix + json.dumps(frame, sort_keys=True, separators=(',', ':')).encode() + suffix
+      if len(encoded) > 6 * 1024 ** 2 or time.monotonic() >= report_deadline:
+          raise ValueError('inert frame cap or deadline')
+      sys.stdout.buffer.write(encoded)
+      sys.stdout.buffer.flush()
+      INERT_MMAP_REPORT_PY
+          then
+            :
+          else
+            printf '%s\n' 'PYDEFACE_INERT_R46 report unavailable'
+          fi
+          ;;
+      esac
       echo "DIAGNOSTICBLOCKED PR 3580 native ARM registration is not repaired or approved"
       exit 1
     expected_exit_code: 0
