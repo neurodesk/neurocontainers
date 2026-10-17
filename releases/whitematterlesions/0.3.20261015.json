@@ -1,7 +1,7 @@
 {
   "apps": {
     "whitematterlesions 0.3.20261015": {
-      "version": "20261016",
+      "version": "20261017",
       "exec": "",
       "apptainer_args": []
     }
