@@ -170,13 +170,14 @@ assert md.version('numpy') == '2.0.1'
 assert 'v4.7.0' in subprocess.check_output(['scons', '--version'], text=True)
 assert subprocess.check_output(['cmake', '--version'], text=True).split()[2] == md.version('cmake')
 assert subprocess.check_output(['gcc', '-dumpmachine'], text=True).strip() == 'aarch64-linux-gnu'
-code = "import json,sys,sysconfig; print(json.dumps({'base':sys.prefix,'include':sysconfig.get_path('include'),'lib':sysconfig.get_config_var('LIBDIR')+'/'+sysconfig.get_config_var('LDLIBRARY'),'soabi':sysconfig.get_config_var('SOABI')}))"
+# Conda records the static interpreter library in LDLIBRARY but ships the shared library separately.
+code = "import json,sys,sysconfig; print(json.dumps({'base':sys.prefix,'include':sysconfig.get_path('include'),'lib':sysconfig.get_config_var('LIBDIR')+'/libpython'+sysconfig.get_config_var('LDVERSION')+sysconfig.get_config_var('SHLIB_SUFFIX'),'soabi':sysconfig.get_config_var('SOABI')}))"
 runtime = json.loads(subprocess.check_output([os.environ['RUNTIME_PYTHON'], '-c', code], text=True))
 assert Path(sys.base_prefix).samefile(runtime['base'])
 assert Path(sysconfig.get_path('include')).samefile(runtime['include'])
 assert sysconfig.get_config_var('SOABI') == runtime['soabi']
 assert (Path(runtime['include']) / 'Python.h').is_file()
-assert Path(runtime['lib']).is_file()
+assert Path(runtime['lib']).is_file(), runtime['lib']
 (Path(os.environ['EVIDENCE']) / 'python.json').write_text(json.dumps(runtime, indent=2)+'\n')
 print(json.dumps(runtime, indent=2))
 PY
