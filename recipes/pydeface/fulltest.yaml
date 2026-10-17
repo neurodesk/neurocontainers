@@ -50,6 +50,7 @@ setup:
     import stat
     import struct
     import sys
+    import tempfile
     import time
 
     BASE = 'a3cd2eb0a42da42030d1547179b20dab066355a5'
@@ -550,7 +551,7 @@ setup:
             control(control_write, ack_read, 'enable', min(end, time.monotonic()+1), times)
             if times['enable_send']-times['last_validation'] > POLICY['admission']:
                 raise Refusal('late enable')
-            deadline = times['enable_send']+duration
+            deadline = times['enable_ack']+duration
             while time.monotonic() < deadline:
                 if os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
                     raise Refusal('recorder exited early')
@@ -559,13 +560,15 @@ setup:
                 retained_size(plan.retained)
                 time.sleep(min(.02, max(0, deadline-time.monotonic())))
             control(control_write, ack_read, 'disable', min(end, time.monotonic()+1), times)
-            if times['disable_send']-deadline > POLICY['service']:
-                raise Refusal('record interval overrun')
+            times['interval_lower'] = times['disable_send']-times['enable_ack']
+            times['interval_upper'] = times['disable_ack']-times['enable_send']
             child.signal(signal.SIGINT)
             while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
                 if time.monotonic() > end:
                     raise Refusal('record flush deadline')
                 time.sleep(.02)
+            if times['interval_lower'] < duration or times['interval_upper'] > duration+POLICY['service']:
+                raise Refusal('enabled interval outside admission band')
             validate()
             times['post_identity'] = time.monotonic()
         finally:
@@ -618,22 +621,32 @@ setup:
                     first_time=min(times), last_time=max(times))
 
 
-    def decode(plan, perf, raw, pid, label, root=None):
-        common = ['-i', str(raw)] + (['--symfs', root] if root else [])
-        samples = command(plan, [perf, 'script', '--no-inline', *common, '-F', 'pid,tid,time,event,ip,sym,dso'], label+'.samples')
-        dump = command(plan, [perf, 'report', '--no-inline', '-D', '--no-skip-empty', *common], label+'.dump')
-        for name in (label+'.samples.err', label+'.dump.err'):
-            errors = read_bytes(plan.retained/name, POLICY['text'])
-            if re.search(rb'warning|error|failed|lost|unknown', errors, re.I):
-                raise Refusal('decoder reported uncertainty')
-        quality = sample_quality(samples, dump, pid)
-        command(plan, [perf, 'report', '--no-inline', '--stdio', '--stdio-color=never', '--no-children', '--sort', 'comm,dso,symbol', *common], label+'.report')
-        save(plan, label+'.quality.json', quality)
-        return quality
+    def decode(plan, perf, raw, pid, label, root):
+        root = Path(root)
+        if root.resolve(strict=True) != root or root == Path('/') or root.parent != plan.work:
+            raise Refusal('decoder requires a canonical private mirror under work')
+        common = ['-i', str(raw), '--symfs', str(root)]
+        previous = Path.cwd()
+        os.chdir(root)
+        try:
+            samples = command(plan, [perf, 'script', '--no-inline', *common, '-F', 'pid,tid,time,event,ip,sym,dso'], label+'.samples')
+            dump = command(plan, [perf, 'report', '--no-inline', '-D', '--no-skip-empty', *common], label+'.dump')
+            command(plan, [perf, 'report', '--no-inline', '--stdio', '--stdio-color=never', '--no-children', '--sort', 'comm,dso,symbol', *common], label+'.report')
+            for name in (label+'.samples.err', label+'.dump.err', label+'.report.err'):
+                errors = read_bytes(plan.retained/name, POLICY['text'])
+                if re.search(rb'warning|error|failed|lost|unknown', errors, re.I):
+                    raise Refusal('decoder reported uncertainty')
+            quality = sample_quality(samples, dump, pid)
+            save(plan, label+'.quality.json', quality)
+            return quality
+        finally:
+            os.chdir(previous)
 
 
     def open_rooted(rootfd, name):
         # Every component is opened relative to a pinned target directory.
+        if len(os.fsencode(name)) > 4095 or len(name.split('/')) > POLICY['objects']+1:
+            raise Refusal('rooted path limit')
         pending = name.split('/')
         stack = [os.dup(rootfd)]
         links = 0
@@ -657,6 +670,8 @@ setup:
                             os.close(stack.pop())
                     pending = link.split('/') + pending
                 elif pending:
+                    if len(stack) >= POLICY['objects']:
+                        raise Refusal('rooted path depth limit')
                     stack.append(os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                          dir_fd=stack[-1]))
                 else:
@@ -700,10 +715,119 @@ setup:
         return None
 
 
-    def mapped_objects(plan, target):
+    def file_identity(fd: int) -> tuple[int, int, int, int, int]:
+        value = os.fstat(fd)
+        return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
+
+
+    def debug_link(fd: int) -> str | None:
+        header = os.pread(fd, 64, 0)
+        if len(header) != 64 or header[:6] != b'\x7fELF\x02\x01':
+            raise Refusal('unsupported mapped ELF')
+        offset = struct.unpack_from('<Q', header, 40)[0]
+        size, count, names_index = struct.unpack_from('<HHH', header, 58)
+        if not offset and not count:
+            return None
+        if size != 64 or not 0 < count <= 4096 or names_index >= count:
+            raise Refusal('ELF section table limit')
+        sections = os.pread(fd, size*count, offset)
+        if len(sections) != size*count:
+            raise Refusal('truncated ELF section table')
+        names_offset, names_size = struct.unpack_from('<QQ', sections, names_index*size+24)
+        if names_size > POLICY['metadata']:
+            raise Refusal('ELF section names limit')
+        names = os.pread(fd, names_size, names_offset)
+        if len(names) != names_size:
+            raise Refusal('truncated ELF section names')
+        link = None
+        for index in range(count):
+            name_offset = struct.unpack_from('<I', sections, index*size)[0]
+            end = names.find(b'\0', name_offset)
+            if end < 0:
+                raise Refusal('invalid ELF section name')
+            if names[name_offset:end] != b'.gnu_debuglink':
+                continue
+            if link is not None:
+                raise Refusal('duplicate ELF debug link')
+            data_offset, data_size = struct.unpack_from('<QQ', sections, index*size+24)
+            if not 0 < data_size <= 4096:
+                raise Refusal('ELF debug link size limit')
+            data = os.pread(fd, data_size, data_offset)
+            if len(data) != data_size or b'\0' not in data:
+                raise Refusal('truncated ELF debug link')
+            link = os.fsdecode(data.split(b'\0', 1)[0])
+            if not link or link in ('.', '..') or '/' in link:
+                raise Refusal('external ELF debug link')
+        return link
+
+
+    def mirror_object(fd: int, name: str, root: Path, digest: str) -> dict[str, object]:
+        if name.startswith('/tmp/perf-'):
+            raise Refusal('perf JIT path cannot bind a mirrored ELF')
+        parts = name.split('/')[1:]
+        if (not name.startswith('/') or not parts or len(parts) > POLICY['objects']
+                or any(part in ('', '.', '..') for part in parts)
+                or len(os.fsencode(str(root)))+1+len(os.fsencode(name)) > 4095):
+            raise Refusal('mirror object path limit')
+        before = file_identity(fd)
+        if not stat.S_ISREG(os.fstat(fd).st_mode) or before[2] > POLICY['object_bytes']:
+            raise Refusal('mirror object type or size limit')
+        link = debug_link(fd)
+        if link is not None:
+            external = Path('/usr/lib/debug'+str(root)+str(Path(name).parent)) / link
+            if external.exists():
+                raise Refusal('external perf debug link candidate')
+        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        destination = None
+        deadline = time.monotonic()+POLICY['read']
+        try:
+            for part in parts[:-1]:
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=directory)
+                except FileExistsError:
+                    pass
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = child
+            destination = os.open(parts[-1], os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                  0o600, dir_fd=directory)
+            os.lseek(fd, 0, os.SEEK_SET)
+            size = 0
+            while True:
+                if time.monotonic() > deadline:
+                    raise Refusal('mirror copy deadline')
+                block = os.read(fd, min(65536, before[2]+1-size))
+                if not block:
+                    break
+                size += len(block)
+                if size > before[2]:
+                    raise Refusal('mirror source size changed')
+                pending = memoryview(block)
+                while pending:
+                    if time.monotonic() > deadline:
+                        raise Refusal('mirror copy deadline')
+                    written = os.write(destination, pending)
+                    if not written:
+                        raise Refusal('mirror short write')
+                    pending = pending[written:]
+            copied_digest = hash_fd(destination)
+            after = file_identity(fd)
+            if before != after or size != before[2] or copied_digest != digest:
+                raise Refusal('mirror source changed or copy mismatch')
+            return dict(path=name, sha256=copied_digest, size=size,
+                        source_before=before, source_after=after,
+                        copy_identity=file_identity(destination), debug_link=link)
+        finally:
+            if destination is not None:
+                os.close(destination)
+            os.close(directory)
+
+
+    def mapped_objects(plan, target, mirror: Path | None = None):
         target.check()
         rootfd = os.open(f'/proc/{target.pid}/root', os.O_RDONLY | os.O_DIRECTORY)
         objects = []
+        copies = []
         try:
             maps = read_bytes(f'/proc/{target.pid}/maps').decode()
             paths = {}
@@ -725,13 +849,17 @@ setup:
                     aggregate += info.st_size
                     if aggregate > 256*1024**2:
                         raise Refusal('aggregate mapped hash limit')
-                    report_file = os.stat(f'/proc/{target.pid}/root'+name)
-                    if (report_file.st_dev, report_file.st_ino) != (info.st_dev, info.st_ino):
-                        raise Refusal('perf symfs path differs from rooted object')
+                    before = file_identity(fd)
                     digest = hash_fd(fd)
+                    identity = build_id(fd)
+                    if mirror is not None:
+                        copies.append(mirror_object(fd, name, mirror, digest))
+                    after = file_identity(fd)
+                    if before != after:
+                        raise Refusal('mapped object changed during attribution')
                     objects.append(dict(path=name, device=device, inode=inode, sha256=digest,
-                                        build_id=build_id(fd), source_revision=None,
-                                        source_status='unresolved', package=None))
+                                        build_id=identity, source_before=before, source_after=after,
+                                        source_revision=None, source_status='unresolved', package=None))
                 finally:
                     os.close(fd)
             metadata_dir = '/opt/fsl-6.0.7.23/conda-meta'
@@ -771,6 +899,9 @@ setup:
             target.check()
             if read_bytes(f'/proc/{target.pid}/maps').decode() != maps:
                 raise Refusal('maps changed during attribution')
+            if mirror is not None:
+                save(plan, mirror.name+'.json', dict(root=str(mirror), canonical_root=str(mirror.resolve(strict=True)),
+                     copies=copies, bytes=aggregate, temporary=True))
             return objects
         finally:
             os.close(rootfd)
@@ -810,7 +941,14 @@ setup:
             preflight = ObservedProcess.open(busy)
             try:
                 raw = record(plan, perf, busy, 'preflight', preflight.check, 1)
-                decode(plan, perf, raw, busy, 'preflight')
+                with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
+                    mirror = Path(directory)
+                    objects = mapped_objects(plan, preflight, mirror)
+                    quality = decode(plan, perf, raw, busy, 'preflight', mirror)
+                    if mapped_objects(plan, preflight) != objects:
+                        raise Refusal('preflight mapped objects changed')
+                    if any(name not in {obj['path'] for obj in objects} for name in quality['dsos']):
+                        raise Refusal('preflight sample DSO cannot be bound to a mapped object')
             finally:
                 os.close(preflight.pidfd)
             if time.monotonic()-preflight_start > POLICY['preflight']:
@@ -871,9 +1009,11 @@ setup:
                 raw_capture = True
                 save(plan, 'after.json', dict(target=snapshot(target), observer=snapshot(observer),
                      owner=snapshot(plan.owner), ancestry=validate()))
-                objects = mapped_objects(plan, target)
-                save(plan, 'objects-before.json', objects)
-                quality = decode(plan, perf, raw, target.pid, 'flirt', f'/proc/{target.pid}/root')
+                with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
+                    mirror = Path(directory)
+                    objects = mapped_objects(plan, target, mirror)
+                    save(plan, 'objects-before.json', objects)
+                    quality = decode(plan, perf, raw, target.pid, 'flirt', mirror)
                 after_objects = mapped_objects(plan, target)
                 save(plan, 'objects-after.json', after_objects)
                 if after_objects != objects:
@@ -945,32 +1085,48 @@ setup:
             deadline = plan.started+POLICY['bootstrap']
             state = 'startup'
             operation_deadline = float('inf')
+            handoff_state = 'ready'
+            terminal = False
             while True:
                 if readable(plan.owner.pidfd):
                     raise Refusal('runner ended')
                 now = time.monotonic()
-                if now > min(deadline, operation_deadline, plan.started+POLICY['lifetime']):
+                active_deadline = min(deadline, operation_deadline, plan.started+POLICY['lifetime'],
+                                      plan.started+POLICY['bootstrap'] if handoff_state != 'complete' else float('inf'))
+                watched = [plan.owner.pidfd]
+                if not terminal:
+                    watched.append(up)
+                if handoff_state != 'complete':
+                    watched.append(readiness)
+                events = select.select(watched, [], [], min(POLICY['service'], max(0, active_deadline-now)))[0]
+                now = time.monotonic()
+                if now > active_deadline:
                     raise Refusal(('operation' if now > operation_deadline else state)+' deadline')
-                if select.select([up], [], [], min(POLICY['service'], max(0, deadline-now)))[0]:
-                    message = receive(up, deadline)
-                    event = message['event']
-                    if event == 'ready' and state == 'startup':
-                        handoff['ready'] = time.monotonic()
-                        send(readiness, 'ready')
-                        if receive(readiness, deadline)['event'] != 'clear':
-                            raise Refusal('invalid detach request')
-                        if readable(plan.owner.pidfd):
-                            raise Refusal('owner ended before detach')
+                if plan.owner.pidfd in events:
+                    raise Refusal('runner ended')
+                if readiness in events:
+                    event = receive(readiness, time.monotonic())['event']
+                    if event == 'clear' and handoff_state == 'clear':
                         if libc.prctl(1, 0, 0, 0, 0):
                             raise Refusal('detach failed')
                         handoff['cleared'] = time.monotonic()
                         send(readiness, 'cleared')
-                        if receive(readiness, deadline)['event'] != 'ack':
-                            raise Refusal('detach not acknowledged')
+                        handoff_state = 'ack'
+                    elif event == 'ack' and handoff_state == 'ack':
                         handoff['acknowledged'] = time.monotonic()
                         readiness.close()
-                        state = 'armed'
+                        handoff_state = 'complete'
                         manifest(plan.retained, 'pending', stage=state, handoff=handoff)
+                    else:
+                        raise Refusal('invalid detach transition')
+                if up in events:
+                    message = receive(up, time.monotonic())
+                    event = message['event']
+                    if event == 'ready' and state == 'startup':
+                        handoff['ready'] = time.monotonic()
+                        send(readiness, 'ready')
+                        handoff_state = 'clear'
+                        state = 'armed'
                     elif event == 'preflight' and state == 'armed':
                         state = 'preflight'
                         deadline = min(deadline, now+POLICY['preflight'])
@@ -992,10 +1148,12 @@ setup:
                         operation_deadline = float('inf')
                     elif event == 'done':
                         result = {k: v for k, v in message.items() if k not in ('event', 'at')}
-                        break
+                        terminal = True
                     else:
                         raise Refusal('invalid worker transition')
-                if os.waitid(os.P_PID, worker_pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                if terminal and handoff_state == 'complete':
+                    break
+                if not terminal and os.waitid(os.P_PID, worker_pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
                     # A terminal packet can precede exit but still be queued.
                     if not readable(up):
                         raise Refusal('worker ended without terminal evidence')
