@@ -198,6 +198,26 @@ setup:
         return raw[:-1].decode().split('\0')
 
 
+    def discovery_argv(pid: int) -> list[str] | None:
+        sentinel = b'/bin/sh\0-c\0'
+        deadline = time.monotonic() + POLICY['read']
+        fd = os.open(f'/proc/{pid}/cmdline', os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            prefix = bytearray()
+            while len(prefix) < len(sentinel):
+                if time.monotonic() > deadline:
+                    raise Refusal('read deadline')
+                block = os.read(fd, len(sentinel) - len(prefix))
+                if not block:
+                    break
+                prefix.extend(block)
+        finally:
+            os.close(fd)
+        if prefix == sentinel:
+            return None
+        return argv(pid)
+
+
     def ancestry(pid: int, owner: ObservedProcess) -> list[dict[str, int | str]]:
         chain = []
         for _ in range(POLICY['objects']):
@@ -1749,8 +1769,8 @@ setup:
             pid = os.getppid()
             owner = None
             for _ in range(POLICY['objects']):
-                args = argv(pid)
-                if any(item.endswith('/builder/run_tests.py') for item in args):
+                args = discovery_argv(pid)
+                if args is not None and any(item.endswith('/builder/run_tests.py') for item in args):
                     owner = ObservedProcess.open(pid)
                     break
                 pid = process_stat(pid)['ppid']
