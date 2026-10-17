@@ -281,7 +281,11 @@ import re
 import numpy
 
 root = Path(os.environ['R10_WORK'])
-cache = dict(re.findall(r'^([^:#/][^:]*):[^=]+=(.*)$', (root/'pytorch/build/CMakeCache.txt').read_text(), re.M))
+cache = {}
+for line in (root/'pytorch/build/CMakeCache.txt').read_text().splitlines():
+    match = re.match(r'([^:#/][^:]*):[^=]+=(.*)', line)
+    if match:
+        cache[match[1]] = match[2]
 expected = json.loads((Path(os.environ['EVIDENCE'])/'python.json').read_text())
 assert Path(cache['Python_EXECUTABLE']).samefile(os.environ['BUILD_PYTHON'])
 assert Path(cache['Python_INCLUDE_DIR']).samefile(expected['include'])
