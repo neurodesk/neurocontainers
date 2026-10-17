@@ -24,6 +24,8 @@ import nibabel as nib
 from nibabel.processing import resample_from_to
 import numpy as np
 
+from openrecon_metadata import new_uid, processing_metadata, stamp_derived
+
 try:
     import constants
 except ImportError:
@@ -36,8 +38,8 @@ DEFAULT_CPUS = 24
 OPENRECON_WORK_ROOT = Path("/tmp/share/meica_openrecon")
 OUTPUT_SERIES_START = 200
 OUTPUT_SPECS = {
-    "dr2s": ("MEICA_DR2S", "MEICA denoised BOLD dR2*"),
-    "t2s": ("MEICA_T2S", "MEICA T2* map"),
+    "dr2s": ("OR_MEICA_DR2S", "MEICA denoised BOLD dR2*"),
+    "t2s": ("OR_MEICA_T2S", "MEICA T2* map"),
 }
 OUTPUT_UNITS = {"dr2s": "1/s", "t2s": "ms"}
 SIGNED_OUTPUTS = {"dr2s"}
@@ -188,6 +190,10 @@ def write_meica_inputs(images, metadata, input_dir, settings):
         "datasets": datasets,
         "echo_times_ms": echo_times_ms,
         "source_geometry": source_geometry,
+        "processing": processing_metadata("ME-ICA", __file__, {
+            **settings, "echo_times_ms": echo_times_ms,
+            "repetition_time_s": _metadata_tr_seconds(metadata),
+        }),
     }
 
 
@@ -254,13 +260,18 @@ def _outputs_to_mrd(selected, conversion, input_images):
                 conversion["source_geometry"],
                 series_index,
                 output_id,
+                processing=conversion.get("processing"),
             )
         )
     return all_series
 
 
-def _nifti_to_mrd_series(path, source_geometry, series_index, output_id):
+def _nifti_to_mrd_series(
+    path, source_geometry, series_index, output_id, *, processing=None,
+):
     role, description = OUTPUT_SPECS[output_id]
+    series_uid = new_uid()
+    processing = processing or processing_metadata("ME-ICA", __file__, {})
     nifti = nib.load(str(path))
     data = _output_data_in_source_space(nifti, source_geometry, path)
     if data.ndim == 3:
@@ -316,6 +327,8 @@ def _nifti_to_mrd_series(path, source_geometry, series_index, output_id):
                 data_zyxt.shape[0],
                 data_zyxt.shape[3],
                 display_meta,
+                series_uid=series_uid,
+                processing=processing,
             ).serialize()
             output.append(result)
             image_index += 1
@@ -835,6 +848,7 @@ def _packed_slice_position(header, slice_index, slice_count):
 def _derived_meta(
     source, series_index, role, description, image_index,
     slices, timepoints, display_meta,
+    *, series_uid, processing,
 ):
     meta = _meta(source)
     for key in (
@@ -850,8 +864,6 @@ def _derived_meta(
     meta["ImageProcessingHistory"] = ["MEICA", "OPENRECON"]
     _set_series_label(meta, description, series_index)
     meta["SeriesNumber"] = str(series_index)
-    meta["ImageType"] = ["DERIVED", "PRIMARY", "M", role]
-    meta["ImageTypeValue4"] = role
     meta["ImageComments"] = (
         f"{description}; scanner display uint16 0-{SCANNER_DISPLAY_MAX}; "
         f"{display_meta['formula']}"
@@ -872,6 +884,9 @@ def _derived_meta(
     meta["NumberOfSlices"] = str(slices)
     meta["ImagesInAcquisition"] = str(slices * timepoints)
     meta["NumberInSeries"] = str(image_index)
+    stamp_derived(
+        meta, _meta(source), role, series_uid, processing, image_type_as_list=True,
+    )
     return meta
 
 

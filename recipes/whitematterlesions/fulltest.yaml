@@ -34,7 +34,11 @@ tests:
     command: |
       cd /opt/code/python-ismrmrd-server && python3 -c "
       import json
+      import os
+      import openrecon_metadata
       import whitematterlesions
+      assert os.environ['OPENRECON_SOFTWARE_VERSION'] == '${version}'
+      assert os.environ['OPENRECON_CONTAINER_VERSION'] == '${version}'
       label = json.load(open('OpenReconLabel.json'))
       assert label['general']['id'] == 'whitematterlesions'
       assert callable(whitematterlesions.process)

@@ -66,6 +66,8 @@ tests:
     description: Verify the packaged QSMxT and bundled dcm2niix entrypoints start
     script: |
       set -euo pipefail
+      test "${OPENRECON_SOFTWARE_VERSION}" = '${upstream_version}'
+      test "${OPENRECON_CONTAINER_VERSION}" = '${version}'
       command -v qsmxt | grep -x /opt/qsmxt/qsmxt
       command -v dcm2niix | grep -x /opt/qsmxt/dcm2niix
       qsmxt --version | grep -F '${upstream_version}'
@@ -117,7 +119,7 @@ tests:
           anchor = ismrmrd.Image.from_array(np.ones((1, 10, 10), dtype=np.float32))
           images = qsmxt._nifti_to_mrd_images(
               result, anchor, qsmxt.OUTPUT_SERIES_START,
-              "QSMxT T2star", "QSMXT_T2STAR", "t2star", "s",
+              "QSMxT T2star", "OR_QSM_T2STAR", "t2star", "s",
           )
           qsmxt._validate_output_images(images, [anchor])
           assert len(images) == 10
@@ -315,7 +317,7 @@ tests:
           anchor = ismrmrd.Image.from_array(np.ones((1, 32, 32), dtype=np.float32))
           images = qsmxt._nifti_to_mrd_images(
               path, anchor, qsmxt.OUTPUT_SERIES_START,
-              "QSMxT SWI", "QSMXT_SWI", "swi", "a.u.",
+              "QSMxT SWI", "OR_QSM_SWI", "swi", "a.u.",
           )
           qsmxt._validate_output_images(images, [anchor])
           assert len(images) == 2
@@ -847,7 +849,7 @@ tests:
       assert first.data.dtype == np.uint16
       assert np.all(first.data == 3548)
       assert first_meta["QSMxTOutput"] == "qsm"
-      assert first_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
+      assert first_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\OR_QSM_CHIMAP"
       assert first_meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
       assert first_meta["DataRole"] == ["Image", "Quantitative"]
       assert first_meta["PixelPaddingValue"] == "0"

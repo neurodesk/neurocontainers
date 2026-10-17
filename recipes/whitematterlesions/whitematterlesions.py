@@ -25,6 +25,8 @@ import numpy as np
 from PIL import Image as PILImage, ImageDraw, ImageFont
 from scipy import ndimage
 
+from openrecon_metadata import processing_metadata, stamp_derived
+
 WORKSPACE = Path(
     os.environ.get("WHITEMATTERLESIONS_WORKSPACE", "/tmp/share/whitematterlesions")
 )
@@ -39,6 +41,12 @@ DEFAULTS = {
     "wmlprobability": False,
 }
 FOLDS = {"fold0": "1", "ensemble": "5"}
+OUTPUT_TOKENS = {
+    "LESION_OVERLAY": "OR_WML_OVERLAY",
+    "LESION_MASK": "OR_WML_MASK",
+    "LESION_PROBABILITY": "OR_WML_PROB",
+    "LESION_METRICS": "OR_WML_REPORT",
+}
 
 
 @dataclass(frozen=True)
@@ -308,12 +316,14 @@ def _series_description(image) -> str:
 
 
 def _derived_description(source, suffix: str) -> str:
-    return _series_description(source)[: 64 - len(suffix)] + suffix
+    # Reserve the scanner's appended "_FLAMeS" within the DICOM LO limit.
+    return _series_description(source)[: 57 - len(suffix)] + suffix
 
 
 def _stamp_output(
     output, source, series_index: int, image_index: int, series_uid: str,
     description: str, role: str, comment: str, display_max: int | None = None,
+    *, processing=None,
 ) -> None:
     header = copy.copy(source.getHead())
     header.data_type = output.data_type
@@ -351,12 +361,21 @@ def _stamp_output(
                 del meta[key]
         meta["WindowCenter"] = str((display_max + 1) / 2)
         meta["WindowWidth"] = str(display_max + 1)
+    if role != "ORIGINAL":
+        for key in ("SequenceDescription", "ProtocolName"):
+            meta[key] = description
+        meta["SeriesNumberRangeNameUID"] = f"{OUTPUT_TOKENS[role]}_{series_uid}"
+        stamp_derived(
+            meta, _meta_from_image(source), OUTPUT_TOKENS[role], series_uid,
+            processing or processing_metadata("FLAMeS", __file__, {}),
+        )
     output.attribute_string = meta.serialize()
 
 
 def volume_to_mrd_series(
     volume_xyz: np.ndarray, sources, series_index: int, suffix: str, role: str,
     comment: str = "", display_max: int | None = None,
+    *, processing=None,
 ) -> list:
     """Return one MRD image per source slice, on the source images' geometry."""
 
@@ -367,6 +386,7 @@ def volume_to_mrd_series(
         )
     series_uid = f"2.25.{uuid.uuid4().int}"
     description = _derived_description(sources[0], suffix)
+    processing = processing or processing_metadata("FLAMeS", __file__, {})
     output = []
     for index, source in enumerate(sources):
         plane = np.ascontiguousarray(volume_xyz[:, :, index].T)
@@ -374,6 +394,7 @@ def volume_to_mrd_series(
         _stamp_output(
             image, source, series_index, index, series_uid, description, role,
             comment, display_max,
+            processing=processing,
         )
         output.append(image)
     return output
@@ -488,6 +509,7 @@ def render_metrics_report_pages(metrics: list[LesionMetric]) -> list[np.ndarray]
 
 def metrics_report_series(
     metrics: list[LesionMetric], source, series_index: int, summary: str,
+    *, processing=None,
 ) -> list:
     """Pack report pages into one canonical explicit MRD volume for DICOM output."""
 
@@ -498,6 +520,7 @@ def metrics_report_series(
     _stamp_output(
         image, source, series_index, 0, series_uid, description,
         "LESION_METRICS", summary, display_max=4080,
+        processing=processing,
     )
     header = image.getHead()
     page_count, height, width = pages.shape
@@ -518,19 +541,11 @@ def metrics_report_series(
             "SegmentPostProcessingChildRole", "ExamDataRole",
         } or key.startswith("ReferencedGSPS"):
             del meta[key]
-    image_type = "DERIVED\\PRIMARY\\M\\WML_METRICS"
     meta.update({
         "DataRole": "Segmentation",
         "Keep_image_geometry": "0",
         "SequenceDescription": description,
         "ProtocolName": description,
-        "SeriesNumberRangeNameUID": f"WML_METRICS_{series_index}",
-        "SOPInstanceUID": f"2.25.{uuid.uuid4().int}",
-        "ImageType": image_type,
-        "DicomImageType": image_type,
-        "ImageTypeValue3": "M",
-        "ImageTypeValue4": "WML_METRICS",
-        "ComplexImageComponent": "MAGNITUDE",
         "partition_count": "1",
         "slice_count": str(page_count),
         "NumberOfSlices": str(page_count),
@@ -557,6 +572,7 @@ def metrics_report_series(
 def segmentation_series(
     result: FlamesResult, ordered, volume_xyz: np.ndarray, affine: np.ndarray,
     first_series_index: int, send_probability: bool,
+    *, processing=None,
 ) -> tuple[list[tuple[str, list]], FlamesResult]:
     mask = on_source_grid(result.mask, affine, volume_xyz.shape, order=0) > 0
     metrics = lesion_metrics(mask, affine)
@@ -567,6 +583,9 @@ def segmentation_series(
         f"FLAMeS: {result.lesion_count} lesions, {result.volume_ml:.2f} ml; "
         f"{RESEARCH_WARNING}"
     )
+    processing = processing or processing_metadata("FLAMeS", __file__, {
+        "flames_provenance": result.provenance,
+    })
     source_dtype = np.asarray(ordered[0].data).dtype
     if np.iscomplexobj(ordered[0].data):
         source_dtype = np.dtype(np.float32)
@@ -577,10 +596,12 @@ def segmentation_series(
         ("lesion overlay", volume_to_mrd_series(
             overlay.astype(source_dtype), ordered, first_series_index,
             "_lesion_overlay", "LESION_OVERLAY", summary,
+            processing=processing,
         )),
         ("lesion mask", volume_to_mrd_series(
             mask.astype(np.int16), ordered, first_series_index + 1,
             "_lesions", "LESION_MASK", summary, display_max=1,
+            processing=processing,
         )),
     ]
     if send_probability:
@@ -590,9 +611,11 @@ def segmentation_series(
             ordered, first_series_index + 2, "_lesion_probability",
             "LESION_PROBABILITY", f"Lesion probability x{PROBABILITY_SCALE}; {summary}",
             display_max=PROBABILITY_SCALE,
+            processing=processing,
         )))
     series.append(("lesion metrics", metrics_report_series(
         metrics, ordered[0], first_series_index + len(series), summary,
+        processing=processing,
     )))
     return series, result
 
@@ -656,7 +679,11 @@ def process(connection, config, metadata):
 
             result = run_flames(input_path, run_dir / "flames", model, skull_stripped)
             outputs, result = segmentation_series(
-                result, ordered, volume_xyz, affine, next_series_index, send_probability
+                result, ordered, volume_xyz, affine, next_series_index, send_probability,
+                processing=processing_metadata("FLAMeS", __file__, {
+                    "model": model, "skull_stripped": skull_stripped,
+                    "flames_provenance": result.provenance,
+                }),
             )
             # Sent per series, so a later series' failure cannot discard these.
             for label, images in outputs:

@@ -199,6 +199,8 @@ build:
         # qsmxt resolves dcm2niix via this env var first; the bundled copy sits
         # alongside the binary, so conversion works out of the box.
         QSMXT_DCM2NIIX: /opt/qsmxt/dcm2niix
+        OPENRECON_SOFTWARE_VERSION: "{{ context.upstream_version }}"
+        OPENRECON_CONTAINER_VERSION: "{{ context.version }}"
         QSM_MODEL_DIR: /opt/qsmxt/models
         QSM_MODEL_CACHE: /tmp/share/qsmxt_models
 

@@ -79,6 +79,20 @@ ME-ICA and is intentionally not required by this inline adapter.
 
 ME-ICA is a research tool and is not intended for standard clinical use.
 
+## Output metadata
+
+Processed images carry `DERIVED\PRIMARY\M\<product>` in outgoing MRD
+metadata. `M` retains the Siemens magnitude convention. The
+implementation-defined product `OR_MEICA_DR2S` identifies denoised apparent
+dR2* values, and `OR_MEICA_T2S` identifies T2* relaxation maps.
+
+Outgoing metadata records the ME-ICA version, processing parameters,
+and source geometry identifiers. Original echo images retain their source
+Image Type. Each processed series has a fresh series identity; final SOP
+Instance UID allocation stays with the scanner so that it can combine
+MRD images into Enhanced MR frames. Check Image Type, Frame Type, UIDs,
+quantitative rescaling, and surviving provenance in scanner exports.
+
 ## Open Source Development
 
 The source for this OpenRecon package is in the NeuroContainers repository:

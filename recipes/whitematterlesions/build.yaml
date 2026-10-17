@@ -80,6 +80,8 @@ build:
         DEBIAN_FRONTEND: noninteractive
         WHITEMATTERLESIONS_WORKSPACE: /tmp/share/whitematterlesions
         FLAMES_EXECUTABLE: /opt/flames/flames
+        OPENRECON_SOFTWARE_VERSION: "{{ context.flames_version }}"
+        OPENRECON_CONTAINER_VERSION: "{{ context.version }}"
 
     - install:
         - ca-certificates
