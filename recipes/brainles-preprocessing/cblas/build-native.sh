@@ -78,15 +78,51 @@ assert free > 0
 facts = {'affinity': sorted(os.sched_getaffinity(0)), 'disk_free_bytes': free,
          'hidden_cgroup_ancestry': 'unknown', 'capacity_for_build': 'unknown'}
 for file in ['/proc/meminfo', '/proc/self/cgroup', '/proc/self/mountinfo']:
-    facts[file] = Path(file).read_text()
+    try:
+        facts[file] = Path(file).read_text()
+    except OSError as error:
+        facts[file] = str(error)
 mount = Path('/sys/fs/cgroup')
-relative = next((line.split(':', 2)[2] for line in facts['/proc/self/cgroup'].splitlines() if line.startswith('0::')), None)
-groups = {mount}
-if relative is not None and '..' not in Path(relative).parts:
-    leaf = mount / relative.lstrip('/')
-    if leaf.is_dir():
-        groups.update([leaf, *(parent for parent in leaf.parents if parent == mount or mount in parent.parents)])
-for group in sorted(groups):
+groups = set()
+try:
+    memberships = [line.split(':', 2)[2] for line in facts['/proc/self/cgroup'].splitlines() if line.startswith('0::')]
+    if len(memberships) != 1 or not memberships[0].startswith('/') or '..' in Path(memberships[0]).parts:
+        raise ValueError('missing or unsupported unified membership')
+    mounts = {}
+    for line in facts['/proc/self/mountinfo'].splitlines():
+        fields, filesystem = line.split(' - ', 1)
+        fields = fields.split()
+        if len(fields) < 6 or not filesystem.split():
+            raise ValueError('malformed mountinfo')
+        if any('\\' in field for field in fields[3:5]):
+            raise ValueError('escaped mount paths are unsupported')
+        mounts[fields[0]] = (fields[1], fields[3], Path(fields[4]), filesystem.split()[0])
+    candidates = [key for key, entry in mounts.items() if entry[2] == mount]
+    if len(candidates) != 1:
+        raise ValueError('missing or stacked cgroup mount')
+    selected = candidates[0]
+    if mounts[selected][1] != '/' or mounts[selected][3] != 'cgroup2':
+        raise ValueError('nonroot or non-cgroup2 mount is unsupported')
+    ancestors = set()
+    parent = mounts[selected][0]
+    while parent in mounts:
+        if parent in ancestors or parent == selected:
+            raise ValueError('cyclic mount ancestry')
+        ancestors.add(parent)
+        parent = mounts[parent][0]
+    if any(key != selected and (entry[2] == mount or mount in entry[2].parents
+           or (entry[2] in mount.parents and key not in ancestors))
+           for key, entry in mounts.items()):
+        raise ValueError('overlapping mount visibility is unknown')
+    leaf = mount / memberships[0].lstrip('/')
+    if not leaf.is_dir():
+        raise ValueError('membership directory is unavailable')
+    groups.update([leaf, *(parent for parent in leaf.parents if parent == mount or mount in parent.parents)])
+    facts['cgroup_mapping'] = {'status': 'supported', 'mount_id': selected, 'leaf': str(leaf)}
+except (OSError, ValueError) as error:
+    facts['cgroup_mapping'] = {'status': 'unknown', 'reason': str(error)}
+facts['enforced_memory_groups'] = sorted(str(group) for group in groups)
+for group in sorted(groups | {mount}):
     for name in ['memory.max', 'memory.high', 'memory.current', 'memory.events', 'memory.swap.max', 'memory.swap.current', 'memory.peak']:
         path = group / name
         try:
