@@ -135,6 +135,42 @@ jobs:
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('merge_sha', mergeSha);
+      - name: Record the dispatch association for lifecycle reporting
+        id: reporting_identity
+        if: >-
+          github.event_name == 'workflow_dispatch' && !inputs.signing_acceptance &&
+          steps.pr.outputs.should_promote == 'true'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          MERGE_SHA: ${{ steps.pr.outputs.merge_sha }}
+          STAGED_RUN_ID: ${{ inputs.staged_run_id || 0 }}
+        with:
+          script: |
+            const pr = Number(process.env.PR_NUMBER);
+            const source = Number(process.env.STAGED_RUN_ID);
+            const attempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+            const head = process.env.HEAD_SHA;
+            const merge = process.env.MERGE_SHA;
+            if (![pr, source, attempt].every(Number.isSafeInteger) ||
+                pr < 1 || source < 0 || attempt < 1 ||
+                !/^[0-9a-f]{40}$/.test(head) || !/^[0-9a-f]{40}$/.test(merge)) {
+              throw new Error('Invalid promotion reporting identity');
+            }
+            const name = `promotion-identity-v1-${pr}-${head}-${merge}-${source}-${attempt}`;
+            require('fs').writeFileSync(`${process.env.RUNNER_TEMP}/promotion-identity.txt`, name + '\n');
+            core.setOutput('name', name);
+      - name: Retain the dispatch association
+        if: steps.reporting_identity.outputs.name != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.reporting_identity.outputs.name }}
+          path: ${{ runner.temp }}/promotion-identity.txt
+          retention-days: 90
+          if-no-files-found: error
       - name: Checkout trusted main
         uses: actions/checkout@v5
         with:

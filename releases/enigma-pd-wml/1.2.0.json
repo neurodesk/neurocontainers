@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "enigma-pd-wml 1.2.0": {
+      "version": "20261016",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ]
+}

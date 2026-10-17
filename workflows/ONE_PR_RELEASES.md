@@ -146,6 +146,36 @@ still requires every entry to be current, so it cannot recover a mixed batch.
 A plain redispatch without `staged_run_id` repeats publication and can fail on a
 superseded recipe before finalization. Use the explicit staged recovery path.
 
+### Recovery reporting identity
+
+A dispatch can run on a newer main commit than the original PR merge. After
+resolving the PR, the promoter retains a small reporting artifact for 90 days.
+Its name is the machine-readable association:
+
+```text
+promotion-identity-v1-<PR number>-<PR head SHA>-<original merge SHA>-<staged source run ID or 0>-<emitting attempt>
+```
+
+The candidate reporter reads artifact metadata, without downloading the archive.
+It checks the owning run's repository, workflow path, main branch, event, and
+artifact provenance before matching the PR, head, and merge. A nonzero source ID
+must resolve to the original trusted push at that merge. This record associates
+an attempted operation; it does not prove that staging or publication succeeded.
+Signing acceptance runs do not emit it. Reporting artifact failures do not stop
+release processing.
+
+The reporter compares paginated original push and authenticated dispatch runs by
+their latest attempt's start time, then run ID and attempt. It reads the current
+Actions outcome, including failures and pending runs. Dispatch success also
+requires a successful finalizer in the latest jobs. A retained identity from an
+earlier attempt still binds the same run, since reruns keep the original inputs.
+
+Legacy dispatches, runs whose resolver has not emitted an identity, and missing,
+expired, or invalid artifacts cannot establish a recovery association. The
+reporter falls back to verified runs and adds a reporting note. It never treats
+a title or an existing success comment as proof. This reporting contract does
+not change release validation or publication.
+
 ## Required repository configuration
 
 - Make `Container release gate` a required pull-request check.
