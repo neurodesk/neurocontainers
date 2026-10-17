@@ -253,16 +253,11 @@
       "information": { "en": "Add paramagnetic, diamagnetic, and separated-total susceptibility maps. Requires at least three GRE magnitude and unfiltered phase echoes. R2*-QSM needs equally spaced echoes. No spin-echo acquisition is needed." }
     },
     {
-      "id": "swiunwrapping",
-      "label": {"en": "SWI unwrapping"},
-      "type": "choice",
-      "default": "laplacian",
-      "information": {"en": "Choose SWI phase unwrapping independently of QSM. Slice Laplacian supports contiguous 2D stacks."},
-      "values": [
-        {"id": "laplacian", "name": {"en": "Laplacian"}},
-        {"id": "laplacian-slice", "name": {"en": "Slice Laplacian"}},
-        {"id": "romeo", "name": {"en": "ROMEO"}}
-      ]
+      "id": "regionalqsmtable",
+      "label": {"en": "Regional QSM table"},
+      "type": "boolean",
+      "default": false,
+      "information": {"en": "Run SynthSeg on combined magnitude anatomy and return a regional QSM table with mean, SD, median in ppm and valid voxel counts. Uses the selected QSM reference. Adds analysis time and returns a separate table for each selected input variant, independently of Output maps."}
     }
   ]
 }

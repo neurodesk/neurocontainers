@@ -1069,7 +1069,9 @@ def test_openrecon_label_exposes_processing_defaults():
     assert "motioncorrection" not in parameters
     assert parameters["qsmreference"]["default"] == "mean"
     assert parameters["vsharpgrid"]["default"] == "native"
-    assert parameters["swiunwrapping"]["default"] == "laplacian"
+    assert parameters["regionalqsmtable"]["default"] is False
+    assert parameters["regionalqsmtable"]["type"] == "boolean"
+    assert "swiunwrapping" not in parameters
     assert parameters["qsmalgorithm"]["default"] == "rts"
     qsm_algorithms = {
         value["id"] for value in parameters["qsmalgorithm"]["values"]
@@ -1099,7 +1101,7 @@ def test_openrecon_label_exposes_processing_defaults():
         "twopass",
         "qsmreference",
         "sourceseparation",
-        "swiunwrapping",
+        "regionalqsmtable",
     ]
     assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
     assert len(label["parameters"]) == len(parameters) == 14

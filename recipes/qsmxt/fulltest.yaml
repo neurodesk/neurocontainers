@@ -524,7 +524,7 @@ tests:
           "pipelinepreset",
           "qsmreference",
           "vsharpgrid",
-          "swiunwrapping",
+          "regionalqsmtable",
       }
       assert expected == parameter_ids, f"Missing: {expected - parameter_ids}; unexpected: {parameter_ids - expected}"
       parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
@@ -542,7 +542,7 @@ tests:
           "twopass",
           "qsmreference",
           "sourceseparation",
-          "swiunwrapping",
+          "regionalqsmtable",
       ]
       assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
       import sys
@@ -582,8 +582,9 @@ tests:
       assert parameters["qsmreference"]["default"] == "mean"
       assert parameters["vsharpgrid"]["default"] == "native"
       assert {value["id"] for value in parameters["vsharpgrid"]["values"]} == {"native", "finest", "isotropic"}
-      assert parameters["swiunwrapping"]["default"] == "laplacian"
-      assert {value["id"] for value in parameters["swiunwrapping"]["values"]} == {"laplacian", "laplacian-slice", "romeo"}
+      assert parameters["regionalqsmtable"]["default"] is False
+      assert parameters["regionalqsmtable"]["type"] == "boolean"
+      assert "swiunwrapping" not in parameters
       defaults = {key: parameter["default"] for key, parameter in parameters.items()}
       settings = qsmxt._settings_from_config({"parameters": defaults})
       assert settings["two_pass"] is settings["motion_correction"] is False
@@ -602,6 +603,47 @@ tests:
       assert "sendoriginal" not in parameter_ids
       assert "minip" not in parameter_ids
       print(label)
+      PY
+
+  - name: regional QSM table report
+    description: Render native-shaped regional TSV values and validate the installed explicit-volume MRD report
+    script: |
+      set -euo pipefail
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import logging
+      import tempfile
+      from pathlib import Path
+
+      import ismrmrd
+      import numpy as np
+      import qsmxt
+      import qsmxt_regional_report
+
+      logging.basicConfig(level=logging.INFO)
+      with tempfile.TemporaryDirectory() as work:
+          output = Path(work)
+          anat = output / "derivatives/qsmxt/sub-01/anat"
+          anat.mkdir(parents=True)
+          tsv = anat / "sub-01_desc-segmentation_stats.tsv"
+          tsv.write_text(
+              "map\tunit\tindex\tname\tn_voxels\tn_valid\tvolume_mm3\tmean\tsd\tmedian\t"
+              "min\tmax\tp5\tp95\treference\treference_offset_ppm\n"
+              "Chimap\tppm\t10\tleft thalamus\t36\t32\t1187.4\t0.012000\t0.030000\t"
+              "0.011000\t-0.010000\t0.090000\t-0.005000\t0.080000\tmean\t0.002000\n"
+          )
+          pages = qsmxt_regional_report.build_pages(
+              output, input_variant="distortion-corrected", requested_reference="mean",
+          )
+          assert pages and pages[0].dtype == np.uint16
+          assert pages[0].min() == 0 and pages[0].max() == 4095
+          source = ismrmrd.Image.from_array(np.ones((2, 3, 4), dtype=np.float32), transpose=False)
+          conversion = {"anchor_image": source, "input_variant": "distortion-corrected", "input_short_label": "DC"}
+          report = qsmxt._build_regional_report_image(pages, conversion, qsmxt.OUTPUT_SERIES_START)
+          qsmxt._validate_regional_report_image(report, [source])
+          np.testing.assert_array_equal(report.data[0, 0], np.rot90(pages[0], 2))
+          assert ismrmrd.Meta.deserialize(report.attribute_string)["DataRole"] == "Segmentation"
+          assert report.data.shape[1] == len(pages)
+      print("Installed regional QSM table renderer and MRD contract verified")
       PY
 
 

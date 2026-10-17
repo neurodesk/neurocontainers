@@ -142,9 +142,28 @@ in this package. The
 [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md#anatomical-reference-regions)
 lists every v1 region.
 
+## Return a regional QSM table
+
+Turn on **Regional QSM table** to return a table series alongside your selected
+**Output maps**. It defaults to off. QSMxT runs packaged SynthSeg on combined GRE
+magnitude anatomy and reports each region's mean, standard deviation, and median
+susceptibility in ppm, with valid and total voxel counts. Analysis adds processing
+time. **Both** returns separate `DC` and `ND` tables.
+
+The table uses the **QSM reference** setting. Each page shows the requested
+reference, the reference and offset recorded by QSMxT, and the input variant.
+Missing native reference details appear as `not recorded`. QSMxT excludes zero
+and nonfinite voxels, and omits regions without valid values. The adapter does
+not recalculate these statistics.
+
+The complete native TSV is included in the reconstruction log before the table
+is rendered. If the optional table cannot be prepared, OpenRecon logs its absence
+and retains the maps already returned. The table is a report image. Its pixels
+do not encode susceptibility values, and no persistent TSV download is provided.
+
 ## Process contiguous 2D stacks
 
-**V-SHARP grid** defaults to **Native**. **Finest voxel** and **Isotropic** select the working grid for background removal while retaining the acquired output geometry. **SWI unwrapping** defaults to **Laplacian**. Select **Slice Laplacian** for slice-wise SWI phase unwrapping independently of the QSM unwrap algorithm.
+**V-SHARP grid** defaults to **Native**. **Finest voxel** and **Isotropic** select the working grid for background removal while retaining the acquired output geometry. SWI unwrapping defaults to Laplacian. Advanced `swiunwrapping=laplacian-slice` selects slice-wise SWI phase unwrapping independently of the QSM unwrap algorithm. Saved `swiunwrapping` settings remain supported; this choice no longer occupies a scanner control.
 
 Supply acquired `SliceThickness` and `MRAcquisitionType` in MRD image metadata or
 user parameters. Advanced `slicethicknessmm` and `acquisitiontype` can supply
