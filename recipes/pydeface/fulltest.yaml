@@ -29,10 +29,2372 @@ test_data:
   output_dir: test_output
 
 setup:
+  host_script: |
+    python3 - "${output_dir}" "${t1w}" <<'NATIVE_PROFILE_PY'
+    """One read-only ARM diagnostic. Missing or pending evidence is incomplete."""
+    from __future__ import annotations
+
+    import ctypes
+    from bisect import bisect_right
+    from dataclasses import asdict, dataclass
+    import errno
+    import hashlib
+    import http.client
+    import json
+    import math
+    import os
+    from pathlib import Path
+    import platform
+    import re
+    import resource
+    import select
+    import shlex
+    import shutil
+    import signal
+    import socket
+    import stat
+    import struct
+    import sys
+    import tarfile
+    import tempfile
+    import time
+    from types import FrameType
+    # Any is confined to heterogeneous JSON record values.
+    from typing import Any, Callable, Literal, Mapping, Sequence
+
+    StopOutcome = Literal['not_attempted', 'in_flight', 'requested', 'absent', 'raised']
+
+    BASE = 'a3cd2eb0a42da42030d1547179b20dab066355a5'
+    EXE = '/opt/fsl-6.0.7.23/bin/flirt'
+    EXE_SHA = '1fe86d868e0bf0781b8afb9c4f0689f0bdb3e49edf67795bee346f1a48c7c17c'
+    TEMPLATE = '/opt/miniconda-py312_25.5.1-0/lib/python3.12/site-packages/pydeface/data/mean_reg2mean.nii.gz'
+    POLICY = dict(supply=15, bootstrap=40, lifetime=1800, acquisition=45, selected=120,
+                  preflight=30, record=40, disabled=5, interval=30, command=10,
+                  read=3, service=.25, grace=1, admission=.250,
+                  traces=16, trace_bytes=16*1024**2, line=256*1024, records=20000,
+                  objects=32, total=64*1024**2, raw=32*1024**2, text=8*1024**2,
+                  metadata=1024**2, object_bytes=128*1024**2)
+    GEOMETRY = {
+        'in_file': dict(shape=[176, 256, 256], zooms=[1., .9765625, .9765625], affine=[
+            [.9985747337341309, .051109328866004944, .010212389752268791, -100.00589752197266],
+            [-.052333083003759384, .9752241373062134, -.0005352350417524576, -113.15837860107422],
+            [-.01047183945775032, 0., .9765089750289917, -121.88970184326172], [0., 0., 0., 1.]]),
+        'reference': dict(shape=[160, 192, 192], zooms=[1., 1.3333330154418945, 1.3333330154418945], affine=[
+            [1., 0., 0., -83.], [0., 1.3333330154418945, 0., -125.],
+            [0., 0., 1.3333330154418945, -136.], [0., 0., 0., 1.]])}
+
+
+    class Refusal(Exception):
+        pass
+
+
+    @dataclass(frozen=True)
+    class ObservedProcess:
+        pid: int
+        ticks: int
+        pidfd: int
+
+        @classmethod
+        def open(cls, pid: int) -> ObservedProcess:
+            before = process_stat(pid)
+            fd = os.pidfd_open(pid)
+            result = cls(pid, before['ticks'], fd)
+            try:
+                result.check()
+                return result
+            except BaseException:
+                os.close(fd)
+                raise
+
+        def check(self) -> dict[str, int | str]:
+            value = process_stat(self.pid)
+            if readable(self.pidfd) or value['ticks'] != self.ticks or value['state'] in ('Z', 'X'):
+                raise Refusal('process identity ended or changed')
+            return value
+
+
+    @dataclass(frozen=True)
+    class OwnedChild:
+        pid: int
+        group: bool = False
+
+        def signal(self, sig: int) -> bool:
+            # The sole reaper keeps this child unreaped until the last signal.
+            try:
+                (os.killpg if self.group else os.kill)(self.pid, sig)
+            except ProcessLookupError:
+                return False
+            return True
+
+
+    @dataclass
+    class RunPlan:
+        work: Path
+        output: Path
+        retained: Path
+        t1w: Path
+        owner: ObservedProcess
+        started: float
+        wall: float
+        boot: str
+        control: socket.socket | None = None
+        private: Path | None = None
+        tool: _HostLoadedPerf | None = None
+        preflight_deadline: float = float('inf')
+        supply_deadline: float = float('inf')
+
+
+    @dataclass(frozen=True)
+    class _HostLoadedPerf:
+        path: Path
+        sha256: str
+        identity: tuple[int, int, int, int, int]
+        environment: dict[str, str]
+        loader_receipt: Path
+
+        def check(self) -> None:
+            observed = _executable_identity(self.path)
+            if observed['identity'] != self.identity or observed['sha256'] != self.sha256:
+                raise Refusal('supplied perf identity changed')
+
+
+    def _diagnostic_environment(private: Path) -> dict[str, str]:
+        return {
+            'LC_ALL': 'C', 'LANG': 'C', 'PATH': '/usr/bin:/bin',
+            'HOME': str(private / 'home'), 'TMPDIR': str(private),
+            'PERF_CONFIG': '/dev/null', 'PERF_BUILDID_DIR': '/dev/null',
+            'DEBUGINFOD_URLS': '', 'PERF_PAGER': 'cat', 'PAGER': 'cat',
+        }
+
+
+    def readable(fd: int | socket.socket) -> bool:
+        return bool(select.select([fd], [], [], 0)[0])
+
+
+    def read_bytes(path: str | Path, cap: int | None = None) -> bytes:
+        cap = cap or POLICY['metadata']
+        deadline = time.monotonic() + POLICY['read']
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            data = bytearray()
+            while True:
+                if time.monotonic() > deadline:
+                    raise Refusal('read deadline')
+                block = os.read(fd, min(65536, cap + 1 - len(data)))
+                if not block:
+                    return bytes(data)
+                data.extend(block)
+                if len(data) > cap:
+                    raise Refusal('read byte limit')
+        finally:
+            os.close(fd)
+
+
+    def process_stat(pid: int) -> dict[str, int | str]:
+        text = read_bytes(f'/proc/{pid}/stat', 8192).decode()
+        fields = text.rsplit(')', 1)[1].split()
+        return dict(pid=pid, ticks=int(fields[19]), ppid=int(fields[1]), state=fields[0])
+
+
+    def argv(pid: int) -> list[str]:
+        raw = read_bytes(f'/proc/{pid}/cmdline', 65536)
+        if not raw.endswith(b'\0'):
+            raise Refusal('incomplete live argv')
+        return raw[:-1].decode().split('\0')
+
+
+    def discovery_argv(pid: int) -> list[str] | None:
+        sentinel = b'/bin/sh\0-c\0'
+        deadline = time.monotonic() + POLICY['read']
+        fd = os.open(f'/proc/{pid}/cmdline', os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            prefix = bytearray()
+            while len(prefix) < len(sentinel):
+                if time.monotonic() > deadline:
+                    raise Refusal('read deadline')
+                block = os.read(fd, len(sentinel) - len(prefix))
+                if not block:
+                    break
+                prefix.extend(block)
+        finally:
+            os.close(fd)
+        if prefix == sentinel:
+            return None
+        return argv(pid)
+
+
+    def ancestry(pid: int, owner: ObservedProcess) -> list[dict[str, int | str]]:
+        chain = []
+        for _ in range(POLICY['objects']):
+            item = process_stat(pid)
+            chain.append(item)
+            if pid == owner.pid:
+                owner.check()
+                return chain
+            pid = item['ppid']
+            if pid <= 1:
+                break
+        raise Refusal('process is not descended from verified runner')
+
+
+    def namespace(pid: int) -> str:
+        value = read_bytes(f'/proc/{pid}/status').decode()
+        match = re.search(r'^NSpid:\s+(.+)$', value, re.M)
+        if not match or match.group(1).split() != [str(pid)]:
+            raise Refusal('nested or unavailable PID mapping')
+        return os.readlink(f'/proc/{pid}/ns/pid')
+
+
+    def parent_arm(expected: int) -> None:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(1, signal.SIGKILL, 0, 0, 0):
+            os._exit(90)
+        if os.getppid() != expected:
+            os._exit(91)
+
+
+    def detach(keep: set[int]) -> None:
+        fd = os.open('/dev/null', os.O_RDWR)
+        for number in (0, 1, 2):
+            os.dup2(fd, number)
+        for name in os.listdir('/proc/self/fd'):
+            number = int(name)
+            if number > 2 and number not in keep:
+                try:
+                    os.close(number)
+                except OSError:
+                    pass
+
+
+    def send(channel: socket.socket, event: str, **fields: Any) -> None:
+        data = json.dumps(dict(event=event, at=time.monotonic(), **fields)).encode()
+        if len(data) > 32768:
+            raise Refusal('control message limit')
+        os.write(channel.fileno(), data)
+
+
+    def receive(channel: socket.socket, deadline: float) -> dict[str, Any]:
+        if not select.select([channel], [], [], max(0, deadline-time.monotonic()))[0]:
+            raise Refusal('readiness deadline')
+        data = os.read(channel.fileno(), 32769)
+        if not data or len(data) > 32768:
+            raise Refusal('readiness missing or oversized')
+        return json.loads(data)
+
+
+    def manifest(directory: Path, outcome: str, **facts: Any) -> None:
+        data = json.dumps(dict(outcome=outcome, release='DIAGNOSTICBLOCKED',
+                               baseline=BASE, at=time.monotonic(), **facts), sort_keys=True).encode()
+        if len(data) > 65536:
+            raise Refusal('manifest limit')
+        temporary = directory / 'manifest.tmp'
+        with temporary.open('wb') as stream:
+            stream.write(data)
+        temporary.replace(directory / 'manifest.json')
+
+
+    def retained_size(directory: Path) -> int:
+        total = 131072
+        for path in directory.iterdir():
+            if path.name in ('manifest.json', 'manifest.tmp'):
+                continue
+            value = path.lstat()
+            if not stat.S_ISREG(value.st_mode):
+                raise Refusal('nonregular retained file')
+            total += value.st_size
+        if total > POLICY['total']:
+            raise Refusal('aggregate retained output limit')
+        return total
+
+
+    def save(plan: RunPlan, name: str,
+             data: bytes | dict[str, Any] | list[dict[str, Any]]) -> None:
+        if not isinstance(data, bytes):
+            data = json.dumps(data, sort_keys=True).encode()
+        if len(data) > POLICY['text'] or retained_size(plan.retained) + len(data) > POLICY['total']:
+            raise Refusal('retained output limit')
+        with (plan.retained / name).open('xb') as stream:
+            stream.write(data)
+
+
+    def hash_fd(fd: int) -> str:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > POLICY['object_bytes']:
+            raise Refusal('object type or size limit')
+        deadline = time.monotonic() + POLICY['read']
+        digest = hashlib.sha256()
+        size = 0
+        os.lseek(fd, 0, os.SEEK_SET)
+        while True:
+            if time.monotonic() > deadline:
+                raise Refusal('hash deadline')
+            block = os.read(fd, 65536)
+            if not block:
+                break
+            size += len(block)
+            if size > POLICY['object_bytes']:
+                raise Refusal('hash size limit')
+            digest.update(block)
+        after = os.fstat(fd)
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise Refusal('object changed while hashing')
+        return digest.hexdigest()
+
+
+    def bind_runner(plan: RunPlan) -> None:
+        args = argv(plan.owner.pid)
+        indexes = [i for i, item in enumerate(args) if item.endswith('/builder/run_tests.py')]
+        if len(indexes) != 1:
+            raise Refusal('ambiguous runner argv')
+        index = indexes[0]
+        script = Path(args[index])
+        if index not in (1, 2) or (index == 2 and args[1] != '-u') or not script.is_absolute() or index+1 >= len(args):
+            raise Refusal('runner path unavailable')
+        options = {}
+        for key in ('--work-dir', '--container', '--jsonl'):
+            if args.count(key) != 1:
+                raise Refusal('runner binding option missing or duplicate')
+            options[key] = args[args.index(key)+1]
+        if Path(options['--work-dir']).resolve() != plan.work:
+            raise Refusal('runner work mismatch')
+        suite = Path(args[index+1])
+        if not suite.is_absolute() or suite.parent != plan.work.parent:
+            raise Refusal('staged suite outside managed run')
+        jsonl = Path(options['--jsonl'])
+        if jsonl.parent != plan.work.parent or not jsonl.is_file():
+            raise Refusal('runner JSONL identity unavailable')
+        container = Path(options['--container'])
+        if not container.is_absolute() or not container.is_file():
+            raise Refusal('runner container unavailable')
+        sources = {}
+        for relative, expected in {
+            'builder/run_tests.py': '7f41b48d9522c2f63f80785217e95c2058f8392ec116c6f036f5c66bbbdb2b68',
+            'builder/runtime_execution.py': '5238d9d7f7ee07015e857cc2f1573b969f412dbbc6857bfc0c621e541ab32c95',
+            'recipes/pydeface/build.yaml': '2f815b51e86ce05ac553bfe0dd93f1e951052c504851456c54e698d5a89bd4c6',
+        }.items():
+            digest = hashlib.sha256(read_bytes(script.parent.parent / relative)).hexdigest()
+            if digest != expected:
+                raise Refusal('runner/source baseline mismatch ' + relative)
+            sources[relative] = digest
+        source_suite = read_bytes(script.parent.parent / 'recipes/pydeface/fulltest.yaml')
+        staged = read_bytes(suite)
+        # The runner already requires PyYAML; semantic comparison tolerates its staging dump.
+        import yaml
+        source_mapping = yaml.safe_load(source_suite)
+        if yaml.safe_load(staged) != source_mapping:
+            raise Refusal('staged suite differs from source')
+        helper = source_mapping['setup']['host_script']
+        if 'def arm(' not in helper or len(source_mapping['tests']) != 62:
+            raise Refusal('unexpected diagnostic suite')
+        plan.owner.check()
+        if namespace(plan.owner.pid) != namespace(os.getpid()):
+            raise Refusal('runner PID namespace mismatch')
+        save(plan, 'launch.json', dict(owner=process_stat(plan.owner.pid), argv=args,
+             boot_id=plan.boot, work=str(plan.work), container=str(container),
+             container_stat=list(container.stat())[:10], jsonl=str(jsonl),
+             suite=str(suite), staged_sha256=hashlib.sha256(staged).hexdigest(),
+             source_sha256=hashlib.sha256(source_suite).hexdigest(),
+             helper_sha256=hashlib.sha256(helper.encode()).hexdigest(), sources=sources))
+
+
+    def snapshot(process: ObservedProcess) -> dict[str, str | dict[str, str]]:
+        process.check()
+        result = {name: read_bytes(f'/proc/{process.pid}/{name}').decode()
+                  for name in ('stat', 'maps', 'mountinfo', 'cgroup', 'status', 'cmdline')}
+        result['namespaces'] = {name: os.readlink(f'/proc/{process.pid}/ns/{name}')
+                                for name in ('pid', 'mnt', 'user')}
+        process.check()
+        return result
+
+
+    def parse_registration(records: list[dict[str, Any]], plan: RunPlan,
+                           filename: str) -> dict[str, Any] | None:
+        starts = [r for r in records if r.get('event') == 'start']
+        if len(starts) != 1:
+            raise Refusal('missing or duplicate observer start')
+        outer = ['test_output/diagnose_pydeface.py', str(plan.t1w), '--outfile',
+                 'test_output/t1w_defaced_mutualinfo.nii.gz', '--cost', 'mutualinfo', '--verbose']
+        if starts[0].get('argv') != outer:
+            return None
+        pid_match = re.fullmatch(r'pydeface-diagnostic-([0-9]+)\.jsonl', filename)
+        if not pid_match or starts[0].get('architecture') != 'aarch64':
+            raise Refusal('observer filename or architecture')
+        observer_pid = int(pid_match[1])
+        self_records = [r for r in records if r.get('event') == 'process' and r.get('pid') == observer_pid]
+        if not self_records:
+            return None
+        keys = {r['start_ticks'] for r in self_records}
+        if len(keys) != 1:
+            raise Refusal('observer identity discontinuity')
+        stages = [(i, r) for i, r in enumerate(records) if r.get('event') == 'flirt_start']
+        if not stages:
+            return None
+        if len(stages) != 1 or any(r.get('event') in ('flirt_end', 'flirt_error', 'end') for r in records):
+            raise Refusal('first registration no longer active')
+        offset, stage = stages[0]
+        command = shlex.split(stage['command'])
+        if len(command) != 11 or command[0] != 'flirt' or command[1::2] != ['-in', '-ref', '-out', '-omat', '-searchcost']:
+            raise Refusal('unexpected FLIRT flags')
+        if command[2] != TEMPLATE or command[4] != str(plan.t1w) or command[10] != 'mutualinfo':
+            raise Refusal('wrong template, reference or cost')
+        if not command[6].startswith('/tmp/') or not command[6].endswith('.nii.gz') or not command[8].startswith('/tmp/') or not command[8].endswith('.mat'):
+            raise Refusal('unexpected temporary output paths')
+        for key, expected in GEOMETRY.items():
+            actual = dict(stage['geometry'][key])
+            expected_path = TEMPLATE if key == 'in_file' else str(plan.t1w)
+            if actual.pop('path') != expected_path or actual != expected:
+                raise Refusal('geometry mismatch')
+        matches = [r for r in records[offset+1:] if r.get('event') == 'process'
+                   and r.get('argv', []) == command + ['']]
+        if not matches:
+            return dict(waiting=True, stage_time=stage['time'])
+        identities = {(r['pid'], r['start_ticks']) for r in matches}
+        if len(identities) != 1 or any(not r.get('owned') for r in matches):
+            raise Refusal('ambiguous or unowned target')
+        pid, ticks = identities.pop()
+        return dict(observer_pid=observer_pid, observer_ticks=keys.pop(), pid=pid,
+                    ticks=ticks, argv=command, stage_time=stage['time'], outer=outer)
+
+
+    def trace_records(path: Path, plan: RunPlan) -> tuple[
+            list[dict[str, Any]], bytes, tuple[int, int]]:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode) or before.st_mtime < plan.wall-1 or before.st_size > POLICY['trace_bytes']:
+                raise Refusal('stale, nonregular or oversized trace')
+            data = os.read(fd, POLICY['trace_bytes']+1)
+            after = os.fstat(fd)
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino) or len(data) > POLICY['trace_bytes']:
+                raise Refusal('trace identity or size changed')
+        finally:
+            os.close(fd)
+        lines = data.split(b'\n')
+        if len(lines) > POLICY['records'] or any(len(line) > POLICY['line'] for line in lines):
+            raise Refusal('trace record limit')
+        records = [json.loads(line) for line in lines[:-1]]
+        for row in records:
+            if not isinstance(row, dict) or not isinstance(row.get('time'), (float, int)) or row['time'] < plan.wall:
+                raise Refusal('malformed or stale trace record')
+        return records, data[:data.rfind(b'\n')+1], (before.st_dev, before.st_ino)
+
+
+    def verify_target(selected: dict[str, Any], plan: RunPlan, target: ObservedProcess,
+                      observer: ObservedProcess, trace: Path,
+                      trace_key: tuple[int, int]) -> list[dict[str, int | str]]:
+        plan.owner.check()
+        if target.check()['ticks'] != selected['ticks'] or observer.check()['ticks'] != selected['observer_ticks']:
+            raise Refusal('target or observer start tick mismatch')
+        ns = namespace(os.getpid())
+        if any(namespace(pid) != ns for pid in (plan.owner.pid, observer.pid, target.pid)):
+            raise Refusal('PID namespace mismatch')
+        chain = ancestry(target.pid, plan.owner)
+        if observer.pid not in [row['pid'] for row in chain]:
+            raise Refusal('FLIRT not descended from observer')
+        ancestry(observer.pid, plan.owner)
+        live_outer = argv(observer.pid)
+        if len(live_outer) < 2 or live_outer[-len(selected['outer']):] != selected['outer']:
+            raise Refusal('observer live argv mismatch')
+        if argv(target.pid) != selected['argv'] or os.readlink(f'/proc/{target.pid}/exe') != EXE:
+            raise Refusal('live FLIRT argv or executable path mismatch')
+        fd = os.open(f'/proc/{target.pid}/exe', os.O_RDONLY)
+        try:
+            header = os.read(fd, 20)
+            if header[:6] != b'\x7fELF\x02\x01' or struct.unpack_from('<H', header, 18)[0] != 183 or hash_fd(fd) != EXE_SHA:
+                raise Refusal('FLIRT executable machine or digest mismatch')
+        finally:
+            os.close(fd)
+        rows, _, key = trace_records(trace, plan)
+        if key != trace_key or parse_registration(rows, plan, trace.name) != selected:
+            raise Refusal('stage or trace changed')
+        target.check()
+        observer.check()
+        plan.owner.check()
+        return chain
+
+
+    def spawn_command(args: list[str], stdout: int, stderr: int,
+                      pass_fds: tuple[int, ...] = (),
+                      file_cap: int | None = None, *, plan: RunPlan) -> OwnedChild:
+        _diagnostic_check(plan)
+        if plan.private is None:
+            raise Refusal('diagnostic private directory missing')
+        if plan.tool is None or args[0] != str(plan.tool.path):
+            raise Refusal('unexpected diagnostic executable')
+        plan.tool.check()
+        environment = plan.tool.environment
+        parent = os.getpid()
+        pid = os.fork()
+        if pid == 0:
+            parent_arm(parent)
+            try:
+                detach(set(pass_fds) | {stdout, stderr})
+                os.dup2(stdout, 1)
+                os.dup2(stderr, 2)
+                for fd in pass_fds:
+                    os.set_inheritable(fd, True)
+                limit = file_cap or POLICY['text']
+                resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+                os.execve(args[0], args, environment)
+            except BaseException:
+                os._exit(92)
+        return OwnedChild(pid)
+
+
+    def command(plan: RunPlan, args: list[str], label: str,
+                timeout: float | None = None) -> bytes:
+        if plan.control is not None:
+            send(plan.control, 'operation', kind='command')
+        started = time.monotonic()
+        paths = [plan.retained / (label + suffix) for suffix in ('.out', '.err')]
+        file_cap = min(POLICY['text'], (POLICY['total']-retained_size(plan.retained)-65536)//2)
+        if file_cap <= 0:
+            raise Refusal('command output admission limit')
+        fds = []
+        try:
+            for path in paths:
+                fds.append(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
+            child = spawn_command(args, *fds, file_cap=file_cap, plan=plan)
+        finally:
+            for fd in fds:
+                os.close(fd)
+        deadline = min(plan.started+POLICY['lifetime'], plan.preflight_deadline,
+                       started+min(timeout or POLICY['command'], POLICY['command']))
+        reason = 'exited'
+        try:
+            while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                plan.owner.check()
+                if time.monotonic() > deadline:
+                    reason = 'deadline'
+                    raise Refusal('command deadline')
+                if any(path.stat().st_size > POLICY['text'] for path in paths):
+                    reason = 'output_limit'
+                    raise Refusal('command output limit')
+                retained_size(plan.retained)
+                time.sleep(.02)
+        except BaseException as error:
+            reason = str(error)[:512]
+            raise
+        finally:
+            child.signal(signal.SIGKILL)
+            _, status = os.waitpid(child.pid, 0)
+            save(plan, label+'.command.json', dict(argv=args, started=started,
+                 ended=time.monotonic(), returncode=os.waitstatus_to_exitcode(status), reason=reason,
+                 transient_mappings='unobserved', runtime_contract='trusted_host_os_not_closed',
+                 tool_identity=plan.tool.identity))
+        if status or any(path.stat().st_size > POLICY['text'] for path in paths):
+            raise Refusal('command failed or output limit ' + label)
+        _diagnostic_check(plan)
+        output = read_bytes(paths[0], POLICY['text'])
+        if plan.control is not None:
+            send(plan.control, 'operation_done')
+        return output
+
+
+    def control(fd: int, ack: int, word: str, end: float,
+                times: dict[str, float]) -> None:
+        times[word+'_send'] = time.monotonic()
+        os.write(fd, (word+'\n').encode())
+        response = b''
+        while len(response) < 5:
+            remaining = end-time.monotonic()
+            if remaining <= 0 or not select.select([ack], [], [], remaining)[0]:
+                raise Refusal('perf control acknowledgement deadline')
+            chunk = os.read(ack, 5-len(response))
+            if not chunk:
+                raise Refusal('invalid perf control acknowledgement')
+            response += chunk
+        if response != b'ack\n\0':
+            raise Refusal('invalid perf control acknowledgement')
+        acknowledged = time.monotonic()
+        if acknowledged >= end:
+            raise Refusal('perf control acknowledgement deadline')
+        times[word+'_ack'] = acknowledged
+
+
+    def record(plan: RunPlan, perf: str, pid: int, label: str,
+               validate: Callable[[], object], duration: float) -> Path:
+        if plan.control is not None:
+            send(plan.control, 'operation', kind='record')
+        control_read, control_write = os.pipe()
+        ack_read, ack_write = os.pipe()
+        raw = plan.retained / (label+'.data')
+        log = plan.retained / (label+'.record.log')
+        file_cap = min(POLICY['raw'], POLICY['text'],
+                       (POLICY['total']-retained_size(plan.retained)-65536)//2)
+        if file_cap <= 0:
+            raise Refusal('record output admission limit')
+        logfd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        args = [perf, 'record', '--no-buildid-cache', '--no-inherit', '-e', 'cpu-clock:u',
+                '-F', '49', '--strict-freq', '-m', '64', '-D', '-1',
+                '--control=fd:'+str(control_read)+','+str(ack_write), '-p', str(pid), '-o', str(raw)]
+        times = dict(pre_spawn=time.monotonic())
+        child = spawn_command(args, logfd, logfd, (control_read, ack_write), file_cap=file_cap, plan=plan)
+        os.close(logfd)
+        os.close(control_read)
+        os.close(ack_write)
+        end = min(times['pre_spawn']+POLICY['record'], plan.preflight_deadline)
+        status = None
+        stop_outcome: StopOutcome = 'not_attempted'
+        pre_stop: os.waitid_result | None = None
+        terminal: os.waitid_result | None = None
+        try:
+            control(control_write, ack_read, 'ping', min(end, times['pre_spawn']+POLICY['disabled']), times)
+            if label == 'preflight':
+                _observe_sibling_recorder(plan, child)
+            validate()
+            times['last_validation'] = time.monotonic()
+            if label != 'preflight' and times['last_validation'] > times['pre_spawn']+POLICY['disabled']:
+                raise Refusal('disabled attach deadline')
+            if time.monotonic()-times['last_validation'] > POLICY['admission']:
+                raise Refusal('enable admission deadline')
+            control(control_write, ack_read, 'enable', min(end, time.monotonic()+1), times)
+            if times['enable_send']-times['last_validation'] > POLICY['admission']:
+                raise Refusal('late enable')
+            deadline = times['enable_ack']+duration
+            while time.monotonic() < deadline:
+                if os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                    raise Refusal('recorder exited early')
+                if (raw.exists() and raw.stat().st_size > POLICY['raw']) or log.stat().st_size > POLICY['text']:
+                    raise Refusal('record output limit')
+                retained_size(plan.retained)
+                time.sleep(min(.02, max(0, deadline-time.monotonic())))
+            control(control_write, ack_read, 'disable', min(end, time.monotonic()+1), times)
+            times['interval_lower'] = times['disable_send']-times['enable_ack']
+            times['interval_upper'] = times['disable_ack']-times['enable_send']
+            pre_stop = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            times['stop_checked'] = time.monotonic()
+            if times['stop_checked'] > end:
+                raise Refusal('record stop deadline')
+            if pre_stop is not None:
+                raise Refusal('recorder exited before stop')
+            times['stop_attempt'] = time.monotonic()
+            stop_outcome = 'in_flight'
+            try:
+                requested = child.signal(signal.SIGINT)
+            except BaseException:
+                stop_outcome = 'raised'
+                times['stop_returned'] = time.monotonic()
+                raise
+            stop_outcome = 'requested' if requested else 'absent'
+            times['stop_returned'] = time.monotonic()
+            if not requested:
+                raise Refusal('recorder stop target absent')
+            while True:
+                terminal = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                observed = time.monotonic()
+                if terminal is not None:
+                    times['terminal_observed'] = observed
+                if observed > end:
+                    raise Refusal('record flush deadline')
+                if terminal is not None:
+                    break
+                time.sleep(.02)
+            if times['interval_lower'] < duration or times['interval_upper'] > duration+POLICY['service']:
+                raise Refusal('enabled interval outside admission band')
+            validate()
+            times['post_identity'] = time.monotonic()
+        finally:
+            child.signal(signal.SIGKILL)
+            _, status = os.waitpid(child.pid, 0)
+            os.close(control_write)
+            os.close(ack_read)
+            times['ended'] = time.monotonic()
+            save(plan, label+'.timing.json', dict(argv=args, times=times, requested_interval=duration,
+                 returncode=os.waitstatus_to_exitcode(status), numeric_pid_attach_nonatomic=True,
+                 raw_status=status, stop=dict(requested_signal=int(signal.SIGINT), outcome=stop_outcome,
+                     pre_stop=None if pre_stop is None else dict(si_code=pre_stop.si_code, si_status=pre_stop.si_status),
+                     terminal=None if terminal is None else dict(si_code=terminal.si_code, si_status=terminal.si_status))))
+        if (stop_outcome != 'requested' or terminal is None
+                or not (status == 0 or (os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGINT
+                                       and not os.WCOREDUMP(status)))
+                or not raw.is_file() or not 0 < raw.stat().st_size <= POLICY['raw']):
+            raise Refusal('invalid recorder result')
+        if plan.control is not None:
+            send(plan.control, 'operation_done')
+        return raw
+
+
+    def sample_quality(text: bytes, dump: bytes, pid: int) -> dict[
+            str, int | float | dict[str, int]]:
+        tids, events, dsos = {}, {}, {}
+        unknown = 0
+        unknown_dsos = 0
+        times = []
+        for line in text.decode().splitlines():
+            if not line.strip() or line.startswith('#'):
+                continue
+            match = re.fullmatch(r'\s*(\d+)/(\d+)\s+([0-9.]+):\s+(cpu-clock:u):\s+([0-9a-fA-F]+)\s+(.+)\s+\((.*)\)\s*', line)
+            if not match or int(match[1]) != pid:
+                raise Refusal('undecodable or foreign sample')
+            tid, event = match[2], match[4]
+            tids[tid] = tids.get(tid, 0)+1
+            events[event] = events.get(event, 0)+1
+            times.append(float(match[3]))
+            dsos[match[7]] = dsos.get(match[7], 0)+1
+            unknown += int('[unknown]' in match[6])
+            unknown_dsos += int('[unknown]' in match[7])
+        if not times:
+            raise Refusal('empty samples')
+        if re.search(rb'PERF_RECORD_COMM[^\n]*exec|PERF_RECORD_EXIT', dump, re.I):
+            raise Refusal('recorded process discontinuity')
+        summary = re.search(rb'(?m)^\s*TOTAL events:\s+(\d+)', dump)
+        samples = re.search(rb'(?m)^\s*SAMPLE events:\s+(\d+)', dump)
+        lost = re.search(rb'(?m)^\s*LOST events:\s+(\d+)', dump)
+        lost_samples = re.search(rb'(?m)^\s*LOST_SAMPLES events:\s+(\d+)', dump)
+        if not summary or not samples or not lost or not lost_samples:
+            raise Refusal('loss accounting unavailable')
+        if int(samples[1]) != len(times) or int(lost[1]) or int(lost_samples[1]):
+            raise Refusal('sample accounting mismatch or lost records')
+        return dict(total=len(times), tids=tids, events=events, dsos=dsos, lost=0,
+                    unknown_symbols=unknown, unknown_dsos=unknown_dsos, unknown_fraction=unknown/len(times),
+                    first_time=min(times), last_time=max(times))
+
+
+    def decode(plan: RunPlan, perf: str, raw: Path, pid: int, label: str,
+               root: str | Path) -> dict[str, int | float | dict[str, int]]:
+        root = Path(root)
+        if root.resolve(strict=True) != root or root == Path('/') or root.parent != plan.work:
+            raise Refusal('decoder requires a canonical private mirror under work')
+        common = ['-i', str(raw), '--symfs', str(root)]
+        previous = Path.cwd()
+        os.chdir(root)
+        try:
+            samples = command(plan, [perf, 'script', '--no-inline', *common, '-F', 'pid,tid,time,event,ip,sym,dso'], label+'.samples')
+            dump = command(plan, [perf, 'report', '--no-inline', '-D', '--no-skip-empty', *common], label+'.dump')
+            command(plan, [perf, 'report', '--no-inline', '--stdio', '--stdio-color=never', '--no-children', '--sort', 'comm,dso,symbol', *common], label+'.report')
+            for name in (label+'.samples.err', label+'.dump.err', label+'.report.err'):
+                errors = read_bytes(plan.retained/name, POLICY['text'])
+                if re.search(rb'warning|error|failed|lost|unknown', errors, re.I):
+                    raise Refusal('decoder reported uncertainty')
+            quality = sample_quality(samples, dump, pid)
+            save(plan, label+'.quality.json', quality)
+            return quality
+        finally:
+            os.chdir(previous)
+
+
+    def open_rooted(rootfd: int, name: str) -> int:
+        # Every component is opened relative to a pinned target directory.
+        if len(os.fsencode(name)) > 4095 or len(name.split('/')) > POLICY['objects']+1:
+            raise Refusal('rooted path limit')
+        pending = name.split('/')
+        stack = [os.dup(rootfd)]
+        links = 0
+        try:
+            while pending:
+                part = pending.pop(0)
+                if part in ('', '.'):
+                    continue
+                if part == '..':
+                    if len(stack) > 1:
+                        os.close(stack.pop())
+                    continue
+                value = os.stat(part, dir_fd=stack[-1], follow_symlinks=False)
+                if stat.S_ISLNK(value.st_mode):
+                    links += 1
+                    if links > 32:
+                        raise Refusal('rooted symlink limit')
+                    link = os.readlink(part, dir_fd=stack[-1])
+                    if link.startswith('/'):
+                        while len(stack) > 1:
+                            os.close(stack.pop())
+                    pending = link.split('/') + pending
+                elif pending:
+                    if len(stack) >= POLICY['objects']:
+                        raise Refusal('rooted path depth limit')
+                    stack.append(os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                         dir_fd=stack[-1]))
+                else:
+                    return os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                   dir_fd=stack[-1])
+            return os.dup(stack[-1])
+        finally:
+            for fd in stack:
+                os.close(fd)
+
+
+    def build_id(fd: int) -> str | None:
+        header = os.pread(fd, 64, 0)
+        if header[:6] != b'\x7fELF\x02\x01' or len(header) != 64:
+            return None
+        phoff = struct.unpack_from('<Q', header, 32)[0]
+        size, count = struct.unpack_from('<HH', header, 54)
+        if size != 56 or count > 256:
+            raise Refusal('ELF program header limit')
+        for index in range(count):
+            ph = os.pread(fd, size, phoff+index*size)
+            if len(ph) != size:
+                raise Refusal('truncated ELF')
+            if struct.unpack_from('<I', ph)[0] != 4:
+                continue
+            offset = struct.unpack_from('<Q', ph, 8)[0]
+            length = struct.unpack_from('<Q', ph, 32)[0]
+            if length > POLICY['metadata']:
+                raise Refusal('ELF note limit')
+            notes = os.pread(fd, length, offset)
+            position = 0
+            while position+12 <= len(notes):
+                namesz, descsz, kind = struct.unpack_from('<III', notes, position)
+                position += 12
+                name = notes[position:position+namesz]
+                position += (namesz+3)&~3
+                value = notes[position:position+descsz]
+                position += (descsz+3)&~3
+                if name == b'GNU\0' and kind == 3:
+                    return value.hex()
+        return None
+
+
+    def file_identity(fd: int) -> tuple[int, int, int, int, int]:
+        value = os.fstat(fd)
+        return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
+
+
+    def debug_link(fd: int) -> str | None:
+        header = os.pread(fd, 64, 0)
+        if len(header) != 64 or header[:6] != b'\x7fELF\x02\x01':
+            raise Refusal('unsupported mapped ELF')
+        offset = struct.unpack_from('<Q', header, 40)[0]
+        size, count, names_index = struct.unpack_from('<HHH', header, 58)
+        if not offset and not count:
+            return None
+        if size != 64 or not 0 < count <= 4096 or names_index >= count:
+            raise Refusal('ELF section table limit')
+        sections = os.pread(fd, size*count, offset)
+        if len(sections) != size*count:
+            raise Refusal('truncated ELF section table')
+        names_offset, names_size = struct.unpack_from('<QQ', sections, names_index*size+24)
+        if names_size > POLICY['metadata']:
+            raise Refusal('ELF section names limit')
+        names = os.pread(fd, names_size, names_offset)
+        if len(names) != names_size:
+            raise Refusal('truncated ELF section names')
+        link = None
+        for index in range(count):
+            name_offset = struct.unpack_from('<I', sections, index*size)[0]
+            end = names.find(b'\0', name_offset)
+            if end < 0:
+                raise Refusal('invalid ELF section name')
+            if names[name_offset:end] != b'.gnu_debuglink':
+                continue
+            if link is not None:
+                raise Refusal('duplicate ELF debug link')
+            data_offset, data_size = struct.unpack_from('<QQ', sections, index*size+24)
+            if not 0 < data_size <= 4096:
+                raise Refusal('ELF debug link size limit')
+            data = os.pread(fd, data_size, data_offset)
+            if len(data) != data_size or b'\0' not in data:
+                raise Refusal('truncated ELF debug link')
+            link = os.fsdecode(data.split(b'\0', 1)[0])
+            if not link or link in ('.', '..') or '/' in link:
+                raise Refusal('external ELF debug link')
+        return link
+
+
+    def mirror_object(fd: int, name: str, root: Path, digest: str) -> dict[str, object]:
+        if name.startswith('/tmp/perf-'):
+            raise Refusal('perf JIT path cannot bind a mirrored ELF')
+        parts = name.split('/')[1:]
+        if (not name.startswith('/') or not parts or len(parts) > POLICY['objects']
+                or any(part in ('', '.', '..') for part in parts)
+                or len(os.fsencode(str(root)))+1+len(os.fsencode(name)) > 4095):
+            raise Refusal('mirror object path limit')
+        before = file_identity(fd)
+        if not stat.S_ISREG(os.fstat(fd).st_mode) or before[2] > POLICY['object_bytes']:
+            raise Refusal('mirror object type or size limit')
+        link = debug_link(fd)
+        if link is not None:
+            external = Path('/usr/lib/debug'+str(root)+str(Path(name).parent)) / link
+            if external.exists():
+                raise Refusal('external perf debug link candidate')
+        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        destination = None
+        deadline = time.monotonic()+POLICY['read']
+        try:
+            for part in parts[:-1]:
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=directory)
+                except FileExistsError:
+                    pass
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = child
+            destination = os.open(parts[-1], os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                  0o600, dir_fd=directory)
+            os.lseek(fd, 0, os.SEEK_SET)
+            size = 0
+            while True:
+                if time.monotonic() > deadline:
+                    raise Refusal('mirror copy deadline')
+                block = os.read(fd, min(65536, before[2]+1-size))
+                if not block:
+                    break
+                size += len(block)
+                if size > before[2]:
+                    raise Refusal('mirror source size changed')
+                pending = memoryview(block)
+                while pending:
+                    if time.monotonic() > deadline:
+                        raise Refusal('mirror copy deadline')
+                    written = os.write(destination, pending)
+                    if not written:
+                        raise Refusal('mirror short write')
+                    pending = pending[written:]
+            copied_digest = hash_fd(destination)
+            after = file_identity(fd)
+            if before != after or size != before[2] or copied_digest != digest:
+                raise Refusal('mirror source changed or copy mismatch')
+            return dict(path=name, sha256=copied_digest, size=size,
+                        source_before=before, source_after=after,
+                        copy_identity=file_identity(destination), debug_link=link)
+        finally:
+            if destination is not None:
+                os.close(destination)
+            os.close(directory)
+
+
+    def mapped_objects(plan: RunPlan, target: ObservedProcess,
+                       mirror: Path | None = None) -> list[dict[str, Any]]:
+        target.check()
+        rootfd = os.open(f'/proc/{target.pid}/root', os.O_RDONLY | os.O_DIRECTORY)
+        objects = []
+        copies = []
+        try:
+            maps = read_bytes(f'/proc/{target.pid}/maps').decode()
+            paths = {}
+            for row in maps.splitlines():
+                fields = row.split(None, 5)
+                if len(fields) == 6 and 'x' in fields[1] and fields[5].startswith('/'):
+                    paths[fields[5]] = (fields[3], int(fields[4]))
+            if not paths or len(paths) > POLICY['objects']:
+                raise Refusal('mapped object count')
+            aggregate = 0
+            for name, (device, inode) in paths.items():
+                target.check()
+                fd = open_rooted(rootfd, name)
+                try:
+                    info = os.fstat(fd)
+                    actual = f'{os.major(info.st_dev):02x}:{os.minor(info.st_dev):02x}'
+                    if (actual, info.st_ino) != (device, inode):
+                        save(plan, 'mapped-object-refusal.json', dict(
+                            kind='mapped_object_identity_refusal', call_site='mapped_objects.device_inode',
+                            pid=target.pid, start_ticks=target.ticks, boot_id=plan.boot,
+                            path=name, ordinal=len(objects)+1, selected_count=len(paths),
+                            expected=dict(device=device, inode=inode),
+                            actual=dict(st_dev=info.st_dev, device=actual, st_ino=info.st_ino,
+                                        st_mode=info.st_mode, st_size=info.st_size),
+                            mirror=str(mirror) if mirror is not None else None,
+                            maps=maps, maps_sha256=hashlib.sha256(maps.encode('utf-8')).hexdigest()))
+                        raise Refusal('mapped object device/inode mismatch')
+                    aggregate += info.st_size
+                    if aggregate > 256*1024**2:
+                        raise Refusal('aggregate mapped hash limit')
+                    before = file_identity(fd)
+                    digest = hash_fd(fd)
+                    identity = build_id(fd)
+                    if mirror is not None:
+                        copies.append(mirror_object(fd, name, mirror, digest))
+                    after = file_identity(fd)
+                    if before != after:
+                        raise Refusal('mapped object changed during attribution')
+                    objects.append(dict(path=name, device=device, inode=inode, sha256=digest,
+                                        build_id=identity, source_before=before, source_after=after,
+                                        source_revision=None, source_status='unresolved', package=None))
+                finally:
+                    os.close(fd)
+            metadata_dir = '/opt/fsl-6.0.7.23/conda-meta'
+            try:
+                metadata_fd = open_rooted(rootfd, metadata_dir)
+            except FileNotFoundError:
+                metadata_fd = None
+            if metadata_fd is not None:
+                try:
+                    names = os.listdir(metadata_fd)
+                    if len(names) > 512:
+                        raise Refusal('package metadata count limit')
+                    consumed = 0
+                    for name in names:
+                        if not name.endswith('.json'):
+                            continue
+                        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=metadata_fd)
+                        try:
+                            data = os.read(fd, POLICY['metadata']+1)
+                        finally:
+                            os.close(fd)
+                        consumed += len(data)
+                        if len(data) > POLICY['metadata'] or consumed > POLICY['text']:
+                            raise Refusal('package metadata byte limit')
+                        package = json.loads(data)
+                        for obj in objects:
+                            relative = obj['path'].removeprefix('/opt/fsl-6.0.7.23/')
+                            if relative in package.get('files', []):
+                                obj['package'] = {key: package.get(key) for key in ('name', 'version', 'build', 'sha256')}
+                                obj['package']['membership_record_sha256'] = hashlib.sha256(data).hexdigest()
+                                obj['package']['file_digest_verified'] = False
+                                for entry in package.get('paths_data', {}).get('paths', []):
+                                    if entry.get('_path') == relative:
+                                        obj['package']['file_digest_verified'] = entry.get('sha256') == obj['sha256']
+                finally:
+                    os.close(metadata_fd)
+            target.check()
+            if read_bytes(f'/proc/{target.pid}/maps').decode() != maps:
+                raise Refusal('maps changed during attribution')
+            if mirror is not None:
+                save(plan, mirror.name+'.json', dict(root=str(mirror), canonical_root=str(mirror.resolve(strict=True)),
+                     copies=copies, bytes=aggregate, temporary=True))
+            return objects
+        finally:
+            os.close(rootfd)
+
+
+    PERF_PACKAGE = dict(
+        url='https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-tools-6.8.0-31_6.8.0-31.31_arm64.deb',
+        size=2669546, sha256='0d0ef777ebcae85b8bb8f4a48df4949ffd748c633aede0352221741578bbaf67',
+        member='usr/lib/linux-tools-6.8.0-31/perf', elf_size=5486808,
+        elf_sha256='7edef8a48ee07478539f7adf3cb2cbe6a85e2f783ba754f72ed2b5a8c86962ae',
+        interpreter='/lib/ld-linux-aarch64.so.1', version='6.8.0-31.31',
+        table_sha256='29ee9ae918a256c94e1634a7b3616d616d9c3977fda6f844576f89f6572914a8',
+        authentication='R21 verification.json; original Noble signed InRelease/Packages ARM64',
+        inrelease_sha256='cdb2f31d809f589719a53c6ad15f255b27569c4059542ada282aaa21b8e164b0',
+        signing_fingerprint='F6ECB3762474EDA9D21B7022871920D1991BC93C')
+
+
+    def _diagnostic_check(plan: RunPlan) -> None:
+        plan.owner.check()
+        if time.monotonic() > min(plan.preflight_deadline, plan.supply_deadline,
+                                  plan.started+POLICY['lifetime']):
+            raise Refusal('diagnostic deadline')
+
+
+    def _executable_identity(path: Path, *, executable: bool = True) -> dict[str, Any]:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            value = os.fstat(fd)
+            before = file_identity(fd)
+            if not stat.S_ISREG(value.st_mode) or (executable and not os.access(path, os.X_OK)):
+                raise Refusal('tool is not a regular executable')
+            if value.st_mode & (stat.S_ISUID | stat.S_ISGID):
+                raise Refusal('privileged executable changes parent-death semantics')
+            try:
+                capabilities = os.getxattr(fd, 'security.capability')
+            except OSError as error:
+                if error.errno not in (errno.ENODATA, errno.ENOTSUP):
+                    raise
+                capabilities = b''
+            if capabilities:
+                raise Refusal('capability-bearing executable changes parent-death semantics')
+            digest = hash_fd(fd)
+            current = os.stat(path, follow_symlinks=False)
+            if before != file_identity(fd) or before != (
+                    current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns):
+                raise Refusal('executable path or descriptor identity changed')
+            return dict(path=str(path), identity=before, sha256=digest,
+                        capabilities=capabilities.hex(), mode=value.st_mode,
+                        execution_binding='checked pathname; later path-based exec is not atomic')
+        finally:
+            os.close(fd)
+
+
+    def _admit_perf(path: Path) -> dict[str, Any]:
+        if path.lstat().st_size != PERF_PACKAGE['elf_size']:
+            raise Refusal('perf byte pin mismatch')
+        observed = _executable_identity(path, executable=False)
+        if observed['identity'][2] != PERF_PACKAGE['elf_size'] or observed['sha256'] != PERF_PACKAGE['elf_sha256']:
+            raise Refusal('perf byte pin mismatch')
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            if file_identity(fd) != observed['identity']:
+                raise Refusal('perf identity changed before ELF admission')
+            header = os.pread(fd, 64, 0)
+            if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                    or struct.unpack_from('<HHI', header, 16) not in ((2, 183, 1), (3, 183, 1))):
+                raise Refusal('perf target is not ELF64 little-endian AArch64')
+            offset = struct.unpack_from('<Q', header, 32)[0]
+            size, count = struct.unpack_from('<HH', header, 54)
+            if size != 56 or not 0 < count <= 256:
+                raise Refusal('perf ELF program header limit')
+            interpreter = None
+            for index in range(count):
+                ph = os.pread(fd, size, offset+size*index)
+                if len(ph) != size:
+                    raise Refusal('truncated perf ELF')
+                kind = struct.unpack_from('<I', ph)[0]
+                start, length = struct.unpack_from('<Q', ph, 8)[0], struct.unpack_from('<Q', ph, 32)[0]
+                if start+length > PERF_PACKAGE['elf_size']:
+                    raise Refusal('perf ELF segment outside file')
+                if kind == 3:
+                    if interpreter is not None or length > 4096:
+                        raise Refusal('perf interpreter count or size')
+                    interpreter = os.pread(fd, length, start)
+                if kind == 2:
+                    if length > POLICY['metadata'] or length % 16:
+                        raise Refusal('perf dynamic table limit')
+                    table = os.pread(fd, length, start)
+                    tags = [struct.unpack_from('<q', table, pos)[0] for pos in range(0, length, 16)]
+                    if 15 in tags or 29 in tags or 0 not in tags:
+                        raise Refusal('perf RPATH/RUNPATH or invalid dynamic table')
+            if interpreter != PERF_PACKAGE['interpreter'].encode()+b'\0':
+                raise Refusal('perf interpreter mismatch')
+            if file_identity(fd) != observed['identity']:
+                raise Refusal('perf changed during ELF admission')
+            os.fchmod(fd, 0o500)
+            admitted_identity = file_identity(fd)
+        finally:
+            os.close(fd)
+        admitted = _executable_identity(path)
+        if admitted['identity'] != admitted_identity or admitted['sha256'] != PERF_PACKAGE['elf_sha256']:
+            raise Refusal('perf identity changed after ELF admission')
+        return admitted
+
+
+    def _download_perf(plan: RunPlan, package: Path) -> None:
+        host, request_path = PERF_PACKAGE['url'].removeprefix('https://').split('/', 1)
+        connection = http.client.HTTPSConnection(host, timeout=5)
+        fd = os.open(package, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            _diagnostic_check(plan)
+            connection.request('GET', '/'+request_path, headers={'Accept-Encoding': 'identity'})
+            response = connection.getresponse()
+            if response.status != 200 or response.getheader('Content-Encoding') not in (None, 'identity'):
+                raise Refusal('package HTTP status or encoding refused')
+            length = response.getheader('Content-Length')
+            if length is not None and length != str(PERF_PACKAGE['size']):
+                raise Refusal('package HTTP size mismatch')
+            size = 0
+            with os.fdopen(fd, 'wb', closefd=False) as output:
+                while True:
+                    _diagnostic_check(plan)
+                    block = response.read(min(65536, PERF_PACKAGE['size']+1-size))
+                    _diagnostic_check(plan)
+                    if not block:
+                        break
+                    size += len(block)
+                    if size > PERF_PACKAGE['size'] or size > 3*1024**2:
+                        raise Refusal('package download size limit')
+                    output.write(block)
+            if size != PERF_PACKAGE['size']:
+                raise Refusal('package download truncated')
+        finally:
+            connection.close()
+            os.close(fd)
+
+
+    def _package_data(plan: RunPlan, package: Path) -> tuple[bytes, dict[str, Any]]:
+        fd = os.open(package, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = file_identity(fd)
+            if not stat.S_ISREG(os.fstat(fd).st_mode) or before[2] != PERF_PACKAGE['size']:
+                raise Refusal('package byte pin mismatch')
+            blocks = []
+            offset = 0
+            deadline = time.monotonic()+POLICY['read']
+            while offset < PERF_PACKAGE['size']:
+                _diagnostic_check(plan)
+                if time.monotonic() > deadline:
+                    raise Refusal('package read deadline')
+                block = os.pread(fd, min(65536, PERF_PACKAGE['size']-offset), offset)
+                if not block:
+                    raise Refusal('package byte pin mismatch')
+                blocks.append(block)
+                offset += len(block)
+            snapshot = b''.join(blocks)
+            digest = hashlib.sha256(snapshot).hexdigest()
+            if digest != PERF_PACKAGE['sha256']:
+                raise Refusal('package byte pin mismatch')
+            if before != file_identity(fd):
+                raise Refusal('package identity changed')
+        finally:
+            os.close(fd)
+        if snapshot[:8] != b'!<arch>\n':
+            raise Refusal('invalid package archive')
+        position = 8
+        names = []
+        data = b''
+        while position < len(snapshot):
+            _diagnostic_check(plan)
+            header = snapshot[position:position+60]
+            if len(header) != 60 or header[58:] != b'`\n':
+                raise Refusal('invalid package member header')
+            name = header[:16].decode('ascii').strip().removesuffix('/')
+            try:
+                size = int(header[48:58].decode('ascii').strip())
+            except ValueError:
+                raise Refusal('invalid package member size') from None
+            if size < 0 or position+60+size > len(snapshot) or len(names) >= 3:
+                raise Refusal('package member size or count limit')
+            names.append(name)
+            if name == 'debian-binary' and snapshot[position+60:position+60+size] != b'2.0\n':
+                raise Refusal('unsupported package format')
+            if name == 'data.tar.zst':
+                data = snapshot[position+60:position+60+size]
+            position += 60+size
+            if size % 2:
+                if snapshot[position:position+1] != b'\n':
+                    raise Refusal('invalid package padding')
+                position += 1
+        if names != ['debian-binary', 'control.tar.zst', 'data.tar.zst'] or position != len(snapshot):
+            raise Refusal('unexpected package archive structure')
+        return data, dict(identity=before, sha256=digest, members=names)
+
+
+    def _inflate_package_data(plan: RunPlan, package: Path) -> Path:
+        if plan.private is None:
+            raise Refusal('supply directory missing')
+        receipt: dict[str, Any] = dict(state='pending', started=time.monotonic(),
+            runtime_contract='trusted_host_os_not_closed',
+            transitive_loads='trusted, not exhaustively observed or authenticated')
+        try:
+            data, receipt['package'] = _package_data(plan, package)
+            if len(data) != 2668491:
+                raise Refusal('compressed data size mismatch')
+            _diagnostic_check(plan)
+            root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                library_path = '/usr/lib/aarch64-linux-gnu/libzstd.so.1'
+                fd = open_rooted(root, library_path)
+                try:
+                    before = file_identity(fd)
+                    canonical = Path(os.readlink(f'/proc/self/fd/{fd}'))
+                    observed = _executable_identity(canonical, executable=False)
+                    header = os.pread(fd, 64, 0)
+                    if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                            or struct.unpack_from('<HHI', header, 16) != (3, 183, 1)):
+                        raise Refusal('host zstd library is not ELF64 little-endian AArch64')
+                    if before != observed['identity'] or before != file_identity(fd):
+                        raise Refusal('host zstd library identity changed')
+                    observed['execution_binding'] = 'ctypes.CDLL through retained /proc/self/fd descriptor'
+                    receipt['library'] = observed
+                    _diagnostic_check(plan)
+                    library = ctypes.CDLL(f'/proc/self/fd/{fd}')
+                    library.ZSTD_decompress.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
+                                                       ctypes.c_void_p, ctypes.c_size_t]
+                    library.ZSTD_decompress.restype = ctypes.c_size_t
+                    library.ZSTD_isError.argtypes = [ctypes.c_size_t]
+                    library.ZSTD_isError.restype = ctypes.c_uint
+                    library.ZSTD_versionNumber.argtypes = []
+                    library.ZSTD_versionNumber.restype = ctypes.c_uint
+                    receipt['version_number'] = library.ZSTD_versionNumber()
+                    source = ctypes.create_string_buffer(data, len(data))
+                    destination = ctypes.create_string_buffer(8816640)
+                    _diagnostic_check(plan)
+                    size = library.ZSTD_decompress(destination, len(destination), source, len(data))
+                    _diagnostic_check(plan)
+                    receipt['result'] = size
+                    if library.ZSTD_isError(size):
+                        raise Refusal('host zstd decompression error')
+                    if size != len(destination):
+                        raise Refusal('expanded tar size mismatch')
+                    decoded = memoryview(destination).cast('B')
+                    digest = hashlib.sha256(decoded).hexdigest()
+                    receipt.update(expanded_bytes=size, sha256=digest)
+                    if digest != '1a47aadbc8c9c2ea7d56da36212622853758cbc6fb13f088c4f5a67600425f63':
+                        raise Refusal('expanded tar digest mismatch')
+                    again = open_rooted(root, library_path)
+                    try:
+                        if before != file_identity(again) or before != file_identity(fd):
+                            raise Refusal('host zstd library identity changed')
+                    finally:
+                        os.close(again)
+                    if hash_fd(fd) != observed['sha256']:
+                        raise Refusal('host zstd library digest changed')
+                    _diagnostic_check(plan)
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(root)
+            archive = plan.private / 'data.tar'
+            _diagnostic_check(plan)
+            outfd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                offset = 0
+                while offset < size:
+                    _diagnostic_check(plan)
+                    written = os.write(outfd, decoded[offset:offset+65536])
+                    if written <= 0:
+                        raise Refusal('expanded tar write failed')
+                    offset += written
+                _diagnostic_check(plan)
+            finally:
+                os.close(outfd)
+            receipt.update(state='decoded', ended=time.monotonic())
+            return archive
+        except BaseException as error:
+            receipt.update(state='refused', reason=type(error).__name__+': '+str(error)[:512])
+            raise
+        finally:
+            save(plan, 'supply-decode.json', receipt)
+
+
+    def _select_perf(plan: RunPlan, archive: Path, destination: Path) -> dict[str, Any]:
+        fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = file_identity(fd)
+            if not stat.S_ISREG(os.fstat(fd).st_mode) or not 1024 <= before[2] <= 12*1024**2 or before[2] % 512:
+                raise Refusal('tar size or type limit')
+            position, selected = 0, None
+            names = set()
+            while position < before[2]:
+                _diagnostic_check(plan)
+                header = os.pread(fd, 512, position)
+                if header == bytes(512):
+                    if before[2]-position < 1024:
+                        raise Refusal('tar end marker truncated')
+                    while position < before[2]:
+                        _diagnostic_check(plan)
+                        block = os.pread(fd, min(65536, before[2]-position), position)
+                        if not block or any(block):
+                            raise Refusal('unaccounted trailing tar bytes')
+                        position += len(block)
+                    break
+                try:
+                    member = tarfile.TarInfo.frombuf(header, 'utf-8', 'strict')
+                except (tarfile.HeaderError, UnicodeError, ValueError):
+                    raise Refusal('invalid tar header') from None
+                name = member.name.removeprefix('./').rstrip('/')
+                if name == '.':
+                    name = ''
+                if (len(os.fsencode(name)) > 4095 or name.startswith('/')
+                        or (name and any(part in ('', '.', '..') for part in name.split('/')))):
+                    raise Refusal('unsafe tar member path')
+                if name in names:
+                    raise Refusal('duplicate tar member')
+                names.add(name)
+                if len(names) > 128:
+                    raise Refusal('tar member count limit')
+                if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE) or member.linkname:
+                    raise Refusal('tar links or special members refused')
+                if member.size < 0 or (member.isdir() and member.size):
+                    raise Refusal('invalid tar member size')
+                if not name and not member.isdir():
+                    raise Refusal('invalid tar root member')
+                data_start = position+512
+                position = data_start+((member.size+511)//512)*512
+                if position > before[2]:
+                    raise Refusal('truncated tar member')
+                if any(os.pread(fd, position-data_start-member.size, data_start+member.size)):
+                    raise Refusal('invalid tar member padding')
+                if name == PERF_PACKAGE['member']:
+                    if not member.isfile() or member.size != PERF_PACKAGE['elf_size'] or member.size > 6*1024**2:
+                        raise Refusal('selected perf member size or type mismatch')
+                    if member.mode & (stat.S_ISUID | stat.S_ISGID):
+                        raise Refusal('privileged archive member')
+                    selected = (data_start, member.size)
+            else:
+                raise Refusal('tar end marker missing')
+            if selected is None:
+                raise Refusal('selected perf member missing')
+            outfd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                offset, remaining = selected
+                with os.fdopen(outfd, 'wb', closefd=False) as output:
+                    while remaining:
+                        _diagnostic_check(plan)
+                        block = os.pread(fd, min(65536, remaining), offset)
+                        if not block:
+                            raise Refusal('selected perf truncated')
+                        output.write(block)
+                        offset += len(block)
+                        remaining -= len(block)
+            finally:
+                os.close(outfd)
+            if before != file_identity(fd):
+                raise Refusal('tar identity changed')
+            return dict(members=len(names), archive_identity=before, selected=PERF_PACKAGE['member'])
+        finally:
+            os.close(fd)
+
+
+    def _observe_host_loader(plan: RunPlan) -> Path:
+        _diagnostic_check(plan)
+        root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fd = open_rooted(root, PERF_PACKAGE['interpreter'])
+        finally:
+            os.close(root)
+        try:
+            before = file_identity(fd)
+            canonical = Path(os.readlink(f'/proc/self/fd/{fd}'))
+            loader = _executable_identity(canonical)
+            header = os.pread(fd, 64, 0)
+            if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                    or struct.unpack_from('<HHI', header, 16) not in ((2, 183, 1), (3, 183, 1))):
+                raise Refusal('host interpreter is not AArch64 ELF')
+            root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                again = open_rooted(root, PERF_PACKAGE['interpreter'])
+                try:
+                    if before != file_identity(again) or before != file_identity(fd) or before != loader['identity']:
+                        raise Refusal('host interpreter identity changed')
+                finally:
+                    os.close(again)
+            finally:
+                os.close(root)
+        finally:
+            os.close(fd)
+        optional = []
+        for name in ('/etc/ld.so.preload', '/etc/ld.so.cache'):
+            _diagnostic_check(plan)
+            try:
+                root = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    fd = open_rooted(root, name)
+                finally:
+                    os.close(root)
+                try:
+                    before = file_identity(fd)
+                    if before[2] > POLICY['metadata']:
+                        raise Refusal('optional loader metadata size limit')
+                    digest = hash_fd(fd)
+                    optional.append(dict(path=name, state='observed', identity=before, sha256=digest))
+                finally:
+                    os.close(fd)
+            except FileNotFoundError:
+                optional.append(dict(path=name, state='absent'))
+            except (OSError, Refusal) as error:
+                optional.append(dict(path=name, state='unreadable', reason=str(error)[:512]))
+        _diagnostic_check(plan)
+        receipt = plan.retained / 'host-loader.json'
+        save(plan, receipt.name, dict(architecture=platform.machine(), kernel=os.uname().release,
+             loader=loader, optional=optional, runtime_contract='trusted_host_os_not_closed',
+             conditional_modules='trusted, not exhaustively observed or authenticated',
+             complete_load_trace=False, source_build_correspondence='unproved'))
+        return receipt
+
+
+    def _prepare_host_loaded_perf(plan: RunPlan) -> _HostLoadedPerf:
+        if plan.private is None:
+            raise Refusal('supply directory missing')
+        plan.supply_deadline = min(time.monotonic()+POLICY['supply'], plan.preflight_deadline,
+                                   plan.started+POLICY['bootstrap'])
+        receipt: dict[str, Any] = dict(stage='supply_pending', started=time.monotonic(), pins=PERF_PACKAGE,
+            runtime_contract='trusted_host_os_not_closed', native_acceptance=False)
+        save(plan, 'supply-pending.json', receipt)
+        if plan.control is not None:
+            send(plan.control, 'operation', kind='supply')
+        try:
+            package = plan.private / 'perf.deb'
+            _download_perf(plan, package)
+            _diagnostic_check(plan)
+            archive = _inflate_package_data(plan, package)
+            path = plan.private / 'perf'
+            receipt['archive'] = _select_perf(plan, archive, path)
+            admitted = _admit_perf(path)
+            receipt['elf'] = admitted
+            _diagnostic_check(plan)
+            files = list(plan.private.iterdir())
+            if len(files)+len(list((plan.private/'home').iterdir())) > 8 or sum(p.lstat().st_size for p in files) > 24*1024**2:
+                raise Refusal('aggregate supply file or byte limit')
+            loader_receipt = _observe_host_loader(plan)
+            _diagnostic_check(plan)
+            receipt.update(stage='supplied', ended=time.monotonic())
+            return _HostLoadedPerf(path, admitted['sha256'], admitted['identity'],
+                                   _diagnostic_environment(plan.private), loader_receipt)
+        except BaseException as error:
+            receipt.update(stage='refused', reason=type(error).__name__+': '+str(error)[:512])
+            raise
+        finally:
+            save(plan, 'perf-supply.json', receipt)
+            plan.supply_deadline = float('inf')
+            if plan.control is not None:
+                send(plan.control, 'operation_done')
+
+
+    def _observe_sibling_recorder(plan: RunPlan, child: OwnedChild) -> None:
+        receipt: dict[str, Any] = dict(kind='sibling_recorder_mapping_snapshot', complete_load_trace=False,
+            runtime_contract='trusted_host_os_not_closed', started=time.monotonic(), pid=child.pid,
+            state='incomplete')
+        target = None
+        try:
+            _diagnostic_check(plan)
+            target = ObservedProcess.open(child.pid)
+            maps_fd = os.open(f'/proc/{target.pid}/maps', os.O_RDONLY | os.O_NONBLOCK)
+            try:
+                receipt['maps_identity'] = file_identity(maps_fd)
+                before = read_bytes(f'/proc/{target.pid}/maps')
+            finally:
+                os.close(maps_fd)
+            receipt.update(ticks=target.ticks, maps_sha256=hashlib.sha256(before).hexdigest())
+            receipt['objects'] = mapped_objects(plan, target)
+            if read_bytes(f'/proc/{target.pid}/maps') != before:
+                raise Refusal('recorder maps changed during snapshot')
+            _diagnostic_check(plan)
+            receipt.update(state='snapshot_obtained', ended=time.monotonic())
+        except BaseException as error:
+            receipt['reason'] = type(error).__name__+': '+str(error)[:512]
+            raise Refusal('mandatory sibling recorder snapshot incomplete') from error
+        finally:
+            if target is not None:
+                os.close(target.pidfd)
+            save(plan, 'sibling-recorder-maps.json', receipt)
+
+
+    @dataclass(frozen=True)
+    class _ProcessIdentity:
+        pid: int
+        start_ticks: int
+        boot_id: str
+
+
+    @dataclass(frozen=True)
+    class _Mapping:
+        start: int
+        end: int
+        permissions: str
+        offset: int
+        device: tuple[int, int]
+        inode: int
+        name: str
+
+
+    @dataclass(frozen=True)
+    class _MapsObservation:
+        owner: _ProcessIdentity
+        phase: Literal['before_enable', 'after_stop', 'after_decode']
+        started: float
+        finished: float
+        rows: tuple[_Mapping, ...]
+        retained_bytes: str
+        bytes_sha256: str
+
+
+    @dataclass(frozen=True)
+    class _OpenedFile:
+        path: str
+        device: tuple[int, int]
+        inode: int
+        source_before: tuple[int, int, int, int, int]
+        source_after: tuple[int, int, int, int, int]
+        sha256: str
+        build_id: str | None
+        source_status: Literal['unresolved']
+
+
+    @dataclass(frozen=True)
+    class _RecordedMapping:
+        record_index: int
+        pid: int
+        tid: int
+        mapping: _Mapping
+
+
+    @dataclass(frozen=True)
+    class _Sample:
+        ordinal: int
+        record_index: int
+        pid: int
+        tid: int
+        ip: int
+        event: Literal['cpu-clock:u']
+        dso: str
+        decoder_symbol: str
+
+
+    @dataclass(frozen=True)
+    class _KernelRangeEvidence:
+        owner: _ProcessIdentity
+        mapping: _Mapping
+        observations: tuple[_MapsObservation, _MapsObservation, _MapsObservation]
+        recorded: _RecordedMapping
+        samples: tuple[_Sample, ...]
+        kind: Literal['kernel_mapping'] = 'kernel_mapping'
+        file_backed: Literal[False] = False
+        symbol_provenance: Literal['unresolved'] = 'unresolved'
+        source_provenance: Literal['unresolved'] = 'unresolved'
+        continuous_mapping_history: Literal[False] = False
+
+
+    @dataclass(frozen=True)
+    class _SiblingAdmission:
+        claim: Literal['sibling_sampling_mechanics']
+        quality: Mapping[str, object]
+        file_samples: int
+        kernel: _KernelRangeEvidence | None
+
+
+    def _parse_busy_maps(data: bytes) -> tuple[_Mapping, ...]:
+        if not data or len(data) > POLICY['metadata'] or not data.endswith(b'\n'):
+            raise Refusal('incomplete busy maps')
+        rows = []
+        for line in data.decode().splitlines():
+            match = re.fullmatch(r'([0-9a-f]+)-([0-9a-f]+) +([r-][w-][x-][ps]) +'
+                                 r'([0-9a-f]+) +([0-9a-f]+):([0-9a-f]+) +(\d+)(?: +(.*))?', line)
+            if match is None:
+                raise Refusal('malformed busy maps row')
+            row = _Mapping(int(match[1], 16), int(match[2], 16), match[3], int(match[4], 16),
+                           (int(match[5], 16), int(match[6], 16)), int(match[7]), match[8] or '')
+            if not 0 < row.start < row.end <= 2**64 or row.offset >= 2**64:
+                raise Refusal('invalid busy maps range')
+            rows.append(row)
+        ordered = sorted(rows, key=lambda row: row.start)
+        if any(left.end > right.start for left, right in zip(ordered, ordered[1:])):
+            raise Refusal('overlapping busy maps')
+        return tuple(rows)
+
+
+    def _opened_sibling_files(objects: Sequence[Mapping[str, object]]) -> dict[str, _OpenedFile]:
+        opened = {}
+        for obj in objects:
+            path, device, inode = obj.get('path'), obj.get('device'), obj.get('inode')
+            before, after = obj.get('source_before'), obj.get('source_after')
+            digest, identity = obj.get('sha256'), obj.get('build_id')
+            if (not isinstance(path, str) or not path.startswith('/') or path.endswith(' (deleted)')
+                    or path in opened or not isinstance(device, str)
+                    or not re.fullmatch(r'[0-9a-f]+:[0-9a-f]+', device)
+                    or type(inode) is not int or inode <= 0
+                    or not isinstance(before, (list, tuple)) or len(before) != 5
+                    or not isinstance(after, (list, tuple)) or len(after) != 5
+                    or any(type(value) is not int for value in (*before, *after))
+                    or tuple(before) != tuple(after)
+                    or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
+                    or (identity is not None and (not isinstance(identity, str)
+                        or not re.fullmatch(r'(?:[0-9a-f]{2})+', identity)))
+                    or obj.get('source_status') != 'unresolved'):
+                raise Refusal('invalid opened sibling file evidence')
+            major, minor = (int(part, 16) for part in device.split(':'))
+            if (os.major(before[0]), os.minor(before[0]), before[1]) != (major, minor, inode):
+                raise Refusal('opened sibling file identity mismatch')
+            opened[path] = _OpenedFile(path, (major, minor), inode, tuple(before), tuple(after),
+                                       digest, identity, 'unresolved')
+        return opened
+
+
+    def _parse_sibling_dump(dump: bytes, pid: int) -> tuple[
+            tuple[_RecordedMapping, ...], tuple[tuple[int, int, int, int], ...]]:
+        if len(dump) > POLICY['text']:
+            raise Refusal('sibling dump byte limit')
+        text = dump.decode()
+        prefix = r'\d+ 0x[0-9a-f]+ \[0x[0-9a-f]+\]: '
+        marker = re.compile(r'^\s*(?:[^\n]*\s)?PERF_RECORD_(MMAP2|MMAP|SAMPLE)\b')
+        mapping_pattern = re.compile(prefix + r'PERF_RECORD_MMAP2 (\d+)/(\d+): '
+            r'\[0x([0-9a-f]+)\(0x([0-9a-f]+)\) @ ([0-9a-f]+) '
+            r'([0-9a-f]+):([0-9a-f]+) (\d+) (\d+)\]: ([r-][w-][x-][ps]) (.+)')
+        sample_pattern = re.compile(prefix + r'PERF_RECORD_SAMPLE\(IP, 0x2\): '
+            r'(\d+)/(\d+): 0x([0-9a-f]+) period: \d+ addr: 0')
+        mappings, samples = [], []
+        counts = dict(MMAP=0, MMAP2=0, SAMPLE=0)
+        for index, line in enumerate(text.splitlines()):
+            found = marker.match(line)
+            if found is None:
+                continue
+            kind = found[1]
+            counts[kind] += 1
+            if sum(counts.values()) > POLICY['records']:
+                raise Refusal('sibling record limit')
+            if kind == 'MMAP2':
+                match = mapping_pattern.fullmatch(line)
+                if match is None:
+                    raise Refusal('malformed sibling MMAP2 record')
+                start, length = int(match[3], 16), int(match[4], 16)
+                row = _Mapping(start, start+length, match[10], int(match[5], 16),
+                               (int(match[6], 16), int(match[7], 16)), int(match[8]), match[11])
+                if (int(match[1]) != pid or int(match[2]) != pid
+                        or not 0 < row.start < row.end <= 2**64 or row.offset >= 2**64):
+                    raise Refusal('invalid or foreign sibling mapping')
+                mappings.append(_RecordedMapping(index, int(match[1]), int(match[2]), row))
+            elif kind == 'SAMPLE':
+                match = sample_pattern.fullmatch(line)
+                if match is None:
+                    raise Refusal('malformed sibling SAMPLE record')
+                if int(match[1]) != pid or int(match[2]) != pid or int(match[3], 16) >= 2**64:
+                    raise Refusal('invalid or foreign sibling sample')
+                samples.append((index, int(match[1]), int(match[2]), int(match[3], 16)))
+            else:
+                raise Refusal('unsupported sibling MMAP record')
+        sections = text.split('Aggregated stats:\n')
+        if len(sections) != 2:
+            raise Refusal('sibling record summary unavailable')
+        summary = sections[1].split('cpu-clock:u stats:', 1)[0]
+        for kind, count in counts.items():
+            totals = re.findall(r'^\s*'+kind+r' events:\s+(\d+)(?:\s+\([^\n]*\))?\s*$', summary, re.M)
+            if len(totals) != 1 or int(totals[0]) != count:
+                raise Refusal('sibling record marker accounting mismatch')
+        ordered = sorted(mappings, key=lambda item: item.mapping.start)
+        if any(left.mapping.end > right.mapping.start for left, right in zip(ordered, ordered[1:])):
+            raise Refusal('overlapping recorded sibling mappings')
+        return tuple(mappings), tuple(samples)
+
+
+    def _admit_sibling_capture(
+        *, owner: _ProcessIdentity, observations: Sequence[_MapsObservation],
+        objects: Sequence[Mapping[str, object]], quality: Mapping[str, object],
+        samples: bytes, dump: bytes, timing: Mapping[str, object],
+    ) -> _SiblingAdmission:
+        if len(observations) != 3 or tuple(item.phase for item in observations) != (
+                'before_enable', 'after_stop', 'after_decode'):
+            raise Refusal('missing or unordered busy maps observations')
+        before, stopped, decoded = observations
+        for item in observations:
+            if item.owner != owner:
+                raise Refusal('foreign busy maps identity')
+            if (not math.isfinite(item.started) or not math.isfinite(item.finished)
+                    or not 0 <= item.started <= item.finished):
+                raise Refusal('invalid busy maps observation time')
+        times = timing.get('times')
+        keys = ('ping_ack', 'last_validation', 'enable_send', 'terminal_observed', 'post_identity', 'ended')
+        if not isinstance(times, dict) or any(type(times.get(key)) not in (int, float)
+                or not math.isfinite(times[key]) for key in keys):
+            raise Refusal('missing sibling observation timing')
+        if not (times['ping_ack'] <= before.started <= before.finished <= times['last_validation']
+                <= times['enable_send'] <= times['terminal_observed'] <= stopped.started
+                <= stopped.finished <= times['post_identity'] <= times['ended'] <= decoded.started):
+            raise Refusal('busy maps outside recorder brackets')
+        if times['enable_send']-before.finished > POLICY['admission']:
+            raise Refusal('stale busy maps before enable')
+        opened = _opened_sibling_files(objects)
+        mappings, recorded_samples = _parse_sibling_dump(dump, owner.pid)
+        executable = sorted((item for item in mappings if 'x' in item.mapping.permissions),
+                            key=lambda item: item.mapping.start)
+        starts = [item.mapping.start for item in executable]
+        occurrences, kernel_samples = [], []
+        dsos: dict[str, int] = {}
+        stamps = []
+        unknown = unknown_dsos = file_samples = 0
+        if len(samples) > POLICY['text']:
+            raise Refusal('sibling sample byte limit')
+        for line in samples.decode().splitlines():
+            if not line.strip() or line.startswith('#'):
+                continue
+            match = re.fullmatch(r'\s*(\d+)/(\d+)\s+([0-9.]+):\s+(cpu-clock:u):\s+'
+                                 r'([0-9a-fA-F]+)\s+(.+)\s+\((.*)\)\s*', line)
+            if match is None or len(occurrences) >= len(recorded_samples):
+                raise Refusal('sibling sample occurrence mismatch')
+            index, pid, tid, ip = recorded_samples[len(occurrences)]
+            if (int(match[1]), int(match[2]), int(match[5], 16)) != (pid, tid, ip):
+                raise Refusal('sibling script/dump identity mismatch')
+            sample = _Sample(len(occurrences), index, pid, tid, ip, 'cpu-clock:u', match[7], match[6])
+            position = bisect_right(starts, ip)-1
+            if position < 0:
+                raise Refusal('sibling sample has no preceding mapping')
+            recorded = executable[position]
+            row = recorded.mapping
+            if ip >= row.end or recorded.record_index >= index:
+                raise Refusal('sibling sample has no preceding mapping')
+            if row.name != sample.dso:
+                raise Refusal('sibling sample mapping label mismatch')
+            if sample.dso == '[vdso]':
+                kernel_samples.append(sample)
+            elif sample.dso in opened:
+                obj = opened[sample.dso]
+                if (row.device, row.inode) != (obj.device, obj.inode):
+                    raise Refusal('sibling recorded file identity mismatch')
+                file_samples += 1
+            else:
+                raise Refusal('unbound sibling sample DSO')
+            occurrences.append(sample)
+            dsos[sample.dso] = dsos.get(sample.dso, 0)+1
+            unknown += int('[unknown]' in sample.decoder_symbol)
+            unknown_dsos += int('[unknown]' in sample.dso)
+            stamp = float(match[3])
+            if not math.isfinite(stamp):
+                raise Refusal('invalid sibling sample timestamp')
+            stamps.append(stamp)
+        total = len(occurrences)
+        if (not total or total != len(recorded_samples) or quality.get('total') != total
+                or quality.get('dsos') != dsos or quality.get('tids') != {str(owner.pid): total}
+                or quality.get('events') != {'cpu-clock:u': total} or quality.get('lost') != 0
+                or quality.get('unknown_symbols') != unknown or quality.get('unknown_dsos') != unknown_dsos
+                or quality.get('unknown_fraction') != unknown/total
+                or quality.get('first_time') != min(stamps) or quality.get('last_time') != max(stamps)):
+            raise Refusal('sibling quality reconciliation mismatch')
+        kernel = None
+        if kernel_samples:
+            live = []
+            for item in observations:
+                rows = [row for row in item.rows if row.name == '[vdso]']
+                if len(rows) != 1:
+                    raise Refusal('missing or ambiguous busy vdso range')
+                live.append(rows[0])
+            row = live[0]
+            if (any(other != row for other in live[1:]) or row.permissions != 'r-xp'
+                    or row.offset != 0 or row.device != (0, 0) or row.inode != 0):
+                raise Refusal('changed or invalid busy vdso range')
+            matches = [item for item in mappings if item.mapping.name == '[vdso]']
+            if len(matches) != 1 or matches[0].mapping != row:
+                raise Refusal('recorded vdso range does not match busy observations')
+            if any(not row.start <= sample.ip < row.end for sample in kernel_samples):
+                raise Refusal('sibling sample outside busy vdso range')
+            kernel = _KernelRangeEvidence(owner, row, (before, stopped, decoded), matches[0], tuple(kernel_samples))
+        return _SiblingAdmission('sibling_sampling_mechanics', quality, file_samples, kernel)
+
+
+    def _observe_busy_maps(
+        plan: RunPlan, target: ObservedProcess,
+        phase: Literal['before_enable', 'after_stop', 'after_decode'],
+    ) -> _MapsObservation:
+        _diagnostic_check(plan)
+        target.check()
+        started = time.monotonic()
+        data = read_bytes(f'/proc/{target.pid}/maps', POLICY['metadata'])
+        target.check()
+        _diagnostic_check(plan)
+        finished = time.monotonic()
+        name = 'preflight-'+phase+'.maps'
+        save(plan, name, data)
+        observation = _MapsObservation(_ProcessIdentity(target.pid, target.ticks, plan.boot), phase,
+            started, finished, _parse_busy_maps(data), name, hashlib.sha256(data).hexdigest())
+        save(plan, 'preflight-'+phase+'.json', asdict(observation))
+        _diagnostic_check(plan)
+        target.check()
+        return observation
+
+
+    def _run_sibling_preflight(plan: RunPlan, perf: str, busy: int) -> None:
+        _diagnostic_check(plan)
+        target = ObservedProcess.open(busy)
+        observations: list[_MapsObservation] = []
+
+        def observe_busy() -> None:
+            if len(observations) == 0:
+                phase: Literal['before_enable', 'after_stop', 'after_decode'] = 'before_enable'
+            elif len(observations) == 1:
+                phase = 'after_stop'
+            else:
+                raise Refusal('unexpected busy maps callback')
+            observation = _observe_busy_maps(plan, target, phase)
+            observations.append(observation)
+            _diagnostic_check(plan)
+            target.check()
+            if phase == 'before_enable' and time.monotonic()-observation.finished > POLICY['admission']:
+                raise Refusal('stale busy maps callback')
+
+        try:
+            raw = record(plan, perf, target.pid, 'preflight', observe_busy, 1)
+            if len(observations) != 2:
+                raise Refusal('missing busy maps callback')
+            with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
+                mirror = Path(directory)
+                objects = mapped_objects(plan, target, mirror)
+                quality = decode(plan, perf, raw, target.pid, 'preflight', mirror)
+                if mapped_objects(plan, target) != objects:
+                    raise Refusal('preflight mapped objects changed')
+                observations.append(_observe_busy_maps(plan, target, 'after_decode'))
+                samples = read_bytes(plan.retained/'preflight.samples.out', POLICY['text'])
+                dump = read_bytes(plan.retained/'preflight.dump.out', POLICY['text'])
+                timing = json.loads(read_bytes(plan.retained/'preflight.timing.json', POLICY['metadata']))
+                _diagnostic_check(plan)
+                target.check()
+                admitted = _admit_sibling_capture(owner=_ProcessIdentity(target.pid, target.ticks, plan.boot),
+                    observations=observations, objects=objects, quality=quality,
+                    samples=samples, dump=dump, timing=timing)
+        finally:
+            os.close(target.pidfd)
+        _diagnostic_check(plan)
+        save(plan, 'preflight-mapping.json', asdict(admitted))
+        _diagnostic_check(plan)
+        save(plan, 'sibling-ok.json', dict(stage='sibling_ok', at=time.monotonic(),
+                                          mapping_receipt='preflight-mapping.json'))
+        _diagnostic_check(plan)
+
+
+    def worker(plan: RunPlan, channel: socket.socket, busy: int) -> None:
+        plan.control = channel
+        phase = 'bootstrap'
+        raw_capture = False
+        try:
+            bind_runner(plan)
+            send(channel, 'ready')
+            phase = 'preflight'
+            preflight_start = time.monotonic()
+            plan.preflight_deadline = min(plan.started+POLICY['bootstrap'], preflight_start+POLICY['preflight'])
+            send(channel, 'preflight')
+            plan.private = Path(tempfile.mkdtemp(prefix='native-perf-', dir=plan.work))
+            (plan.private / 'home').mkdir(mode=0o700)
+            plan.tool = _prepare_host_loaded_perf(plan)
+            perf = str(plan.tool.path)
+            command(plan, [perf, '--version'], 'perf-version')
+            save(plan, 'version-ok.json', dict(stage='version_ok', at=time.monotonic()))
+            _run_sibling_preflight(plan, perf, busy)
+            plan.preflight_deadline = float('inf')
+            send(channel, 'acquire')
+            save(plan, 'observing.json', dict(stage='observing', at=time.monotonic()))
+            phase = 'acquisition'
+            stage_seen = None
+            trace_keys = {}
+            selected_path = None
+            while True:
+                paths = sorted(plan.output.glob('pydeface-diagnostic-*.jsonl'))
+                if len(paths) > POLICY['traces']:
+                    raise Refusal('trace file limit')
+                candidates = []
+                total = 0
+                for path in paths:
+                    rows, data, key = trace_records(path, plan)
+                    total += len(data)
+                    if total > POLICY['trace_bytes']:
+                        raise Refusal('aggregate trace limit')
+                    if path in trace_keys and trace_keys[path] != key:
+                        raise Refusal('trace replaced')
+                    trace_keys[path] = key
+                    if not rows:
+                        continue
+                    selected = parse_registration(rows, plan, path.name)
+                    if selected:
+                        candidates.append((path, selected, data, key))
+                if len(candidates) > 1:
+                    raise Refusal('duplicate qualifying observer')
+                if candidates:
+                    path, selected, data, key = candidates[0]
+                    if stage_seen is None:
+                        stage_seen = time.monotonic()
+                        selected_path = path
+                        send(channel, 'stage', wall=selected['stage_time'])
+                    if path != selected_path:
+                        raise Refusal('retarget forbidden')
+                    if time.time()-selected['stage_time'] > POLICY['acquisition']:
+                        raise Refusal('target acquisition deadline')
+                    if not selected.get('waiting'):
+                        break
+                plan.owner.check()
+                if time.monotonic() > plan.started+POLICY['lifetime']:
+                    raise Refusal('helper lifetime')
+                time.sleep(POLICY['service'])
+            send(channel, 'selected')
+            phase = 'selected'
+            target = ObservedProcess.open(selected['pid'])
+            observer = ObservedProcess.open(selected['observer_pid'])
+            try:
+                validate = lambda: verify_target(selected, plan, target, observer, path, key)
+                chain = validate()
+                save(plan, 'selected-trace.jsonl', data)
+                save(plan, 'before.json', dict(target=snapshot(target), observer=snapshot(observer),
+                     owner=snapshot(plan.owner), ancestry=chain, selected=selected))
+                raw = record(plan, perf, target.pid, 'flirt', validate, POLICY['interval'])
+                raw_capture = True
+                save(plan, 'after.json', dict(target=snapshot(target), observer=snapshot(observer),
+                     owner=snapshot(plan.owner), ancestry=validate()))
+                with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
+                    mirror = Path(directory)
+                    objects = mapped_objects(plan, target, mirror)
+                    save(plan, 'objects-before.json', objects)
+                    quality = decode(plan, perf, raw, target.pid, 'flirt', mirror)
+                after_objects = mapped_objects(plan, target)
+                save(plan, 'objects-after.json', after_objects)
+                if after_objects != objects:
+                    raise Refusal('mapped objects changed during reporting')
+                if any(name not in {obj['path'] for obj in objects} for name in quality['dsos']):
+                    raise Refusal('sample DSO cannot be bound to an opened mapped object')
+                validate()
+                inventory = []
+                for file in plan.retained.iterdir():
+                    if file.name.startswith('manifest.'):
+                        continue
+                    fd = os.open(file, os.O_RDONLY | os.O_NOFOLLOW)
+                    try:
+                        inventory.append(dict(path=file.name, size=os.fstat(fd).st_size, sha256=hash_fd(fd)))
+                    finally:
+                        os.close(fd)
+                save(plan, 'inventory.json', inventory)
+                result = dict(outcome='captured' if not (quality['unknown_symbols'] or quality['unknown_dsos']) else 'incomplete',
+                     raw_capture=True, source_attribution='unresolved', samples=quality,
+                     object_count=len(objects), reason='unknown symbols' if (quality['unknown_symbols'] or quality['unknown_dsos']) else None)
+            finally:
+                os.close(target.pidfd)
+                os.close(observer.pidfd)
+        except BaseException as error:
+            result = dict(outcome='incomplete' if phase == 'selected' else 'refused',
+                 stage=phase, raw_capture=raw_capture, source_attribution='unresolved',
+                 reason=type(error).__name__+': '+str(error)[:2000])
+        finally:
+            if plan.private is not None:
+                try:
+                    shutil.rmtree(plan.private)
+                    result['supply_cleanup'] = dict(complete=True, excluded_work=True)
+                except BaseException as error:
+                    result = dict(outcome='incomplete', reason='supply cleanup failed: '+str(error)[:512])
+        send(channel, 'done', **result)
+
+
+    def supervise(plan: RunPlan, readiness: socket.socket, launcher: int) -> None:
+        parent_arm(launcher)
+        os.setsid()
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(36, 1, 0, 0, 0):
+            raise Refusal('subreaper unavailable')
+        up, down = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        busy_read, busy_write = os.pipe()
+        parent = os.getpid()
+        busy_pid = os.fork()
+        if busy_pid == 0:
+            parent_arm(parent)
+            detach({busy_write})
+            os.write(busy_write, b'R')
+            os.close(busy_write)
+            end = time.monotonic()+POLICY['bootstrap']
+            while time.monotonic() < end:
+                pass
+            os._exit(0)
+        busy = OwnedChild(busy_pid)
+        os.close(busy_write)
+        children = [busy]
+        handoff = {}
+        result = dict(outcome='incomplete', reason='startup pending')
+        worker_child = None
+        try:
+            if not select.select([busy_read], [], [], 1)[0] or os.read(busy_read, 1) != b'R':
+                raise Refusal('busy sibling failed to arm')
+            os.close(busy_read)
+            worker_pid = os.fork()
+            if worker_pid == 0:
+                parent_arm(parent)
+                os.setpgid(0, 0)
+                detach({down.fileno(), plan.owner.pidfd})
+                worker(plan, down, busy_pid)
+                os._exit(0)
+            worker_child = OwnedChild(worker_pid, True)
+            children.append(worker_child)
+            down.close()
+            deadline = plan.started+POLICY['bootstrap']
+            state = 'startup'
+            operation_deadline = float('inf')
+            handoff_state = 'ready'
+            terminal = False
+            while True:
+                if readable(plan.owner.pidfd):
+                    raise Refusal('runner ended')
+                now = time.monotonic()
+                active_deadline = min(deadline, operation_deadline, plan.started+POLICY['lifetime'],
+                                      plan.started+POLICY['bootstrap'] if handoff_state != 'complete' else float('inf'))
+                watched = [plan.owner.pidfd]
+                if not terminal:
+                    watched.append(up)
+                if handoff_state != 'complete':
+                    watched.append(readiness)
+                events = select.select(watched, [], [], min(POLICY['service'], max(0, active_deadline-now)))[0]
+                now = time.monotonic()
+                if now > active_deadline:
+                    raise Refusal(('operation' if now > operation_deadline else state)+' deadline')
+                if plan.owner.pidfd in events:
+                    raise Refusal('runner ended')
+                if readiness in events:
+                    event = receive(readiness, time.monotonic())['event']
+                    if event == 'clear' and handoff_state == 'clear':
+                        if libc.prctl(1, 0, 0, 0, 0):
+                            raise Refusal('detach failed')
+                        handoff['cleared'] = time.monotonic()
+                        send(readiness, 'cleared')
+                        handoff_state = 'ack'
+                    elif event == 'ack' and handoff_state == 'ack':
+                        handoff['acknowledged'] = time.monotonic()
+                        readiness.close()
+                        handoff_state = 'complete'
+                        manifest(plan.retained, 'pending', stage=state, handoff=handoff)
+                    else:
+                        raise Refusal('invalid detach transition')
+                if up in events:
+                    message = receive(up, time.monotonic())
+                    event = message['event']
+                    if event == 'ready' and state == 'startup':
+                        handoff['ready'] = time.monotonic()
+                        send(readiness, 'ready')
+                        handoff_state = 'clear'
+                        state = 'armed'
+                    elif event == 'preflight' and state == 'armed':
+                        state = 'preflight'
+                        deadline = min(deadline, message['at']+POLICY['preflight'])
+                    elif event == 'acquire' and state == 'preflight':
+                        busy.signal(signal.SIGKILL)
+                        state = 'acquire'
+                        deadline = plan.started+POLICY['lifetime']
+                    elif event == 'stage' and state == 'acquire':
+                        state = 'stage'
+                        deadline = min(deadline, now+max(0, POLICY['acquisition']-(time.time()-message['wall'])))
+                    elif event == 'selected' and state == 'stage':
+                        state = 'selected'
+                        deadline = min(plan.started+POLICY['lifetime'], now+POLICY['selected'])
+                    elif event == 'operation' and operation_deadline == float('inf'):
+                        if message['kind'] not in ('command', 'record', 'supply'):
+                            raise Refusal('unknown operation budget')
+                        operation_deadline = message['at']+POLICY[message['kind']]
+                    elif event == 'operation_done' and operation_deadline != float('inf'):
+                        operation_deadline = float('inf')
+                    elif event == 'done':
+                        result = {k: v for k, v in message.items() if k not in ('event', 'at')}
+                        terminal = True
+                    else:
+                        raise Refusal('invalid worker transition')
+                if terminal and handoff_state == 'complete':
+                    break
+                if not terminal and os.waitid(os.P_PID, worker_pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                    # A terminal packet can precede exit but still be queued.
+                    if not readable(up):
+                        raise Refusal('worker ended without terminal evidence')
+        except BaseException as error:
+            result = dict(outcome='incomplete', reason=type(error).__name__+': '+str(error)[:2000])
+        finally:
+            for child in children:
+                child.signal(signal.SIGTERM)
+            time.sleep(POLICY['grace'])
+            for child in children:
+                child.signal(signal.SIGKILL)
+            # A pre-arm child may not have established its group yet.
+            if worker_child:
+                OwnedChild(worker_child.pid).signal(signal.SIGKILL)
+            end = time.monotonic()+POLICY['grace']
+            reaped = []
+            complete = False
+            while time.monotonic() < end:
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    complete = True
+                    break
+                if pid:
+                    reaped.append(dict(pid=pid, status=status))
+                else:
+                    time.sleep(.01)
+            if not complete:
+                result = dict(outcome='incomplete', reason='owned descendants pending cleanup')
+            manifest(plan.retained, **result, handoff=handoff, cleanup=dict(reaped=reaped, complete=complete))
+
+
+    def arm(output_dir: Path, t1w: Path) -> None:
+        architecture = platform.machine()
+        work = Path.cwd().resolve()
+        directory = work.parent / 'native-profile'
+        directory.mkdir(mode=0o700)
+        if architecture not in ('aarch64', 'arm64'):
+            manifest(directory, 'outside_native_scope', architecture=architecture)
+            return
+        started, wall = time.monotonic(), time.time()
+        def bootstrap_alarm(*unused: int | FrameType | None) -> None:
+            raise Refusal('bootstrap deadline')
+        signal.signal(signal.SIGALRM, bootstrap_alarm)
+        signal.setitimer(signal.ITIMER_REAL, POLICY['bootstrap'])
+        manifest(directory, 'pending', stage='bootstrap', architecture=architecture)
+        try:
+            pid = os.getppid()
+            owner = None
+            for _ in range(POLICY['objects']):
+                args = discovery_argv(pid)
+                if args is not None and any(item.endswith('/builder/run_tests.py') for item in args):
+                    owner = ObservedProcess.open(pid)
+                    break
+                pid = process_stat(pid)['ppid']
+                if pid <= 1:
+                    break
+            if owner is None:
+                raise Refusal('actual runner ancestor unavailable')
+            output = Path(output_dir).resolve()
+            if output != work/'test_output' or not Path(t1w).is_absolute():
+                raise Refusal('unexpected work/input binding')
+            plan = RunPlan(work, output, directory, Path(t1w), owner, started, wall,
+                           read_bytes('/proc/sys/kernel/random/boot_id', 128).decode().strip())
+            parent, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            launcher = os.getpid()
+            # Detach before fork so even an unscheduled child inherits no capture pipes.
+            detach({parent.fileno(), child.fileno(), owner.pidfd})
+            supervisor = os.fork()
+            if supervisor == 0:
+                parent.close()
+                try:
+                    supervise(plan, child, launcher)
+                except BaseException:
+                    pass
+                os._exit(0)
+            child.close()
+            end = started+POLICY['bootstrap']
+            try:
+                if receive(parent, end)['event'] != 'ready':
+                    raise Refusal('supervisor not ready')
+                send(parent, 'clear')
+                if receive(parent, end)['event'] != 'cleared':
+                    raise Refusal('supervisor not detached')
+                send(parent, 'ack')
+            finally:
+                parent.close()
+                os.close(owner.pidfd)
+                signal.setitimer(signal.ITIMER_REAL, 0)
+        except BaseException as error:
+            # After fork only the supervisor writes its manifest.
+            if 'supervisor' not in locals():
+                manifest(directory, 'prerequisite_failed', reason=type(error).__name__+': '+str(error)[:2000])
+
+
+    if __name__ == '__main__':
+        try:
+            arm(Path(sys.argv[1]), Path(sys.argv[2]))
+        except BaseException:
+            pass
+    NATIVE_PROFILE_PY
+    true
   script: |
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+    cat > test_output/diagnose_pydeface.py <<'PYTHON'
+    """Temporary PR #3580 fulltest observer. It does not change FLIRT arguments."""
+
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import platform
+    import runpy
+    import shutil
+    import subprocess
+    import sys
+    import threading
+    import time
+    from typing import TypedDict
+
+    import nibabel as nib
+    import numpy as np
+    from nipype.interfaces.base import Bunch
+    from nipype.interfaces.fsl import FLIRT
+
+
+    class ProcessSample(TypedDict):
+        pid: int
+        ppid: int
+        name: str
+        state: str
+        cpu_seconds: float
+        threads: int
+        start_ticks: int
+        rss_bytes: int
+
+
+    started = time.monotonic()
+    lock = threading.Lock()
+    stop = threading.Event()
+    trace = Path("test_output") / f"pydeface-diagnostic-{os.getpid()}.jsonl"
+    stream = trace.open("a", buffering=1)
+
+
+    def emit(event: str, **fields: object) -> None:
+        record = json.dumps(dict(event=event, time=time.time(),
+                                 elapsed=time.monotonic() - started, **fields))
+        with lock:
+            stream.write(record + "\n")
+            print("[DEBUG-pydeface-3580] " + record, file=sys.stderr, flush=True)
+
+
+    def read(path: str | Path) -> str:
+        try:
+            return Path(path).read_text()
+        except OSError as error:
+            return str(error)
+
+
+    cgroups = {Path("/sys/fs/cgroup")}
+    for line in read("/proc/self/cgroup").splitlines():
+        if line.startswith("0::"):
+            group = (Path("/sys/fs/cgroup") / line[3:].lstrip("/")).resolve()
+            while group.is_relative_to("/sys/fs/cgroup"):
+                cgroups.add(group)
+                group = group.parent
+
+    seen = set()
+
+
+    def stat(path: Path) -> ProcessSample:
+        value = path.read_text()
+        fields = value[value.rindex(")") + 2:].split()
+        return dict(pid=int(path.parent.name), ppid=int(fields[1]),
+                    name=value[value.index("(") + 1:value.rindex(")")], state=fields[0],
+                    cpu_seconds=(int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK"),
+                    threads=int(fields[17]), start_ticks=int(fields[19]),
+                    rss_bytes=int(fields[21]) * os.sysconf("SC_PAGE_SIZE"))
+
+
+    def sample() -> None:
+        processes = {}
+        for path in Path("/proc").glob("[0-9]*/stat"):
+            try:
+                item = stat(path)
+                processes[item["pid"]] = item
+            except (OSError, ValueError):
+                continue
+        owned = {os.getpid()}
+        while descendants := {pid for pid, item in processes.items()
+                              if item["ppid"] in owned and pid not in owned}:
+            owned.update(descendants)
+        for pid, item in processes.items():
+            if pid not in owned and item["name"] != "flirt":
+                continue
+            root = Path(f"/proc/{pid}")
+            try:
+                threads = sorted((stat(p) for p in (root / "task").glob("*/stat")),
+                                 key=lambda t: t["cpu_seconds"], reverse=True)
+                emit("process", **item, owned=pid in owned,
+                     argv=read(root / "cmdline").split("\0"),
+                     busiest_threads=threads[:8], wchan=read(root / "wchan"),
+                     io=read(root / "io"))
+                if item["name"] == "flirt" and pid not in seen:
+                    seen.add(pid)
+                    executable = (root / "exe").resolve(strict=True)
+                    emit("flirt_binary", pid=pid, executable=str(executable),
+                         sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+                         libraries=sorted({line.split()[-1] for line in read(root / "maps").splitlines()
+                                           if ".so" in line}))
+                    for command in (["file", str(executable)], ["ldd", str(executable)]):
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+                        emit("binary_inspection", command=command, code=result.returncode,
+                             stdout=result.stdout, stderr=result.stderr)
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                emit("process_unavailable", pid=pid, error=str(error))
+        emit("resources", load=os.getloadavg(), cgroup={
+            str(group / name): read(group / name)
+            for group in sorted(cgroups)
+            for name in ("cpu.max", "cpu.stat", "cpu.pressure", "cpuset.cpus.effective",
+                         "memory.current", "memory.max", "memory.events", "memory.pressure")
+            if (group / name).exists()
+        })
+
+
+    def heartbeat() -> None:
+        while not stop.wait(15):
+            sample()
+
+
+    original_run = FLIRT._run_interface
+
+
+    def traced_run(self: FLIRT, runtime: Bunch) -> Bunch:
+        command = self.cmdline
+        geometry = {}
+        for name in ("in_file", "reference"):
+            path = getattr(self.inputs, name)
+            image = nib.load(path)
+            geometry[name] = dict(path=str(path), shape=image.shape,
+                                  zooms=[float(v) for v in image.header.get_zooms()],
+                                  affine=image.affine.tolist())
+        emit("flirt_start", command=command, geometry=geometry)
+        stage_start = time.monotonic()
+        try:
+            result = original_run(self, runtime)
+            emit("flirt_end", command=command, seconds=time.monotonic() - stage_start,
+                 code=result.returncode)
+            return result
+        except BaseException as error:
+            emit("flirt_error", command=command, error=repr(error))
+            raise
+
+
+    emit("start", argv=sys.argv, architecture=platform.machine(),
+         cpu_count=os.cpu_count(), affinity=sorted(os.sched_getaffinity(0)),
+         cpuinfo=read("/proc/cpuinfo").split("\n\n")[0],
+         cgroup_membership=read("/proc/self/cgroup"),
+         environment={k: v for k, v in os.environ.items() if k in (
+             "PATH", "FSLDIR", "FSLOUTPUTTYPE", "LD_LIBRARY_PATH", "OMP_NUM_THREADS",
+             "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
+             "ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS", "OMP_DYNAMIC", "OMP_WAIT_POLICY")})
+    for metadata in sorted((Path(os.environ["FSLDIR"]) / "conda-meta").glob("*.json")):
+        package = json.loads(metadata.read_text())
+        if any(word in package["name"] for word in ("flirt", "blas", "lapack", "libgomp", "libgcc", "libstdc")):
+            emit("fsl_package", **{k: package.get(k) for k in ("name", "version", "build", "sha256", "depends")})
+    np.show_config()
+    sample()
+    FLIRT._run_interface = traced_run
+    threading.Thread(target=heartbeat, daemon=True).start()
+    try:
+        runpy.run_path(shutil.which("pydeface"), run_name="__main__")
+    finally:
+        stop.set()
+        emit("end")
+    PYTHON
 
 tests:
   # ==========================================================================
@@ -52,6 +2414,9 @@ tests:
   # BASIC DEFACING OPERATIONS
   # ==========================================================================
   - name: Basic defacing with default output
+    env_setup: &registration_diagnostics |
+      export PYTHONUNBUFFERED=1
+      pydeface() { python -u test_output/diagnose_pydeface.py "$@"; }
     description: Deface T1w image with corratio cost (default mutualinfo is too slow)
     command: pydeface ${t1w} --outfile test_output/t1w_defaced_default.nii.gz --cost corratio --verbose
     timeout: 300
@@ -78,6 +2443,7 @@ tests:
   # COST FUNCTION OPTIONS
   # ==========================================================================
   - name: Defacing with mutualinfo cost
+    env_setup: *registration_diagnostics
     description: Test defacing with mutual information cost function (default, slow)
     command: pydeface ${t1w} --outfile test_output/t1w_defaced_mutualinfo.nii.gz --cost mutualinfo --verbose
     timeout: 600
@@ -99,6 +2465,7 @@ tests:
       - output_exists: ${output_dir}/t1w_defaced_normcorr.nii.gz
 
   - name: Defacing with normmi cost
+    env_setup: *registration_diagnostics
     description: Test defacing with normalized mutual information cost function
     command: pydeface ${t1w} --outfile test_output/t1w_defaced_normmi.nii.gz --cost normmi --verbose
     timeout: 300
@@ -144,6 +2511,7 @@ tests:
   # DEFACING DIFFERENT IMAGE TYPES
   # ==========================================================================
   - name: Deface T2 image
+    env_setup: *registration_diagnostics
     description: Deface inplane T2 image
     command: pydeface ${t2} --outfile test_output/t2_defaced.nii.gz --verbose
     timeout: 300
@@ -258,13 +2626,15 @@ tests:
 
   - name: FSL fslsplit check
     description: Check fslsplit is available
-    command: fslsplit 2>&1 | head -5 || true
-    expected_output_contains: ""
+    command: fslsplit 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "Usage: fslsplit"
 
   - name: FSL fslmerge check
     description: Check fslmerge is available
-    command: fslmerge 2>&1 | head -5 || true
-    expected_output_contains: ""
+    command: fslmerge 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "Usage: fslmerge"
 
   - name: FSL bet brain extraction
     description: Simple brain extraction using BET
@@ -395,7 +2765,9 @@ tests:
       import nibabel as nib
       orig = nib.load('${t1w}')
       defaced = nib.load('test_output/t1w_defaced_default.nii.gz')
-      assert orig.affine.shape == defaced.affine.shape, 'Affine shape mismatch'
+      import numpy as np
+      np.testing.assert_array_equal(orig.affine, defaced.affine)
+      np.testing.assert_array_equal(orig.header.get_zooms(), defaced.header.get_zooms())
       print(f'Header preserved: affine shape {orig.affine.shape}')
       "
     depends_on: Basic defacing with default output
@@ -407,13 +2779,14 @@ tests:
   - name: pydeface with missing input
     description: Test error handling for missing input file
     command: pydeface nonexistent_file.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "Traceback"
+    expected_exit_code: 1
+    expected_output_contains: ["Traceback", "nonexistent_file.nii.gz"]
 
   - name: pydeface with invalid cost function
     description: Test error handling for invalid cost function
-    command: pydeface ${t1w} --cost invalid_cost 2>&1 || true
-    expected_output_contains: ""
+    command: pydeface ${t1w} --outfile ${output_dir}/invalid-cost-result.nii.gz --force --cost invalid_cost 2>&1
+    expected_exit_code: 1
+    expected_output_contains: ["cost_func", "invalid_cost"]
 
   # ==========================================================================
   # TEMPLATE AND FACEMASK LOCATIONS
@@ -470,9 +2843,94 @@ tests:
     depends_on: Basic defacing with default output
     expected_output_contains: "Original T1w stats"
 
+
+  - name: Exact architecture-specific runtime versions
+    description: Require the current PyDeface/scientific pins and official architecture-specific FSL version without changing the x86 base
+    command: |
+      set -euo pipefail
+      case "$(uname -m)" in
+        aarch64) expected="${fsl_arm64_version}" ;;
+        x86_64) expected="${fsl_x86_version}" ;;
+        *) exit 1 ;;
+      esac
+      actual="$(cat "$FSLDIR/etc/fslversion")"
+      printf 'FSL runtime at %s reports %s; expected %s\n' "$FSLDIR" "$actual" "$expected"
+      test "$actual" = "$expected"
+      python -m pip check
+      python - <<'PYTHON'
+      from importlib.metadata import version
+      expected={'pydeface':'${pydeface_version}','numpy':'2.2.6','scipy':'1.16.3','nibabel':'5.4.2','nipype':'1.12.0'}
+      for package,wanted in expected.items():
+          assert version(package)==wanted,(package,version(package),wanted)
+      print('Exact PyDeface scientific versions and official FSL runtime verified')
+      PYTHON
+    expected_output_contains: Exact PyDeface scientific versions and official FSL runtime verified
+    expected_exit_code: 0
+
+  - name: Every defaced voxel matches the actual registered mask
+    description: Run real registration/defacing on a private image copy and assert its full mask product within NIfTI storage quantization, nontrivial removed/retained tissue and exact physical geometry
+    timeout: 600
+    command: |
+      env -u HOME OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python - <<'PYTHON'
+      import hashlib
+      import os
+      from pathlib import Path
+      import shutil
+      import subprocess
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+      with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as directory:
+          root = Path(directory)
+          original = root/'anatomical.nii.gz'
+          output = root/'anatomical-defaced.nii.gz'
+          shutil.copyfile('${t1w}',original)
+          before = hashlib.sha256(original.read_bytes()).hexdigest()
+          environment = dict(os.environ,TMPDIR=str(root))
+          subprocess.run(['pydeface',str(original),'--outfile',str(output),'--cost','corratio','--nocleanup','--verbose'],env=environment,check=True)
+          mask_path = root/'anatomical_pydeface_mask.nii.gz'
+          assert mask_path.is_file() and (root/'anatomical_pydeface.mat').is_file()
+          source = nib.load(original)
+          result = nib.load(output)
+          mask_image = nib.load(mask_path)
+          values = np.asanyarray(source.dataobj)
+          mask = np.asanyarray(mask_image.dataobj)
+          actual = result.get_fdata()
+          expected = np.asarray(values*mask,dtype=np.float64)
+          assert source.shape==result.shape==mask_image.shape
+          np.testing.assert_array_equal(source.affine,result.affine)
+          np.testing.assert_array_equal(source.header.get_zooms(),result.header.get_zooms())
+          assert np.isfinite(mask).all() and np.isfinite(actual).all()
+          assert mask.min()>=0 and mask.max()<=1+8*np.finfo(np.float32).eps
+          # PyDeface preserves the input storage type. Bound the documented NIfTI
+          # integer quantization by half a stored bin, plus float32 scaling roundoff.
+          step = abs(float(result.dataobj.slope)) if np.issubdtype(result.get_data_dtype(),np.integer) else 0.0
+          bound = step/2+8*np.finfo(np.float32).eps*max(1.0,float(np.max(np.abs(expected))))
+          assert np.max(np.abs(actual-expected))<=bound
+          removed = np.count_nonzero((values!=0)&(mask==0))
+          retained = np.count_nonzero((values!=0)&(mask==1))
+          assert removed>1000 and retained>1000
+          assert removed<np.count_nonzero(values)
+          assert hashlib.sha256(original.read_bytes()).hexdigest()==before
+          print('Mask product checked for',values.size,'voxels; removed',removed,'retained',retained,'NIfTI storage bound',bound)
+      print('Actual PyDeface registration and mask application agree at every voxel with unchanged input and spatial geometry')
+      PYTHON
+    expected_output_contains: Actual PyDeface registration and mask application agree at every voxel with unchanged input and spatial geometry
+    expected_exit_code: 0
+
+  - name: Native ARM diagnosis requires review
+    description: Temporary failure gate until the native registration evidence is reviewed and diagnostics are removed
+    command: |
+      echo "DIAGNOSTICBLOCKED PR 3580 native ARM registration is not repaired or approved"
+      exit 1
+    expected_exit_code: 0
+
 cleanup:
   script: |
     #!/usr/bin/env bash
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+fsl_arm64_version: "6.0.7.23"
+fsl_x86_version: "6.0.3:b862cdd5"
+pydeface_version: "2.1.0"
