@@ -8,7 +8,7 @@ copyright:
 architectures:
   - x86_64
 variables:
-  base_image_digest: sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+  base_image_digest: "sha256:ac3a3d13e90c660a1cb3e89ec695533399f7378dc1ae5fbdc28eb5781d561594"
 auto_update:
   # The image ships only the launcher and operating system prerequisites.
   # CryoSPARC itself is licence-gated and chosen by the user at install time,
