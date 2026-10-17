@@ -35,11 +35,13 @@ setup:
     from __future__ import annotations
 
     import ctypes
-    from dataclasses import dataclass
+    from bisect import bisect_right
+    from dataclasses import asdict, dataclass
     import errno
     import hashlib
     import http.client
     import json
+    import math
     import os
     from pathlib import Path
     import platform
@@ -58,7 +60,7 @@ setup:
     import time
     from types import FrameType
     # Any is confined to heterogeneous JSON record values.
-    from typing import Any, Callable, Literal
+    from typing import Any, Callable, Literal, Mapping, Sequence
 
     StopOutcome = Literal['not_attempted', 'in_flight', 'requested', 'absent', 'raised']
 
@@ -1519,6 +1521,364 @@ setup:
             save(plan, 'sibling-recorder-maps.json', receipt)
 
 
+    @dataclass(frozen=True)
+    class _ProcessIdentity:
+        pid: int
+        start_ticks: int
+        boot_id: str
+
+
+    @dataclass(frozen=True)
+    class _Mapping:
+        start: int
+        end: int
+        permissions: str
+        offset: int
+        device: tuple[int, int]
+        inode: int
+        name: str
+
+
+    @dataclass(frozen=True)
+    class _MapsObservation:
+        owner: _ProcessIdentity
+        phase: Literal['before_enable', 'after_stop', 'after_decode']
+        started: float
+        finished: float
+        rows: tuple[_Mapping, ...]
+        retained_bytes: str
+        bytes_sha256: str
+
+
+    @dataclass(frozen=True)
+    class _OpenedFile:
+        path: str
+        device: tuple[int, int]
+        inode: int
+        source_before: tuple[int, int, int, int, int]
+        source_after: tuple[int, int, int, int, int]
+        sha256: str
+        build_id: str | None
+        source_status: Literal['unresolved']
+
+
+    @dataclass(frozen=True)
+    class _RecordedMapping:
+        record_index: int
+        pid: int
+        tid: int
+        mapping: _Mapping
+
+
+    @dataclass(frozen=True)
+    class _Sample:
+        ordinal: int
+        record_index: int
+        pid: int
+        tid: int
+        ip: int
+        event: Literal['cpu-clock:u']
+        dso: str
+        decoder_symbol: str
+
+
+    @dataclass(frozen=True)
+    class _KernelRangeEvidence:
+        owner: _ProcessIdentity
+        mapping: _Mapping
+        observations: tuple[_MapsObservation, _MapsObservation, _MapsObservation]
+        recorded: _RecordedMapping
+        samples: tuple[_Sample, ...]
+        kind: Literal['kernel_mapping'] = 'kernel_mapping'
+        file_backed: Literal[False] = False
+        symbol_provenance: Literal['unresolved'] = 'unresolved'
+        source_provenance: Literal['unresolved'] = 'unresolved'
+        continuous_mapping_history: Literal[False] = False
+
+
+    @dataclass(frozen=True)
+    class _SiblingAdmission:
+        claim: Literal['sibling_sampling_mechanics']
+        quality: Mapping[str, object]
+        file_samples: int
+        kernel: _KernelRangeEvidence | None
+
+
+    def _parse_busy_maps(data: bytes) -> tuple[_Mapping, ...]:
+        if not data or len(data) > POLICY['metadata'] or not data.endswith(b'\n'):
+            raise Refusal('incomplete busy maps')
+        rows = []
+        for line in data.decode().splitlines():
+            match = re.fullmatch(r'([0-9a-f]+)-([0-9a-f]+) +([r-][w-][x-][ps]) +'
+                                 r'([0-9a-f]+) +([0-9a-f]+):([0-9a-f]+) +(\d+)(?: +(.*))?', line)
+            if match is None:
+                raise Refusal('malformed busy maps row')
+            row = _Mapping(int(match[1], 16), int(match[2], 16), match[3], int(match[4], 16),
+                           (int(match[5], 16), int(match[6], 16)), int(match[7]), match[8] or '')
+            if not 0 < row.start < row.end <= 2**64 or row.offset >= 2**64:
+                raise Refusal('invalid busy maps range')
+            rows.append(row)
+        ordered = sorted(rows, key=lambda row: row.start)
+        if any(left.end > right.start for left, right in zip(ordered, ordered[1:])):
+            raise Refusal('overlapping busy maps')
+        return tuple(rows)
+
+
+    def _opened_sibling_files(objects: Sequence[Mapping[str, object]]) -> dict[str, _OpenedFile]:
+        opened = {}
+        for obj in objects:
+            path, device, inode = obj.get('path'), obj.get('device'), obj.get('inode')
+            before, after = obj.get('source_before'), obj.get('source_after')
+            digest, identity = obj.get('sha256'), obj.get('build_id')
+            if (not isinstance(path, str) or not path.startswith('/') or path.endswith(' (deleted)')
+                    or path in opened or not isinstance(device, str)
+                    or not re.fullmatch(r'[0-9a-f]+:[0-9a-f]+', device)
+                    or type(inode) is not int or inode <= 0
+                    or not isinstance(before, (list, tuple)) or len(before) != 5
+                    or not isinstance(after, (list, tuple)) or len(after) != 5
+                    or any(type(value) is not int for value in (*before, *after))
+                    or tuple(before) != tuple(after)
+                    or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
+                    or (identity is not None and (not isinstance(identity, str)
+                        or not re.fullmatch(r'(?:[0-9a-f]{2})+', identity)))
+                    or obj.get('source_status') != 'unresolved'):
+                raise Refusal('invalid opened sibling file evidence')
+            major, minor = (int(part, 16) for part in device.split(':'))
+            if (os.major(before[0]), os.minor(before[0]), before[1]) != (major, minor, inode):
+                raise Refusal('opened sibling file identity mismatch')
+            opened[path] = _OpenedFile(path, (major, minor), inode, tuple(before), tuple(after),
+                                       digest, identity, 'unresolved')
+        return opened
+
+
+    def _parse_sibling_dump(dump: bytes, pid: int) -> tuple[
+            tuple[_RecordedMapping, ...], tuple[tuple[int, int, int, int], ...]]:
+        if len(dump) > POLICY['text']:
+            raise Refusal('sibling dump byte limit')
+        text = dump.decode()
+        prefix = r'\d+ 0x[0-9a-f]+ \[0x[0-9a-f]+\]: '
+        marker = re.compile(r'^\s*(?:[^\n]*\s)?PERF_RECORD_(MMAP2|MMAP|SAMPLE)\b')
+        mapping_pattern = re.compile(prefix + r'PERF_RECORD_MMAP2 (\d+)/(\d+): '
+            r'\[0x([0-9a-f]+)\(0x([0-9a-f]+)\) @ ([0-9a-f]+) '
+            r'([0-9a-f]+):([0-9a-f]+) (\d+) (\d+)\]: ([r-][w-][x-][ps]) (.+)')
+        sample_pattern = re.compile(prefix + r'PERF_RECORD_SAMPLE\(IP, 0x2\): '
+            r'(\d+)/(\d+): 0x([0-9a-f]+) period: \d+ addr: 0')
+        mappings, samples = [], []
+        counts = dict(MMAP=0, MMAP2=0, SAMPLE=0)
+        for index, line in enumerate(text.splitlines()):
+            found = marker.match(line)
+            if found is None:
+                continue
+            kind = found[1]
+            counts[kind] += 1
+            if sum(counts.values()) > POLICY['records']:
+                raise Refusal('sibling record limit')
+            if kind == 'MMAP2':
+                match = mapping_pattern.fullmatch(line)
+                if match is None:
+                    raise Refusal('malformed sibling MMAP2 record')
+                start, length = int(match[3], 16), int(match[4], 16)
+                row = _Mapping(start, start+length, match[10], int(match[5], 16),
+                               (int(match[6], 16), int(match[7], 16)), int(match[8]), match[11])
+                if (int(match[1]) != pid or int(match[2]) != pid
+                        or not 0 < row.start < row.end <= 2**64 or row.offset >= 2**64):
+                    raise Refusal('invalid or foreign sibling mapping')
+                mappings.append(_RecordedMapping(index, int(match[1]), int(match[2]), row))
+            elif kind == 'SAMPLE':
+                match = sample_pattern.fullmatch(line)
+                if match is None:
+                    raise Refusal('malformed sibling SAMPLE record')
+                if int(match[1]) != pid or int(match[2]) != pid or int(match[3], 16) >= 2**64:
+                    raise Refusal('invalid or foreign sibling sample')
+                samples.append((index, int(match[1]), int(match[2]), int(match[3], 16)))
+            else:
+                raise Refusal('unsupported sibling MMAP record')
+        sections = text.split('Aggregated stats:\n')
+        if len(sections) != 2:
+            raise Refusal('sibling record summary unavailable')
+        summary = sections[1].split('cpu-clock:u stats:', 1)[0]
+        for kind, count in counts.items():
+            totals = re.findall(r'^\s*'+kind+r' events:\s+(\d+)(?:\s+\([^\n]*\))?\s*$', summary, re.M)
+            if len(totals) != 1 or int(totals[0]) != count:
+                raise Refusal('sibling record marker accounting mismatch')
+        ordered = sorted(mappings, key=lambda item: item.mapping.start)
+        if any(left.mapping.end > right.mapping.start for left, right in zip(ordered, ordered[1:])):
+            raise Refusal('overlapping recorded sibling mappings')
+        return tuple(mappings), tuple(samples)
+
+
+    def _admit_sibling_capture(
+        *, owner: _ProcessIdentity, observations: Sequence[_MapsObservation],
+        objects: Sequence[Mapping[str, object]], quality: Mapping[str, object],
+        samples: bytes, dump: bytes, timing: Mapping[str, object],
+    ) -> _SiblingAdmission:
+        if len(observations) != 3 or tuple(item.phase for item in observations) != (
+                'before_enable', 'after_stop', 'after_decode'):
+            raise Refusal('missing or unordered busy maps observations')
+        before, stopped, decoded = observations
+        for item in observations:
+            if item.owner != owner:
+                raise Refusal('foreign busy maps identity')
+            if (not math.isfinite(item.started) or not math.isfinite(item.finished)
+                    or not 0 <= item.started <= item.finished):
+                raise Refusal('invalid busy maps observation time')
+        times = timing.get('times')
+        keys = ('ping_ack', 'last_validation', 'enable_send', 'terminal_observed', 'post_identity', 'ended')
+        if not isinstance(times, dict) or any(type(times.get(key)) not in (int, float)
+                or not math.isfinite(times[key]) for key in keys):
+            raise Refusal('missing sibling observation timing')
+        if not (times['ping_ack'] <= before.started <= before.finished <= times['last_validation']
+                <= times['enable_send'] <= times['terminal_observed'] <= stopped.started
+                <= stopped.finished <= times['post_identity'] <= times['ended'] <= decoded.started):
+            raise Refusal('busy maps outside recorder brackets')
+        if times['enable_send']-before.finished > POLICY['admission']:
+            raise Refusal('stale busy maps before enable')
+        opened = _opened_sibling_files(objects)
+        mappings, recorded_samples = _parse_sibling_dump(dump, owner.pid)
+        executable = sorted((item for item in mappings if 'x' in item.mapping.permissions),
+                            key=lambda item: item.mapping.start)
+        starts = [item.mapping.start for item in executable]
+        occurrences, kernel_samples = [], []
+        dsos: dict[str, int] = {}
+        stamps = []
+        unknown = unknown_dsos = file_samples = 0
+        if len(samples) > POLICY['text']:
+            raise Refusal('sibling sample byte limit')
+        for line in samples.decode().splitlines():
+            if not line.strip() or line.startswith('#'):
+                continue
+            match = re.fullmatch(r'\s*(\d+)/(\d+)\s+([0-9.]+):\s+(cpu-clock:u):\s+'
+                                 r'([0-9a-fA-F]+)\s+(.+)\s+\((.*)\)\s*', line)
+            if match is None or len(occurrences) >= len(recorded_samples):
+                raise Refusal('sibling sample occurrence mismatch')
+            index, pid, tid, ip = recorded_samples[len(occurrences)]
+            if (int(match[1]), int(match[2]), int(match[5], 16)) != (pid, tid, ip):
+                raise Refusal('sibling script/dump identity mismatch')
+            sample = _Sample(len(occurrences), index, pid, tid, ip, 'cpu-clock:u', match[7], match[6])
+            position = bisect_right(starts, ip)-1
+            if position < 0:
+                raise Refusal('sibling sample has no preceding mapping')
+            recorded = executable[position]
+            row = recorded.mapping
+            if ip >= row.end or recorded.record_index >= index:
+                raise Refusal('sibling sample has no preceding mapping')
+            if row.name != sample.dso:
+                raise Refusal('sibling sample mapping label mismatch')
+            if sample.dso == '[vdso]':
+                kernel_samples.append(sample)
+            elif sample.dso in opened:
+                obj = opened[sample.dso]
+                if (row.device, row.inode) != (obj.device, obj.inode):
+                    raise Refusal('sibling recorded file identity mismatch')
+                file_samples += 1
+            else:
+                raise Refusal('unbound sibling sample DSO')
+            occurrences.append(sample)
+            dsos[sample.dso] = dsos.get(sample.dso, 0)+1
+            unknown += int('[unknown]' in sample.decoder_symbol)
+            unknown_dsos += int('[unknown]' in sample.dso)
+            stamp = float(match[3])
+            if not math.isfinite(stamp):
+                raise Refusal('invalid sibling sample timestamp')
+            stamps.append(stamp)
+        total = len(occurrences)
+        if (not total or total != len(recorded_samples) or quality.get('total') != total
+                or quality.get('dsos') != dsos or quality.get('tids') != {str(owner.pid): total}
+                or quality.get('events') != {'cpu-clock:u': total} or quality.get('lost') != 0
+                or quality.get('unknown_symbols') != unknown or quality.get('unknown_dsos') != unknown_dsos
+                or quality.get('unknown_fraction') != unknown/total
+                or quality.get('first_time') != min(stamps) or quality.get('last_time') != max(stamps)):
+            raise Refusal('sibling quality reconciliation mismatch')
+        kernel = None
+        if kernel_samples:
+            live = []
+            for item in observations:
+                rows = [row for row in item.rows if row.name == '[vdso]']
+                if len(rows) != 1:
+                    raise Refusal('missing or ambiguous busy vdso range')
+                live.append(rows[0])
+            row = live[0]
+            if (any(other != row for other in live[1:]) or row.permissions != 'r-xp'
+                    or row.offset != 0 or row.device != (0, 0) or row.inode != 0):
+                raise Refusal('changed or invalid busy vdso range')
+            matches = [item for item in mappings if item.mapping.name == '[vdso]']
+            if len(matches) != 1 or matches[0].mapping != row:
+                raise Refusal('recorded vdso range does not match busy observations')
+            if any(not row.start <= sample.ip < row.end for sample in kernel_samples):
+                raise Refusal('sibling sample outside busy vdso range')
+            kernel = _KernelRangeEvidence(owner, row, (before, stopped, decoded), matches[0], tuple(kernel_samples))
+        return _SiblingAdmission('sibling_sampling_mechanics', quality, file_samples, kernel)
+
+
+    def _observe_busy_maps(
+        plan: RunPlan, target: ObservedProcess,
+        phase: Literal['before_enable', 'after_stop', 'after_decode'],
+    ) -> _MapsObservation:
+        _diagnostic_check(plan)
+        target.check()
+        started = time.monotonic()
+        data = read_bytes(f'/proc/{target.pid}/maps', POLICY['metadata'])
+        target.check()
+        _diagnostic_check(plan)
+        finished = time.monotonic()
+        name = 'preflight-'+phase+'.maps'
+        save(plan, name, data)
+        observation = _MapsObservation(_ProcessIdentity(target.pid, target.ticks, plan.boot), phase,
+            started, finished, _parse_busy_maps(data), name, hashlib.sha256(data).hexdigest())
+        save(plan, 'preflight-'+phase+'.json', asdict(observation))
+        _diagnostic_check(plan)
+        target.check()
+        return observation
+
+
+    def _run_sibling_preflight(plan: RunPlan, perf: str, busy: int) -> None:
+        _diagnostic_check(plan)
+        target = ObservedProcess.open(busy)
+        observations: list[_MapsObservation] = []
+
+        def observe_busy() -> None:
+            if len(observations) == 0:
+                phase: Literal['before_enable', 'after_stop', 'after_decode'] = 'before_enable'
+            elif len(observations) == 1:
+                phase = 'after_stop'
+            else:
+                raise Refusal('unexpected busy maps callback')
+            observation = _observe_busy_maps(plan, target, phase)
+            observations.append(observation)
+            _diagnostic_check(plan)
+            target.check()
+            if phase == 'before_enable' and time.monotonic()-observation.finished > POLICY['admission']:
+                raise Refusal('stale busy maps callback')
+
+        try:
+            raw = record(plan, perf, target.pid, 'preflight', observe_busy, 1)
+            if len(observations) != 2:
+                raise Refusal('missing busy maps callback')
+            with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
+                mirror = Path(directory)
+                objects = mapped_objects(plan, target, mirror)
+                quality = decode(plan, perf, raw, target.pid, 'preflight', mirror)
+                if mapped_objects(plan, target) != objects:
+                    raise Refusal('preflight mapped objects changed')
+                observations.append(_observe_busy_maps(plan, target, 'after_decode'))
+                samples = read_bytes(plan.retained/'preflight.samples.out', POLICY['text'])
+                dump = read_bytes(plan.retained/'preflight.dump.out', POLICY['text'])
+                timing = json.loads(read_bytes(plan.retained/'preflight.timing.json', POLICY['metadata']))
+                _diagnostic_check(plan)
+                target.check()
+                admitted = _admit_sibling_capture(owner=_ProcessIdentity(target.pid, target.ticks, plan.boot),
+                    observations=observations, objects=objects, quality=quality,
+                    samples=samples, dump=dump, timing=timing)
+        finally:
+            os.close(target.pidfd)
+        _diagnostic_check(plan)
+        save(plan, 'preflight-mapping.json', asdict(admitted))
+        _diagnostic_check(plan)
+        save(plan, 'sibling-ok.json', dict(stage='sibling_ok', at=time.monotonic(),
+                                          mapping_receipt='preflight-mapping.json'))
+        _diagnostic_check(plan)
+
+
     def worker(plan: RunPlan, channel: socket.socket, busy: int) -> None:
         plan.control = channel
         phase = 'bootstrap'
@@ -1536,23 +1896,7 @@ setup:
             perf = str(plan.tool.path)
             command(plan, [perf, '--version'], 'perf-version')
             save(plan, 'version-ok.json', dict(stage='version_ok', at=time.monotonic()))
-            preflight = ObservedProcess.open(busy)
-            try:
-                raw = record(plan, perf, busy, 'preflight', preflight.check, 1)
-                with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
-                    mirror = Path(directory)
-                    objects = mapped_objects(plan, preflight, mirror)
-                    quality = decode(plan, perf, raw, busy, 'preflight', mirror)
-                    if mapped_objects(plan, preflight) != objects:
-                        raise Refusal('preflight mapped objects changed')
-                    if any(name not in {obj['path'] for obj in objects} for name in quality['dsos']):
-                        raise Refusal('preflight sample DSO cannot be bound to a mapped object')
-            finally:
-                os.close(preflight.pidfd)
-            if time.monotonic()-preflight_start > POLICY['preflight']:
-                raise Refusal('preflight deadline')
-            _diagnostic_check(plan)
-            save(plan, 'sibling-ok.json', dict(stage='sibling_ok', at=time.monotonic()))
+            _run_sibling_preflight(plan, perf, busy)
             plan.preflight_deadline = float('inf')
             send(channel, 'acquire')
             save(plan, 'observing.json', dict(stage='observing', at=time.monotonic()))
