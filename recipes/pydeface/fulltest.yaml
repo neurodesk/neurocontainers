@@ -978,6 +978,15 @@ setup:
                     info = os.fstat(fd)
                     actual = f'{os.major(info.st_dev):02x}:{os.minor(info.st_dev):02x}'
                     if (actual, info.st_ino) != (device, inode):
+                        save(plan, 'mapped-object-refusal.json', dict(
+                            kind='mapped_object_identity_refusal', call_site='mapped_objects.device_inode',
+                            pid=target.pid, start_ticks=target.ticks, boot_id=plan.boot,
+                            path=name, ordinal=len(objects)+1, selected_count=len(paths),
+                            expected=dict(device=device, inode=inode),
+                            actual=dict(st_dev=info.st_dev, device=actual, st_ino=info.st_ino,
+                                        st_mode=info.st_mode, st_size=info.st_size),
+                            mirror=str(mirror) if mirror is not None else None,
+                            maps=maps, maps_sha256=hashlib.sha256(maps.encode('utf-8')).hexdigest()))
                         raise Refusal('mapped object device/inode mismatch')
                     aggregate += info.st_size
                     if aggregate > 256*1024**2:
