@@ -58,7 +58,9 @@ setup:
     import time
     from types import FrameType
     # Any is confined to heterogeneous JSON record values.
-    from typing import Any, Callable
+    from typing import Any, Callable, Literal
+
+    StopOutcome = Literal['not_attempted', 'in_flight', 'requested', 'absent', 'raised']
 
     BASE = 'a3cd2eb0a42da42030d1547179b20dab066355a5'
     EXE = '/opt/fsl-6.0.7.23/bin/flirt'
@@ -114,12 +116,13 @@ setup:
         pid: int
         group: bool = False
 
-        def signal(self, sig: int) -> None:
+        def signal(self, sig: int) -> bool:
             # The sole reaper keeps this child unreaped until the last signal.
             try:
                 (os.killpg if self.group else os.kill)(self.pid, sig)
             except ProcessLookupError:
-                pass
+                return False
+            return True
 
 
     @dataclass
@@ -631,6 +634,9 @@ setup:
         os.close(ack_write)
         end = min(times['pre_spawn']+POLICY['record'], plan.preflight_deadline)
         status = None
+        stop_outcome: StopOutcome = 'not_attempted'
+        pre_stop: os.waitid_result | None = None
+        terminal: os.waitid_result | None = None
         try:
             control(control_write, ack_read, 'ping', min(end, times['pre_spawn']+POLICY['disabled']), times)
             if label == 'preflight':
@@ -655,10 +661,33 @@ setup:
             control(control_write, ack_read, 'disable', min(end, time.monotonic()+1), times)
             times['interval_lower'] = times['disable_send']-times['enable_ack']
             times['interval_upper'] = times['disable_ack']-times['enable_send']
-            child.signal(signal.SIGINT)
-            while not os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
-                if time.monotonic() > end:
+            pre_stop = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            times['stop_checked'] = time.monotonic()
+            if times['stop_checked'] > end:
+                raise Refusal('record stop deadline')
+            if pre_stop is not None:
+                raise Refusal('recorder exited before stop')
+            times['stop_attempt'] = time.monotonic()
+            stop_outcome = 'in_flight'
+            try:
+                requested = child.signal(signal.SIGINT)
+            except BaseException:
+                stop_outcome = 'raised'
+                times['stop_returned'] = time.monotonic()
+                raise
+            stop_outcome = 'requested' if requested else 'absent'
+            times['stop_returned'] = time.monotonic()
+            if not requested:
+                raise Refusal('recorder stop target absent')
+            while True:
+                terminal = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                observed = time.monotonic()
+                if terminal is not None:
+                    times['terminal_observed'] = observed
+                if observed > end:
                     raise Refusal('record flush deadline')
+                if terminal is not None:
+                    break
                 time.sleep(.02)
             if times['interval_lower'] < duration or times['interval_upper'] > duration+POLICY['service']:
                 raise Refusal('enabled interval outside admission band')
@@ -671,8 +700,14 @@ setup:
             os.close(ack_read)
             times['ended'] = time.monotonic()
             save(plan, label+'.timing.json', dict(argv=args, times=times, requested_interval=duration,
-                 returncode=os.waitstatus_to_exitcode(status), numeric_pid_attach_nonatomic=True))
-        if status or not raw.is_file() or not 0 < raw.stat().st_size <= POLICY['raw']:
+                 returncode=os.waitstatus_to_exitcode(status), numeric_pid_attach_nonatomic=True,
+                 raw_status=status, stop=dict(requested_signal=int(signal.SIGINT), outcome=stop_outcome,
+                     pre_stop=None if pre_stop is None else dict(si_code=pre_stop.si_code, si_status=pre_stop.si_status),
+                     terminal=None if terminal is None else dict(si_code=terminal.si_code, si_status=terminal.si_status))))
+        if (stop_outcome != 'requested' or terminal is None
+                or not (status == 0 or (os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGINT
+                                       and not os.WCOREDUMP(status)))
+                or not raw.is_file() or not 0 < raw.stat().st_size <= POLICY['raw']):
             raise Refusal('invalid recorder result')
         if plan.control is not None:
             send(plan.control, 'operation_done')
