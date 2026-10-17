@@ -516,7 +516,7 @@ EPI modes. The GRE alignment module copies parsed parameters and forces
 `motioncorrection: true`, including when the caller supplies false. It preserves
 `motionreference` and unrelated advanced options without changing caller data.
 Standard GRE still accepts advanced `motioncorrection`, which defaults to false.
-`twopass` is a scanner boolean with default false. `qsmreference` is a string with default `mean`. `vsharpgrid` accepts `native`, `finest`, or `isotropic`, with default `native`. `swiunwrapping` accepts `laplacian`, `laplacian-slice`, or `romeo`, with default `laplacian`.
+`twopass` is a scanner boolean with default false. `qsmreference` is a string with default `mean`. `vsharpgrid` accepts `native`, `finest`, or `isotropic`, with default `native`. Advanced `swiunwrapping` accepts `laplacian`, `laplacian-slice`, or `romeo`, with default `laplacian`. Its parser still honors saved configurations. The default-off boolean `regionalqsmtable` replaces this GUI choice to retain the schema's maximum of 14 controls.
 
 Advanced `motionreference` accepts `first`, `last`, or a positive 1-based echo index. Advanced `vsharpisotropicspacing` is a positive spacing in millimeters passed as `--vsharp-grid-spacing`. The native reliable-pass mask remains unfilled. Ordinary close/fill mask refinements do not apply to that mask. Main QSM output discovery excludes `desc-singlepass` alongside source-separation maps.
 
@@ -549,6 +549,58 @@ Every non-background SynthSeg v1 label is available by id or slug. Bilateral slu
 `ventricles` is the union `4,5,14,15,43,44`. Other unions use comma-separated terms, such as `thalamus,caudate`, `left-thalamus,right-caudate`, or `4,43`. Duplicate terms are deduplicated by the native resolver. Background id 0 and unknown ids are invalid. `mean` and `none` cannot be mixed with region terms.
 
 Region selection enables SynthSeg on combined GRE magnitude anatomy. The offset is the ROI mean within defined reconstruction support. QSMxT subtracts this offset over the whole support and keeps unsupported voxels at zero. Empty intersections fail. Fewer than 50 supported ROI voxels produce a warning. Native reference summaries record the offset and voxel count. `csf` is label 24 in SynthSeg v2, distinct from `ventricles`. Public v2 weights are unavailable. This recipe packages the pinned v1 model.
+
+### Regional QSM report
+
+`regionalqsmtable=true` adds native `--do-analysis`, which implies SynthSeg
+segmentation on combined GRE magnitude anatomy in QSMxT 10.0.0. It requires QSM
+and rejects advanced `noqsm=true` before reconstruction. Selecting a non-QSM
+`sendoutputs` value still permits QSM reconstruction and analysis, while map
+delivery follows the selected outputs.
+
+`qsmxt_regional_report.build_pages(output_dir, *, input_variant,
+requested_reference)` discovers exactly one per-run
+`derivatives/qsmxt/sub-*/**/anat/*_desc-segmentation_stats.tsv`. It excludes the
+dataset aggregate and rejects missing or ambiguous run files. The complete UTF-8
+TSV text is logged with the input variant and requested reference before parsing
+or renderer imports. The log retains native formatting and rows for other maps.
+
+The report accepts only exact `map=Chimap`, `unit=ppm` rows with unique positive
+labels, names, finite mean/SD/median, nonnegative SD, and positive valid counts
+no larger than total counts. Recorded reference offsets must be finite. Native
+reference and offset fields may be blank and appear as `not recorded`, separately
+from the requested reference. All QSM rows must agree on native provenance.
+Missing, malformed, or inconsistent QSM data fails the optional report rather
+than displaying partial results. Other maps, including source separation maps,
+are ignored. No atlas label list or statistics are computed by the adapter.
+QSMxT excludes zero and nonfinite voxels and labels without valid values.
+
+Each page repeats the input variant, requested reference, native reference, and
+offset, and displays region labels, mean/SD/median in ppm, and valid/total voxel
+counts. Long names and references wrap; all rows paginate into equal-size
+1600 by 1800 grayscale pages. Rendering uses matplotlib's packaged DejaVu font
+and Pillow, supplied by the existing OpenRecon macro.
+
+The adapter validates and sends quantitative maps first. Inside the temporary
+run directory, it prepares and separately validates one report MRD message
+containing all pages, rotated 180 degrees for the scanner viewer. The report uses
+one channel, uint16 `0..4095` pixels, explicit matrix and FOV
+`(width, height, pages)`, zero origin, and identity directions. Metadata includes
+`DataRole=Segmentation`, `Keep_image_geometry=0`, `partition_count=1`, and
+`slice_count=NumberOfSlices=ImagesInAcquisition=pages`. Header slice is zero and
+image index is one. Integer display window center/width are `2048`/`4096`.
+Source minihead, parent references, scaling, and physical map attributes are
+removed. Patient and study identity remain. Report pixels contain text with no
+physical ppm rescaling.
+
+Reports share series allocation with maps and originals. Each selected DC or ND
+variant receives a distinct series, SOP, and grouping identity. Report preparation
+errors are logged locally and to the scanner error channel, preserve sent maps,
+and allow the next variant to run. A successful report is sent outside that
+error handler, so connection failures follow normal process error handling.
+The temporary output directory is removed at run completion. This feature adds
+no persistent patient file lifecycle and does not change quantitative map
+validation or the pinned native version.
 
 ### Acquired slice geometry
 
