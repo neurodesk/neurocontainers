@@ -530,7 +530,7 @@ jobs:
     needs: [resolve, await_candidate]
     if: >-
       !inputs.signing_acceptance &&
-      !inputs.staged_run_id &&
+      inputs.staged_run_id == 0 &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: ${{ inputs.runner == 'blacksmith-8vcpu-ubuntu-2404' && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers' }}
@@ -834,7 +834,7 @@ jobs:
       !inputs.signing_acceptance &&
       needs.await_candidate.result == 'success' &&
       (needs.publish.result == 'success' ||
-        (inputs.staged_run_id && needs.publish.result == 'skipped')) &&
+        (inputs.staged_run_id > 0 && needs.publish.result == 'skipped')) &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: ubuntu-latest
@@ -884,7 +884,7 @@ jobs:
           pattern: promotion-metadata-*-${{ needs.resolve.outputs.head_sha }}
           path: promotion-metadata
           merge-multiple: true
-          run-id: ${{ inputs.staged_run_id || github.run_id }}
+          run-id: ${{ inputs.staged_run_id > 0 && inputs.staged_run_id || github.run_id }}
           github-token: ${{ github.token }}
       - name: Revalidate and combine published manifests
         id: select
@@ -1102,7 +1102,7 @@ jobs:
           pattern: promotion-metadata-*-${{ needs.resolve.outputs.head_sha }}
           path: promotion-metadata
           merge-multiple: true
-          run-id: ${{ inputs.staged_run_id || github.run_id }}
+          run-id: ${{ inputs.staged_run_id > 0 && inputs.staged_run_id || github.run_id }}
           github-token: ${{ github.token }}
       - name: Sync OpenRecon metadata
         env:
