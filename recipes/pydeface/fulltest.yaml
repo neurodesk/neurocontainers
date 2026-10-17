@@ -32,6 +32,8 @@ setup:
   host_script: |
     python3 - "${output_dir}" "${t1w}" <<'NATIVE_PROFILE_PY'
     """One read-only ARM diagnostic. Missing or pending evidence is incomplete."""
+    from __future__ import annotations
+
     import ctypes
     from dataclasses import dataclass
     import errno
@@ -52,6 +54,9 @@ setup:
     import sys
     import tempfile
     import time
+    from types import FrameType
+    # Any is confined to heterogeneous JSON record values.
+    from typing import Any, Callable
 
     BASE = 'a3cd2eb0a42da42030d1547179b20dab066355a5'
     EXE = '/opt/fsl-6.0.7.23/bin/flirt'
@@ -84,7 +89,7 @@ setup:
         pidfd: int
 
         @classmethod
-        def open(cls, pid):
+        def open(cls, pid: int) -> ObservedProcess:
             before = process_stat(pid)
             fd = os.pidfd_open(pid)
             result = cls(pid, before['ticks'], fd)
@@ -95,7 +100,7 @@ setup:
                 os.close(fd)
                 raise
 
-        def check(self):
+        def check(self) -> dict[str, int | str]:
             value = process_stat(self.pid)
             if readable(self.pidfd) or value['ticks'] != self.ticks or value['state'] in ('Z', 'X'):
                 raise Refusal('process identity ended or changed')
@@ -107,7 +112,7 @@ setup:
         pid: int
         group: bool = False
 
-        def signal(self, sig):
+        def signal(self, sig: int) -> None:
             # The sole reaper keeps this child unreaped until the last signal.
             try:
                 (os.killpg if self.group else os.kill)(self.pid, sig)
@@ -125,14 +130,14 @@ setup:
         started: float
         wall: float
         boot: str
-        control: object = None
+        control: socket.socket | None = None
 
 
-    def readable(fd):
+    def readable(fd: int | socket.socket) -> bool:
         return bool(select.select([fd], [], [], 0)[0])
 
 
-    def read_bytes(path, cap=None):
+    def read_bytes(path: str | Path, cap: int | None = None) -> bytes:
         cap = cap or POLICY['metadata']
         deadline = time.monotonic() + POLICY['read']
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
@@ -151,20 +156,20 @@ setup:
             os.close(fd)
 
 
-    def process_stat(pid):
+    def process_stat(pid: int) -> dict[str, int | str]:
         text = read_bytes(f'/proc/{pid}/stat', 8192).decode()
         fields = text.rsplit(')', 1)[1].split()
         return dict(pid=pid, ticks=int(fields[19]), ppid=int(fields[1]), state=fields[0])
 
 
-    def argv(pid):
+    def argv(pid: int) -> list[str]:
         raw = read_bytes(f'/proc/{pid}/cmdline', 65536)
         if not raw.endswith(b'\0'):
             raise Refusal('incomplete live argv')
         return raw[:-1].decode().split('\0')
 
 
-    def ancestry(pid, owner):
+    def ancestry(pid: int, owner: ObservedProcess) -> list[dict[str, int | str]]:
         chain = []
         for _ in range(POLICY['objects']):
             item = process_stat(pid)
@@ -178,7 +183,7 @@ setup:
         raise Refusal('process is not descended from verified runner')
 
 
-    def namespace(pid):
+    def namespace(pid: int) -> str:
         value = read_bytes(f'/proc/{pid}/status').decode()
         match = re.search(r'^NSpid:\s+(.+)$', value, re.M)
         if not match or match.group(1).split() != [str(pid)]:
@@ -186,7 +191,7 @@ setup:
         return os.readlink(f'/proc/{pid}/ns/pid')
 
 
-    def parent_arm(expected):
+    def parent_arm(expected: int) -> None:
         libc = ctypes.CDLL(None, use_errno=True)
         if libc.prctl(1, signal.SIGKILL, 0, 0, 0):
             os._exit(90)
@@ -194,7 +199,7 @@ setup:
             os._exit(91)
 
 
-    def detach(keep):
+    def detach(keep: set[int]) -> None:
         fd = os.open('/dev/null', os.O_RDWR)
         for number in (0, 1, 2):
             os.dup2(fd, number)
@@ -207,14 +212,14 @@ setup:
                     pass
 
 
-    def send(channel, event, **fields):
+    def send(channel: socket.socket, event: str, **fields: Any) -> None:
         data = json.dumps(dict(event=event, at=time.monotonic(), **fields)).encode()
         if len(data) > 32768:
             raise Refusal('control message limit')
         os.write(channel.fileno(), data)
 
 
-    def receive(channel, deadline):
+    def receive(channel: socket.socket, deadline: float) -> dict[str, Any]:
         if not select.select([channel], [], [], max(0, deadline-time.monotonic()))[0]:
             raise Refusal('readiness deadline')
         data = os.read(channel.fileno(), 32769)
@@ -223,7 +228,7 @@ setup:
         return json.loads(data)
 
 
-    def manifest(directory, outcome, **facts):
+    def manifest(directory: Path, outcome: str, **facts: Any) -> None:
         data = json.dumps(dict(outcome=outcome, release='DIAGNOSTICBLOCKED',
                                baseline=BASE, at=time.monotonic(), **facts), sort_keys=True).encode()
         if len(data) > 65536:
@@ -234,7 +239,7 @@ setup:
         temporary.replace(directory / 'manifest.json')
 
 
-    def retained_size(directory):
+    def retained_size(directory: Path) -> int:
         total = 131072
         for path in directory.iterdir():
             if path.name in ('manifest.json', 'manifest.tmp'):
@@ -248,7 +253,8 @@ setup:
         return total
 
 
-    def save(plan, name, data):
+    def save(plan: RunPlan, name: str,
+             data: bytes | dict[str, Any] | list[dict[str, Any]]) -> None:
         if not isinstance(data, bytes):
             data = json.dumps(data, sort_keys=True).encode()
         if len(data) > POLICY['text'] or retained_size(plan.retained) + len(data) > POLICY['total']:
@@ -257,7 +263,7 @@ setup:
             stream.write(data)
 
 
-    def hash_fd(fd):
+    def hash_fd(fd: int) -> str:
         before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode) or before.st_size > POLICY['object_bytes']:
             raise Refusal('object type or size limit')
@@ -282,7 +288,7 @@ setup:
         return digest.hexdigest()
 
 
-    def bind_runner(plan):
+    def bind_runner(plan: RunPlan) -> None:
         args = argv(plan.owner.pid)
         indexes = [i for i, item in enumerate(args) if item.endswith('/builder/run_tests.py')]
         if len(indexes) != 1:
@@ -338,7 +344,7 @@ setup:
              helper_sha256=hashlib.sha256(helper.encode()).hexdigest(), sources=sources))
 
 
-    def snapshot(process):
+    def snapshot(process: ObservedProcess) -> dict[str, str | dict[str, str]]:
         process.check()
         result = {name: read_bytes(f'/proc/{process.pid}/{name}').decode()
                   for name in ('stat', 'maps', 'mountinfo', 'cgroup', 'status', 'cmdline')}
@@ -348,7 +354,8 @@ setup:
         return result
 
 
-    def parse_registration(records, plan, filename):
+    def parse_registration(records: list[dict[str, Any]], plan: RunPlan,
+                           filename: str) -> dict[str, Any] | None:
         starts = [r for r in records if r.get('event') == 'start']
         if len(starts) != 1:
             raise Refusal('missing or duplicate observer start')
@@ -396,7 +403,8 @@ setup:
                     ticks=ticks, argv=command, stage_time=stage['time'], outer=outer)
 
 
-    def trace_records(path, plan):
+    def trace_records(path: Path, plan: RunPlan) -> tuple[
+            list[dict[str, Any]], bytes, tuple[int, int]]:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
             before = os.fstat(fd)
@@ -418,7 +426,9 @@ setup:
         return records, data[:data.rfind(b'\n')+1], (before.st_dev, before.st_ino)
 
 
-    def verify_target(selected, plan, target, observer, trace, trace_key):
+    def verify_target(selected: dict[str, Any], plan: RunPlan, target: ObservedProcess,
+                      observer: ObservedProcess, trace: Path,
+                      trace_key: tuple[int, int]) -> list[dict[str, int | str]]:
         plan.owner.check()
         if target.check()['ticks'] != selected['ticks'] or observer.check()['ticks'] != selected['observer_ticks']:
             raise Refusal('target or observer start tick mismatch')
@@ -450,7 +460,9 @@ setup:
         return chain
 
 
-    def spawn_command(args, stdout, stderr, pass_fds=(), file_cap=None):
+    def spawn_command(args: list[str], stdout: int, stderr: int,
+                      pass_fds: tuple[int, ...] = (),
+                      file_cap: int | None = None) -> OwnedChild:
         parent = os.getpid()
         pid = os.fork()
         if pid == 0:
@@ -471,7 +483,8 @@ setup:
         return OwnedChild(pid)
 
 
-    def command(plan, args, label, timeout=None):
+    def command(plan: RunPlan, args: list[str], label: str,
+                timeout: float | None = None) -> bytes:
         if plan.control is not None:
             send(plan.control, 'operation', kind='command')
         started = time.monotonic()
@@ -508,7 +521,8 @@ setup:
         return output
 
 
-    def control(fd, ack, word, end, times):
+    def control(fd: int, ack: int, word: str, end: float,
+                times: dict[str, float]) -> None:
         times[word+'_send'] = time.monotonic()
         os.write(fd, (word+'\n').encode())
         if not select.select([ack], [], [], max(0, end-time.monotonic()))[0]:
@@ -518,7 +532,8 @@ setup:
         times[word+'_ack'] = time.monotonic()
 
 
-    def record(plan, perf, pid, label, validate, duration):
+    def record(plan: RunPlan, perf: str, pid: int, label: str,
+               validate: Callable[[], object], duration: float) -> Path:
         if plan.control is not None:
             send(plan.control, 'operation', kind='record')
         control_read, control_write = os.pipe()
@@ -586,7 +601,8 @@ setup:
         return raw
 
 
-    def sample_quality(text, dump, pid):
+    def sample_quality(text: bytes, dump: bytes, pid: int) -> dict[
+            str, int | float | dict[str, int]]:
         tids, events, dsos = {}, {}, {}
         unknown = 0
         unknown_dsos = 0
@@ -621,7 +637,8 @@ setup:
                     first_time=min(times), last_time=max(times))
 
 
-    def decode(plan, perf, raw, pid, label, root):
+    def decode(plan: RunPlan, perf: str, raw: Path, pid: int, label: str,
+               root: str | Path) -> dict[str, int | float | dict[str, int]]:
         root = Path(root)
         if root.resolve(strict=True) != root or root == Path('/') or root.parent != plan.work:
             raise Refusal('decoder requires a canonical private mirror under work')
@@ -643,7 +660,7 @@ setup:
             os.chdir(previous)
 
 
-    def open_rooted(rootfd, name):
+    def open_rooted(rootfd: int, name: str) -> int:
         # Every component is opened relative to a pinned target directory.
         if len(os.fsencode(name)) > 4095 or len(name.split('/')) > POLICY['objects']+1:
             raise Refusal('rooted path limit')
@@ -683,7 +700,7 @@ setup:
                 os.close(fd)
 
 
-    def build_id(fd):
+    def build_id(fd: int) -> str | None:
         header = os.pread(fd, 64, 0)
         if header[:6] != b'\x7fELF\x02\x01' or len(header) != 64:
             return None
@@ -823,7 +840,8 @@ setup:
             os.close(directory)
 
 
-    def mapped_objects(plan, target, mirror: Path | None = None):
+    def mapped_objects(plan: RunPlan, target: ObservedProcess,
+                       mirror: Path | None = None) -> list[dict[str, Any]]:
         target.check()
         rootfd = os.open(f'/proc/{target.pid}/root', os.O_RDONLY | os.O_DIRECTORY)
         objects = []
@@ -907,7 +925,7 @@ setup:
             os.close(rootfd)
 
 
-    def worker(plan, channel, busy):
+    def worker(plan: RunPlan, channel: socket.socket, busy: int) -> None:
         plan.control = channel
         phase = 'bootstrap'
         raw_capture = False
@@ -1043,7 +1061,7 @@ setup:
                  reason=type(error).__name__+': '+str(error)[:2000])
 
 
-    def supervise(plan, readiness, launcher):
+    def supervise(plan: RunPlan, readiness: socket.socket, launcher: int) -> None:
         parent_arm(launcher)
         os.setsid()
         libc = ctypes.CDLL(None, use_errno=True)
@@ -1186,7 +1204,7 @@ setup:
             manifest(plan.retained, **result, handoff=handoff, cleanup=dict(reaped=reaped, complete=complete))
 
 
-    def arm(output_dir, t1w):
+    def arm(output_dir: Path, t1w: Path) -> None:
         architecture = platform.machine()
         work = Path.cwd().resolve()
         directory = work.parent / 'native-profile'
@@ -1195,7 +1213,7 @@ setup:
             manifest(directory, 'outside_native_scope', architecture=architecture)
             return
         started, wall = time.monotonic(), time.time()
-        def bootstrap_alarm(*unused):
+        def bootstrap_alarm(*unused: int | FrameType | None) -> None:
             raise Refusal('bootstrap deadline')
         signal.signal(signal.SIGALRM, bootstrap_alarm)
         signal.setitimer(signal.ITIMER_REAL, POLICY['bootstrap'])
