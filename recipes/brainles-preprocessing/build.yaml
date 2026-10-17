@@ -158,6 +158,9 @@ variables:
       - value: ubuntu:24.04
         condition: arch == "aarch64"
   hdbet_record: "2540695"
+  synthstrip_record: "16535634"
+  synthstrip_version: "1.0.0"
+  synthstrip_sha256: 7c7b18e8cfcfca0acd80d429063ff7aea66f2406f296452c0be6dca2f1ff540c
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlEQVR42u3dsRHCMAwF0CxBywhUDMQajMIATMQSrAAVC3CHogQnsp9OdYp39p2U4nualFK7rMPxVKiJbOrVE83KTL3SrMM0gk7eaBydjNFoOvOMxtSZYQSIzgIjQHQWGKEBBAjQZkBcfhglvnK5v6t0U6BCLmmpPFBpnbhREqgDnaARIEDtgbrRiRg5Qa4YoD0CmYNM0naxlkC2eUCAAAECBAgQIEBf+/y4VemmQIVc0lJ5oNI6caMkUAc6QSNAgNoDdaMTMXKCXDFAewQyB5mk7WK2eb87AAECBAgQIECANgd6Xl9VuilQIZe0VB6otE7cKAnUgU7QCBCg9kDd6ESMnCBXDNAegcxBJmm7mPAF2R2AAAESYyYFDxAjSZx/AhJ2y2ixjsBtRmvoCP33bIRnNlqKKKXm1wc7XnMcuYuNogAAAABJRU5ErkJggg==
 
 architectures:
@@ -174,6 +177,12 @@ auto_update:
       target:
         variable: upstream_version
         fulltest_variable: upstream_version
+    - id: synthstrip-weights
+      dependency: true
+      method: http_digest
+      url: https://zenodo.org/api/records/{{ context.synthstrip_record }}/files/synthstrip_weights.zip/content
+      target:
+        variable: synthstrip_sha256
     - id: hdbet-models
       dependency: true
       method: zenodo
@@ -764,12 +773,7 @@ build:
         # There is also no other source: no container in the stack ships an
         # SRI24 template, so a user asked to produce atlas-space input for petu
         # or gliomoda had no supported route to one.
-        #
-        # Fetched per file rather than through upstream's fetch_atlases(), which
-        # requests Zenodo's files-archive endpoint. That endpoint is unreliable
-        # for these records, and the per-file API is what actually works. Adds
-        # about 120 MB.
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }}
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }} {{ get_file("synthstrip_weights") }} {{ context.synthstrip_version }}
         # HD-BET weights too. HDBetExtractor is the only brain extractor this
         # package has, and brainles_hd_bet writes its weights into its own
         # package directory, so without this the brain-extraction stage fails
@@ -890,6 +894,9 @@ build:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
 files:
+  - name: synthstrip_weights
+    url: https://zenodo.org/api/records/{{ context.synthstrip_record }}/files/synthstrip_weights.zip/content
+    sha256: "{{ context.synthstrip_sha256 }}"
   - name: cblas/build-native.sh
     condition: arch == "aarch64"
     filename: cblas/build-native.sh
@@ -1749,25 +1756,22 @@ files:
           raise SystemExit("unknown mode %r" % mode)
   - name: bake_atlases.py
     contents: |
-      """Download the atlases and SynthStrip weights into the installed package.
+      """Install the atlases and SynthStrip weights into the installed package.
 
       brainles_preprocessing resolves both to directories inside its own package
       (utils/zenodo.py: ATLASES_FOLDER and SYNTHSTRIP_FOLDER) and downloads them
       on first use. Those paths are read-only once the image is built, so the
-      download must happen here or registration fails at run time.
+      assets must be installed here or registration fails at run time.
 
       The layout matters as much as the files. ZenodoRecord globs for
       "<record_id>_v*.*.*" inside the target directory and treats a bare
       directory of files as "nothing downloaded yet", so the files go into
       <target>/<record_id>_v<version>/ exactly as _build_folder_path would.
-
-      Files are fetched individually rather than through upstream's fetch, which
-      requests Zenodo's files-archive endpoint: that endpoint is unreliable for
-      these records, while the per-file API works.
       """
       import json
       import pathlib
       import shutil
+      import sys
       import zipfile
       from urllib.request import urlopen
 
@@ -1803,7 +1807,14 @@ files:
 
 
       bake(z.ATLASES_RECORD_ID, z.ATLASES_FOLDER, "atlases")
-      bake(z.SYNTHSTRIP_RECORD_ID, z.SYNTHSTRIP_FOLDER, "synthstrip")
+      asset_path, asset_version = sys.argv[1:]
+      folder = z.SYNTHSTRIP_FOLDER / f"{z.SYNTHSTRIP_RECORD_ID}_v{asset_version}"
+      folder.mkdir(parents=True, exist_ok=True)
+      with zipfile.ZipFile(asset_path) as archive:
+          assert archive.namelist() == ["synthstrip.1.pt"], archive.namelist()
+          archive.extract("synthstrip.1.pt", folder)
+      assert (folder / "synthstrip.1.pt").is_file(), folder
+      print(f"synthstrip: ready at {folder}", flush=True)
 
 deploy:
   # Named individually rather than exporting the environment's bin directory.
