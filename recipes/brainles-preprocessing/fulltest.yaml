@@ -2,6 +2,13 @@ name: brainles-preprocessing
 version: "0.6.14"
 upstream_version: "0.6.14"
 
+niftyreg_version: "1.5.77"
+antspyx_version: "0.5.4"
+arm_torch_version: "2.13.0"
+env_setup: |
+  set -euo pipefail
+  export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=2
+
 tests:
   - name: package imports
     command: python -c "import brainles_preprocessing; print('import ok')"
@@ -106,14 +113,22 @@ tests:
       enough; what is being checked is that inference runs and returns a
       non-empty binary mask, not that the mask is anatomically right.
     command: |
-      python -c "
+      python -u <<'PYTHON'
+      import hashlib
+
       import numpy as np, nibabel as nib, tempfile, pathlib
       from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
+      from brainles_preprocessing.utils.zenodo import SYNTHSTRIP_FOLDER
+
+      weights = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                 for p in SYNTHSTRIP_FOLDER.rglob('*.pt')}
+
       d = pathlib.Path(tempfile.mkdtemp())
       g = np.mgrid[:96, :96, :96].astype(float)
       r = np.sqrt(((g - 48) ** 2).sum(0))
       vol = np.where(r < 34, 800.0, 0.0) + np.where((r >= 34) & (r < 40), 300.0, 0.0)
       nib.save(nib.Nifti1Image(vol.astype(np.float32), np.eye(4)), d / 'in.nii.gz')
+      source_digest = hashlib.sha256((d / 'in.nii.gz').read_bytes()).hexdigest()
       SynthStripExtractor().extract(
           input_image_path=str(d / 'in.nii.gz'),
           masked_image_path=str(d / 'brain.nii.gz'),
@@ -123,8 +138,17 @@ tests:
       m = np.asanyarray(nib.load(d / 'mask.nii.gz').dataobj)
       assert (m > 0).sum() > 0, 'empty mask'
       assert set(np.unique(m)) <= {0, 1}, np.unique(m)
+      for name in ['brain.nii.gz', 'mask.nii.gz']:
+          image = nib.load(d / name)
+          assert image.shape == vol.shape, image.shape
+          np.testing.assert_array_equal(image.affine, np.eye(4))
+          assert np.isfinite(image.get_fdata()).all()
+      np.testing.assert_array_equal(nib.load(d / 'brain.nii.gz').get_fdata(), vol * m)
+      assert hashlib.sha256((d / 'in.nii.gz').read_bytes()).hexdigest() == source_digest
+      assert {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in SYNTHSTRIP_FOLDER.rglob('*.pt')} == weights
       print('synthstrip-cpu-run ok', int((m > 0).sum()), 'voxels')
-      "
+      PYTHON
     expected_output_contains: "synthstrip-cpu-run ok"
     # Model load plus inference does not fit the suite's default 120 s budget,
     # and a timeout kill is indistinguishable from a real failure in the report
@@ -219,3 +243,132 @@ tests:
     description: Guards the path from brainles_preprocessing through to brainles_hd_bet.
     command: python -c "from brainles_preprocessing.brain_extraction import HDBetExtractor; print('hdbet extractor ok')"
     expected_output_contains: "hdbet extractor ok"
+
+  - name: Native dependency closure and actual CPU tensor operation
+    command: |
+      python -m pip check
+      python - <<'PYTHON'
+      import importlib.metadata as md
+      import platform
+      import struct
+      from pathlib import Path
+      import brainles_preprocessing
+      import torch
+      assert md.version('brainles-preprocessing')=='${upstream_version}'
+      root=Path(brainles_preprocessing.__file__).parent/'registration'/'niftyreg'/'niftyreg_scripts'
+      expected=183 if platform.machine()=='aarch64' else 62
+      for name in ['reg_aladin','reg_resample']:
+          path=root/name
+          with path.open('rb') as f: header=f.read(20)
+          assert header[:4]==b'\x7fELF' and header[5]==1
+          assert struct.unpack('<H',header[18:20])[0]==expected,(name,header)
+          if expected==183:
+              assert path.is_symlink() and path.resolve()==Path('/opt/brainles-niftyreg-${niftyreg_version}/bin')/name
+      if expected==183:
+          assert md.version('antspyx')=='${antspyx_version}'
+          assert md.version('torch').split('+')[0]=='${arm_torch_version}'
+          assert torch.version.cuda is None
+      x=torch.arange(15,dtype=torch.float32).reshape(3,5)
+      assert torch.equal(x@x.T,torch.tensor([[30,80,130],[80,255,430],[130,430,730]],dtype=torch.float32))
+      print('Exact BrainLesion version, native registration executables and CPU tensor operation verified')
+      PYTHON
+    timeout: 120
+    expected_output_contains: Exact BrainLesion version, native registration executables and CPU tensor operation verified
+    expected_exit_code: 0
+
+  - name: Both actual native registration backends
+    command: |
+      python - <<'PYTHON'
+      import hashlib
+      import os
+      import tempfile
+      from pathlib import Path
+      import numpy as np
+      import nibabel as nib
+      from brainles_preprocessing.registration.ANTs.ANTs import ANTsRegistrator
+      from brainles_preprocessing.registration.niftyreg.niftyreg import NiftyRegRegistrator
+
+      os.environ['ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'] = '2'
+      with tempfile.TemporaryDirectory(prefix='brainles-registration-') as scratch:
+          d = Path(scratch)
+          grid = np.mgrid[:96, :96, :96].astype(np.float64)
+          data = np.zeros((96,96,96), dtype=np.float64)
+          for amplitude, centre, widths in [(100,(35,43,49),(8,11,10)),(65,(62,55,38),(7,9,8)),(40,(47,30,65),(6,8,7))]:
+              delta = (grid - np.asarray(centre)[:,None,None,None]) / np.asarray(widths)[:,None,None,None]
+              data += amplitude * np.exp(-0.5 * (delta**2).sum(0))
+          data = data.astype(np.float32)
+          affine = np.diag([1.5,2.0,2.5,1.0]); affine[:3,3] = [-71.25,-95,-118.75]
+          source = d/'asymmetric.nii.gz'; nib.save(nib.Nifti1Image(data,affine),source)
+          digest = hashlib.sha256(source.read_bytes()).hexdigest()
+          backends = [('ANTs',ANTsRegistrator(registration_params={'type_of_transform':'Translation','aff_metric':'meansquares','aff_random_sampling_rate':1,'random_seed':7,'aff_iterations':(100,50,10),'aff_shrink_factors':(4,2,1),'aff_smoothing_sigmas':(2,1,0)}),'.mat','nearestNeighbor'),('NiftyReg',NiftyRegRegistrator(),'.txt','0')]
+          for name,backend,extension,interpolator in backends:
+              registered=d/(name+'-registered.nii.gz'); matrix=d/(name+extension); log=d/(name+'-registration.log')
+              backend.register(fixed_image_path=str(source),moving_image_path=str(source),transformed_image_path=str(registered),matrix_path=str(matrix),log_file_path=str(log))
+              assert matrix.is_file() and matrix.stat().st_size>0, (name,log.read_text() if log.exists() else 'missing log')
+              assert registered.is_file(), (name,log.read_text() if log.exists() else 'missing log')
+              output=d/(name+'-nearest.nii.gz')
+              backend.transform(fixed_image_path=str(source),moving_image_path=str(source),transformed_image_path=str(output),matrix_path=str(matrix),log_file_path=str(d/(name+'-transform.log')),interpolator=interpolator)
+              assert output.is_file(), (name,list(d.iterdir()))
+              image=nib.load(output); result=np.asanyarray(image.dataobj)
+              assert np.isfinite(result).all() and np.count_nonzero(result)>0
+              np.testing.assert_array_equal(result,data)
+              np.testing.assert_allclose(image.affine,affine,rtol=0,atol=4*np.finfo(np.float32).eps*np.max(np.abs(affine)))
+              np.testing.assert_array_equal(image.header.get_zooms(),(1.5,2,2.5))
+              assert hashlib.sha256(source.read_bytes()).hexdigest()==digest
+              if name=='NiftyReg':
+                  learned=np.loadtxt(matrix);assert learned.shape==(4,4) and np.isfinite(learned).all()
+                  inverse=d/'inverse.txt';backend._invert_affine_transform(matrix,inverse)
+                  composed=d/'composed.txt';backend._compose_affine_transforms([matrix,inverse],composed)
+                  np.testing.assert_allclose(np.loadtxt(composed),np.eye(4),rtol=0,atol=1e-10)
+              print(name,'actual registration and nearest-neighbour transformation preserved every884736 voxel and physical geometry',flush=True)
+      print('Both native registration backends completed their real public registration and transform operations')
+      PYTHON
+    timeout: 600
+    expected_output_contains: Both native registration backends completed their real public registration and transform operations
+    expected_exit_code: 0
+
+  - name: HD-BET CPU inference inside the read-only SIF
+    command: |
+      python - <<'PYTHON'
+      import hashlib
+      import os
+      import subprocess
+      import tempfile
+      from pathlib import Path
+      import numpy as np
+      import SimpleITK as sitk
+      from brainles_hd_bet.utils import folder_with_parameter_files
+
+      def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+      models=sorted(Path(folder_with_parameter_files).glob('*.model'))
+      assert len(models)==5
+      before={p.name:sha(p) for p in models}
+      with tempfile.TemporaryDirectory(prefix='brainles-hdbet-') as scratch:
+          d=Path(scratch);rng=np.random.RandomState(0)
+          volume=rng.normal(0,10,(64,64,64)).astype(np.float32)
+          zz,yy,xx=np.mgrid[:64,:64,:64];sphere=((zz-32)**2+(yy-32)**2+(xx-32)**2)<=20**2
+          volume[sphere]+=100
+          original=sitk.GetImageFromArray(volume);original.SetSpacing((1.5,1.5,1.5))
+          original.SetOrigin((-47.25,-47.25,-47.25))
+          source=d/'input.nii.gz';sitk.WriteImage(original,str(source));digest=sha(source)
+          output=d/'brain.nii.gz';mask_path=d/'brain_mask.nii.gz'
+          subprocess.run(['hd-bet','-i',str(source),'-o',str(output),'-mode','fast','-device','cpu','-tta','0'],check=True,timeout=1500)
+          assert output.is_file() and mask_path.is_file()
+          mask_image=sitk.ReadImage(str(mask_path));out_image=sitk.ReadImage(str(output))
+          mask=sitk.GetArrayFromImage(mask_image);out=sitk.GetArrayFromImage(out_image)
+          assert mask.shape==volume.shape and out.shape==volume.shape
+          assert set(np.unique(mask))=={0,1} and 0<mask.sum()<mask.size
+          assert np.isfinite(out).all()
+          np.testing.assert_array_equal(out,volume*mask)
+          for image in [mask_image,out_image]:
+              assert image.GetSpacing()==original.GetSpacing()
+              assert image.GetOrigin()==original.GetOrigin()
+              assert image.GetDirection()==original.GetDirection()
+          assert sha(source)==digest
+          assert {p.name:sha(p) for p in models}==before
+          print('Actual HD-BET CPU inference produced a nontrivial binary mask and every262144 masked voxel with unchanged physical geometry, input and all5 checkpoints')
+      PYTHON
+    timeout: 1800
+    expected_output_contains: Actual HD-BET CPU inference produced a nontrivial binary mask and every262144 masked voxel with
+      unchanged physical geometry, input and all5 checkpoints
+    expected_exit_code: 0
