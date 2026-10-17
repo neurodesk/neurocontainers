@@ -1,4 +1,3 @@
-"""Reject a native build whose generated configuration missed the provider."""
 import json
 import os
 from pathlib import Path
