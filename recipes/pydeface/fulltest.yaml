@@ -934,25 +934,133 @@ setup:
             send(channel, 'ready')
             phase = 'preflight'
             perf = shutil.which('perf')
-            if not perf:
-                raise Refusal('existing perf unavailable')
-            perf_fd = os.open(perf, os.O_RDONLY)
-            try:
-                if os.fstat(perf_fd).st_mode & (stat.S_ISUID | stat.S_ISGID):
-                    raise Refusal('privileged perf exec would change parent-death semantics')
+            kernel_release = os.uname().release
+            entrypoint: dict[str, Any] = dict(selected_path=perf[:4096] if perf else None,
+                architecture=platform.machine()[:256], kernel_release=kernel_release[:256],
+                files=[], candidates=[], outcome='refused', known_launcher_match=None,
+                execution_binding='checked pathname; later path-based exec is not atomic')
+            selection_deadline = time.monotonic() + POLICY['read']
+
+            def inspect_perf(path: str) -> tuple[str, bytes, str] | None:
+                observation: dict[str, Any] = dict(path=path[:4096], links=[])
+                entrypoint['files'].append(observation)
+                pending = path.split('/')
+                resolved = '/'
+                steps = 0
+                while pending:
+                    steps += 1
+                    if (steps > POLICY['objects'] or len(os.fsencode(path)) > 4095
+                            or time.monotonic() > selection_deadline):
+                        raise Refusal('perf path or read limit')
+                    part = pending.pop(0)
+                    if part in ('', '.'):
+                        continue
+                    if part == '..':
+                        resolved = os.path.dirname(resolved)
+                        continue
+                    current = os.path.join(resolved, part)
+                    try:
+                        value = os.lstat(current)
+                    except FileNotFoundError:
+                        observation['missing'] = current
+                        if observation['links']:
+                            raise Refusal('perf package link target missing')
+                        return None
+                    if stat.S_ISLNK(value.st_mode):
+                        link = os.readlink(current)
+                        observation['links'].append(dict(path=current, target=link[:4096],
+                                                        stat=list(value)))
+                        if len(os.fsencode(link)) > 4095:
+                            raise Refusal('perf link limit')
+                        if link.startswith('/'):
+                            resolved = '/'
+                        pending = link.split('/') + pending
+                    else:
+                        resolved = current
+                observation['canonical_path'] = resolved
+                if not re.fullmatch(r'/usr/(?:bin/perf(?:_[A-Za-z0-9.+_-]{1,255})?'
+                                    r'|lib/linux-tools(?:/[A-Za-z0-9.+_-]{1,255}'
+                                    r'|-[A-Za-z0-9.+_-]{1,255})/perf)', resolved):
+                    raise Refusal('perf path outside approved system tools')
+                perf_fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
                 try:
-                    capabilities = os.getxattr(perf_fd, 'security.capability')
-                except OSError as error:
-                    if error.errno not in (errno.ENODATA, errno.ENOTSUP):
-                        raise
-                else:
-                    if capabilities:
-                        raise Refusal('capability-bearing perf cannot preserve parent-death semantics')
-                if os.read(perf_fd, 4) != b'\x7fELF':
-                    raise Refusal('perf wrapper cannot establish direct command lifetime')
-                save(plan, 'perf-binary.json', dict(path=perf, sha256=hash_fd(perf_fd)))
+                    before = file_identity(perf_fd)
+                    value = os.fstat(perf_fd)
+                    observation.update(stat=list(value), identity_before=before)
+                    if not stat.S_ISREG(value.st_mode) or not os.access(resolved, os.X_OK):
+                        raise Refusal('perf is not a regular executable')
+                    if value.st_mode & (stat.S_ISUID | stat.S_ISGID):
+                        raise Refusal('privileged perf exec would change parent-death semantics')
+                    try:
+                        capabilities = os.getxattr(perf_fd, 'security.capability')
+                    except OSError as error:
+                        observation['capability_errno'] = error.errno
+                        if error.errno not in (errno.ENODATA, errno.ENOTSUP):
+                            raise
+                    else:
+                        observation['capabilities'] = capabilities[:256].hex()
+                        if capabilities:
+                            raise Refusal('capability-bearing perf cannot preserve parent-death semantics')
+                    header = os.pread(perf_fd, 64, 0)
+                    observation['header'] = header.hex()
+                    digest = hash_fd(perf_fd)
+                    observation.update(sha256=digest, identity_after=file_identity(perf_fd))
+                    for checked_path in (path, resolved):
+                        value = os.stat(checked_path)
+                        if before != (value.st_dev, value.st_ino, value.st_size,
+                                      value.st_mtime_ns, value.st_ctime_ns):
+                            raise Refusal('perf path identity changed')
+                    if before != file_identity(perf_fd):
+                        raise Refusal('perf descriptor identity changed')
+                    if time.monotonic() > selection_deadline:
+                        raise Refusal('perf selection read deadline')
+                    return resolved, header, digest
+                finally:
+                    os.close(perf_fd)
+
+            try:
+                if not perf:
+                    raise Refusal('existing perf unavailable')
+                if not os.path.isabs(perf):
+                    raise Refusal('perf entrypoint path is not absolute')
+                inspected = inspect_perf(perf)
+                if inspected is None:
+                    raise Refusal('selected perf disappeared')
+                canonical, header, digest = inspected
+                if header[:4] != b'\x7fELF':
+                    # Ubuntu linux-tools-common 6.8.0-147.147 bytes, not an installed-version claim.
+                    entrypoint['known_launcher_match'] = digest == '2d0953085bf720a25efbe24f853e97d27b1f12f18a398255ff82cbafde254dad'
+                    if not entrypoint['known_launcher_match']:
+                        raise Refusal('unknown perf launcher bytes')
+                    if perf not in ('/usr/bin/perf', '/bin/perf') or canonical != '/usr/bin/perf':
+                        raise Refusal('known perf launcher at unsupported path')
+                    release = kernel_release
+                    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_-]{0,254}', release):
+                        raise Refusal('unsafe kernel release component')
+                    flavour_abi = release.split('-', 1)[-1]
+                    flavour = flavour_abi.split('-', 1)[-1]
+                    version = release.removesuffix('-' + flavour)
+                    candidates = [f'/usr/lib/linux-tools/{release}/perf', f'{perf}_{version}']
+                    entrypoint['candidates'] = candidates
+                    inspected = None
+                    for candidate in candidates:
+                        inspected = inspect_perf(candidate)
+                        if inspected is not None:
+                            break
+                    if inspected is None:
+                        raise Refusal('kernel-matched perf target missing')
+                    canonical, header, digest = inspected
+                if (len(header) != 64 or header[:7] != b'\x7fELF\x02\x01\x01'
+                        or struct.unpack_from('<HHI', header, 16) not in ((2, 183, 1), (3, 183, 1))):
+                    raise Refusal('perf target is not ELF64 little-endian AArch64')
+                perf = canonical
+                entrypoint.update(outcome='selected', target=perf)
+                save(plan, 'perf-binary.json', dict(path=perf, sha256=digest))
+            except Exception as error:
+                entrypoint.update(outcome='refused', reason=f'{type(error).__name__}: {error}'[:512])
+                raise
             finally:
-                os.close(perf_fd)
+                save(plan, 'perf-entrypoint.json', entrypoint)
             command(plan, [perf, '--version'], 'perf-version')
             preflight_start = time.monotonic()
             send(channel, 'preflight')
