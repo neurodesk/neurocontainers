@@ -2615,10 +2615,14 @@ setup:
             assert child_pid > 0
             signal.pthread_sigmask(signal.SIG_SETMASK, inherited_mask)
             while time.monotonic() < child_deadline:
-                pid, status = os.waitpid(child_pid, os.WNOHANG)
-                if pid:
-                    wait_status = status
-                    break
+                wait_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+                try:
+                    pid, status = os.waitpid(child_pid, os.WNOHANG)
+                    if pid:
+                        wait_status = status
+                        break
+                finally:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, wait_mask)
                 time.sleep(min(.01, max(0, child_deadline - time.monotonic())))
             if wait_status is None:
                 stopped_for = 'deadline'
