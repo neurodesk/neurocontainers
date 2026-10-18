@@ -2574,23 +2574,25 @@ setup:
             controller.mkdir(mode=0o700)
         except FileExistsError:
             return
-        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(InterruptedError('controller cancelled')))
-        signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(InterruptedError('controller cancelled')))
         child_pid = None
         wait_status = None
         stopped_for = 'normal'
         failure = None
         child_deadline = min(time.monotonic() + 10, entry_deadline - 3)
         controller_pid = os.getpid()
+        inherited_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
         try:
-            if time.monotonic() >= child_deadline:
-                raise Refusal('inert entry has no observation budget')
-            child_pid = os.fork()
-            if child_pid == 0:
-                parent_arm(controller_pid)
-                signal.signal(signal.SIGTERM, signal.SIG_DFL)
-                signal.signal(signal.SIGINT, signal.SIG_DFL)
-                try:
+            signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(InterruptedError('controller cancelled')))
+            signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(InterruptedError('controller cancelled')))
+            try:
+                if time.monotonic() >= child_deadline:
+                    raise Refusal('inert entry has no observation budget')
+                child_pid = os.fork()
+                if child_pid == 0:
+                    parent_arm(controller_pid)
+                    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+                    signal.signal(signal.SIGINT, signal.SIG_DFL)
+                    signal.pthread_sigmask(signal.SIG_SETMASK, inherited_mask)
                     child_started = time.monotonic()
                     observation = _observe_inert_mmap(origin, slot / 'observations', child_deadline)
                     terminal = json.dumps(asdict(_Read(observation, child_started, time.monotonic())),
@@ -2607,8 +2609,11 @@ setup:
                     if time.monotonic() >= child_deadline:
                         raise Refusal('inert terminal deadline')
                     os._exit(0)
-                except BaseException:
+            finally:
+                if os.getpid() != controller_pid:
                     os._exit(92)
+            assert child_pid > 0
+            signal.pthread_sigmask(signal.SIG_SETMASK, inherited_mask)
             while time.monotonic() < child_deadline:
                 pid, status = os.waitpid(child_pid, os.WNOHANG)
                 if pid:
@@ -2624,20 +2629,23 @@ setup:
             stopped_for = 'failure'
             failure = type(error).__name__ + ': ' + str(error)[:512]
         finally:
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            if child_pid is not None and wait_status is None:
-                for sig, reserve in ((signal.SIGTERM, 2), (signal.SIGKILL, 1)):
-                    if wait_status is not None or time.monotonic() >= entry_deadline:
-                        break
-                    OwnedChild(child_pid).signal(sig)
-                    until = min(time.monotonic() + 1, entry_deadline - reserve)
-                    while time.monotonic() < until:
-                        pid, status = os.waitpid(child_pid, os.WNOHANG)
-                        if pid:
-                            wait_status = status
+            try:
+                signal.signal(signal.SIGTERM, signal.SIG_DFL)
+                signal.signal(signal.SIGINT, signal.SIG_DFL)
+                if child_pid is not None and child_pid > 0 and wait_status is None:
+                    for sig, reserve in ((signal.SIGTERM, 2), (signal.SIGKILL, 1)):
+                        if wait_status is not None or time.monotonic() >= entry_deadline:
                             break
-                        time.sleep(min(.01, max(0, until - time.monotonic())))
+                        OwnedChild(child_pid).signal(sig)
+                        until = min(time.monotonic() + 1, entry_deadline - reserve)
+                        while time.monotonic() < until:
+                            pid, status = os.waitpid(child_pid, os.WNOHANG)
+                            if pid:
+                                wait_status = status
+                                break
+                            time.sleep(min(.01, max(0, until - time.monotonic())))
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, inherited_mask)
         if time.monotonic() >= entry_deadline:
             return
         collection_deadline = min(time.monotonic() + 1, entry_deadline)
