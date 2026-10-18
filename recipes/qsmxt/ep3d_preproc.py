@@ -160,8 +160,8 @@ def preprocess(
             os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(n_procs)
             averaged = _denoise_complex(averaged, magnitude_image, temporary_dir)
 
-    magnitude_output = work_dir / "average_magnitude.nii.gz"
-    phase_output = work_dir / "average_phase.nii.gz"
+    magnitude_output = work_dir / "average_magnitude.nii"
+    phase_output = work_dir / "average_phase.nii"
     with ThreadPoolExecutor(max_workers=min(n_procs, 2)) as executor:
         magnitude_save = executor.submit(
             _save, np.abs(averaged), magnitude_image, magnitude_output

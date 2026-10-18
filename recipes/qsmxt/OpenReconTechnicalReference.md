@@ -64,6 +64,14 @@ container still accepts `maxechoes`, `echotimesms`, `echotimems`,
 debugging, but they are not shown in the scanner UI. Voxel geometry comes from
 the MRD image stream.
 
+Full-volume diagnostic statistics and voxel hashes are opt-in. Set
+`QSMXT_OPENRECON_DIAGNOSTICS=full` in the container environment to enable the
+source, BIDS-volume and generated-NIfTI scans. Source selection, geometry,
+command results, output inventory and errors remain logged by default. This
+setting changes logging only; reconstruction and output validation are unchanged.
+The EPI driver writes uncompressed averaged NIfTIs for its internal handoff;
+the transient BIDS inputs above remain compressed.
+
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 compatible QSMxT derivatives that exist after the run. Below three selected
 echoes, All omits implicit T2*/R2* requests and logs the count. GRE uses aligned
