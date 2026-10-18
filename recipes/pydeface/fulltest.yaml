@@ -2587,7 +2587,9 @@ setup:
 
 
     def _scientific_secondary(facts: dict[str, Any], owner: str, error: BaseException) -> None:
-        facts['owner_failure_count'] = min(2**32 - 1, facts.get('owner_failure_count', 0) + 1)
+        facts['owner_failure_count'] = min(
+            2**32 - 1, facts.get('owner_failure_count', 0) + 1
+        )
         if facts.get('owner_failures_omitted'):
             return
         errors = facts.setdefault('owner_failures', [])
@@ -2606,9 +2608,12 @@ setup:
                             error: BaseException | None = None,
                             interval: list[float | None] | None = None) -> dict[str, Any]:
         number = getattr(error, 'errno', None)
-        return dict(state=state, reason=reason or state,
-                    errno=number if type(number) is int and -(2**31) <= number < 2**31 else None,
-                    interval=interval or [None, None])
+        return dict(
+            state=state,
+            reason=reason or state,
+            errno=number if type(number) is int and -(2**31) <= number < 2**31 else None,
+            interval=interval or [None, None],
+        )
 
 
     def _scientific_value(value: Any, *, cap: int | None = None,
@@ -2621,9 +2626,15 @@ setup:
         elif kind == 'integer':
             valid = type(value) is int and -(2**31) <= value < 2**31
         else:
-            valid = (isinstance(value, (tuple, list)) and len(value) == 5
-                     and all(type(value[i]) is int and -(2**31) <= value[i] < 2**31 for i in (0, 1, 2, 4))
-                     and isinstance(value[3], str))
+            valid = (
+                isinstance(value, (tuple, list))
+                and len(value) == 5
+                and all(
+                    type(value[i]) is int and -(2**31) <= value[i] < 2**31
+                    for i in (0, 1, 2, 4)
+                )
+                and isinstance(value[3], str)
+            )
         if not valid:
             return _scientific_missing('unavailable', 'invalid_scalar', interval=[now, now])
         if (cap is not None and len(json.dumps(value, ensure_ascii=True)) > cap
@@ -2637,15 +2648,28 @@ setup:
 
 
     def _scientific_startup_path() -> dict[str, Any]:
-        result = dict(phase='script_entry_inherited_PATH', capture_pid=os.getpid(),
-                      captured_at=time.monotonic(), state='bounded', components=[], omitted_reason=None)
+        result = dict(
+            phase='script_entry_inherited_PATH',
+            capture_pid=os.getpid(),
+            captured_at=time.monotonic(),
+            state='bounded',
+            components=[],
+            omitted_reason=None,
+        )
         value = os.environ.get('PATH')
         if value is None:
             result.update(state='absent', omitted_reason='absent')
             return result
         prefix = value[:4096]
         parts = prefix.split(':', 16)
-        allowed = ('/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin', '/usr/local/sbin')
+        allowed = (
+            '/bin',
+            '/usr/bin',
+            '/sbin',
+            '/usr/sbin',
+            '/usr/local/bin',
+            '/usr/local/sbin',
+        )
         for index, part in enumerate(parts[:16]):
             complete = not (len(value) > 4096 and index == len(parts) - 1)
             literal = part if complete and part in allowed else None
@@ -2656,29 +2680,81 @@ setup:
             result['components'].append(dict(kind=kind, scanned_length=len(part),
                                               literal=literal))
         if len(parts) > 16 or len(value) > 4096:
-            result.update(state='partial', omitted_reason='component_limit' if len(parts) > 16 else 'character_limit')
+            result.update(
+                state='partial',
+                omitted_reason='component_limit' if len(parts) > 16 else 'character_limit',
+            )
         return result
 
 
     def _scientific_host() -> dict[str, Any]:
         def file_record() -> dict[str, Any]:
-            return dict(**{key: _scientific_missing() for key in
-                           ('origin', 'module_origin', 'readlink', 'fd_link', 'before', 'after')},
-                        content=dict(_scientific_missing(), size=None, sha256=None), close='not_opened')
-        return dict(role='scientific_host_worker',
-            process=dict(pid=os.getpid(), **{key: _scientific_missing() for key in
-                         ('ticks', 'boot', 'pid_ns', 'mnt_ns', 'user_ns')}),
-            python=dict(**{key: _scientific_missing() for key in
-                         ('executable', 'version', 'version_info', 'platform', 'machine')},
-                        implementation={key: _scientific_missing() for key in
-                                        ('name', 'version', 'cache_tag', 'hexversion')},
-                        flags={key: _scientific_missing() for key in
-                               ('isolated', 'ignore_environment', 'no_site', 'no_user_site', 'safe_path',
-                                'optimize', 'dev_mode', 'debug', 'utf8_mode', 'dont_write_bytecode')}),
-            files=dict(interpreter=file_record(), mmap=file_record()), startup=_scientific_startup,
-            collection='not_started', omitted=[], runtime_ref='runtime_preconditions',
-            source_ref='source_bindings', refusal_ref='original_refusal', qualification_ref='qualification',
-            projection='full')
+            return dict(
+                **{
+                    key: _scientific_missing()
+                    for key in (
+                        'origin',
+                        'module_origin',
+                        'readlink',
+                        'fd_link',
+                        'before',
+                        'after',
+                    )
+                },
+                content=dict(_scientific_missing(), size=None, sha256=None),
+                close='not_opened',
+            )
+
+        return dict(
+            role='scientific_host_worker',
+            process=dict(
+                pid=os.getpid(),
+                **{
+                    key: _scientific_missing()
+                    for key in ('ticks', 'boot', 'pid_ns', 'mnt_ns', 'user_ns')
+                },
+            ),
+            python=dict(
+                **{
+                    key: _scientific_missing()
+                    for key in (
+                        'executable',
+                        'version',
+                        'version_info',
+                        'platform',
+                        'machine',
+                    )
+                },
+                implementation={
+                    key: _scientific_missing()
+                    for key in ('name', 'version', 'cache_tag', 'hexversion')
+                },
+                flags={
+                    key: _scientific_missing()
+                    for key in (
+                        'isolated',
+                        'ignore_environment',
+                        'no_site',
+                        'no_user_site',
+                        'safe_path',
+                        'optimize',
+                        'dev_mode',
+                        'debug',
+                        'utf8_mode',
+                        'dont_write_bytecode',
+                    )
+                },
+            ),
+            files=dict(interpreter=file_record(), mmap=file_record()),
+            startup=_scientific_startup,
+            collection='not_started',
+            omitted=[],
+            runtime_ref='runtime_preconditions',
+            source_ref='source_bindings',
+            refusal_ref='original_refusal',
+            qualification_ref='qualification',
+            projection='full',
+        )
 
 
     def _scientific_receipt(name: str) -> dict[str, Any]:
@@ -2704,26 +2780,52 @@ setup:
             scope.io_acquisition = None
             scope.io_poisoned = False
             scope.enum_state = 'released'
-            scope.outcome = dict(measurement=dict(kind='not_mapped', reason='not entered'),
-                                evidence='unavailable', external_refs={}, brackets={},
-                                members={name: dict(missing='not reached') for name in _SCIENTIFIC_MEMBERS},
-                                cleanup=dict(state='not_needed', acquired=[], returned_closes=[],
-                                             post_unmap_absence='not_observed'),
-                                persistence=_scientific_receipt('scientific-descriptor-probe.json'),
-                                pending=_scientific_receipt('scientific-descriptor-probe-start.json'),
-                                original_refusal=_scientific_receipt('mapped-object-refusal.json'),
-                                host=_scientific_host(), qualification=dict(state='not_evaluated', reason='not_reached'),
-                                source_association='unavailable', reservation=False, owner_failures=[],
-                                runtime_preconditions={key: _scientific_missing() for key in
-                                    ('timers', 'blocked_signals', 'pending_signals', 'task_ids', 'main_thread',
-                                     'trace_absent', 'profile_absent', 'signal_handlers', 'system_page_size',
-                                     'mmap_page_size', 'fd_headroom')},
-                                scientific_disposition='refused', decode_permitted=False,
-                                **_SCIENTIFIC_FLAGS)
+            scope.outcome = dict(
+                measurement=dict(kind='not_mapped', reason='not entered'),
+                evidence='unavailable',
+                external_refs={},
+                brackets={},
+                members={name: dict(missing='not reached') for name in _SCIENTIFIC_MEMBERS},
+                cleanup=dict(
+                    state='not_needed',
+                    acquired=[],
+                    returned_closes=[],
+                    post_unmap_absence='not_observed',
+                ),
+                persistence=_scientific_receipt('scientific-descriptor-probe.json'),
+                pending=_scientific_receipt('scientific-descriptor-probe-start.json'),
+                original_refusal=_scientific_receipt('mapped-object-refusal.json'),
+                host=_scientific_host(),
+                qualification=dict(state='not_evaluated', reason='not_reached'),
+                source_association='unavailable',
+                reservation=False,
+                owner_failures=[],
+                runtime_preconditions={
+                    key: _scientific_missing()
+                    for key in (
+                        'timers',
+                        'blocked_signals',
+                        'pending_signals',
+                        'task_ids',
+                        'main_thread',
+                        'trace_absent',
+                        'profile_absent',
+                        'signal_handlers',
+                        'system_page_size',
+                        'mmap_page_size',
+                        'fd_headroom',
+                    )
+                },
+                scientific_disposition='refused',
+                decode_permitted=False,
+                **_SCIENTIFIC_FLAGS,
+            )
             return scope
 
         def checkpoint(self) -> None:
-            if self.phase != 'cleanup' and (self.io_poisoned or self.io_acquisition is not None):
+            if self.phase != 'cleanup' and (
+                self.io_poisoned or self.io_acquisition is not None
+            ):
                 raise Refusal('scientific IO slot unavailable')
             if (time.monotonic() >= self.deadline
                     or (self.phase == 'observation' and self.cancelled is not None)):
@@ -2780,7 +2882,10 @@ setup:
             receipt['state'] = 'incomplete'
             fd = None
             try:
-                if len(data) > POLICY['text'] or self._retained_size() + len(data) > POLICY['total']:
+                if (
+                    len(data) > POLICY['text']
+                    or self._retained_size() + len(data) > POLICY['total']
+                ):
                     raise Refusal('scientific retained output limit')
                 self.checkpoint()
                 self.io_acquisition = 'save writer'
@@ -2816,7 +2921,10 @@ setup:
                 receipt['reader_close'] = 'unconfirmed'
                 try:
                     try:
-                        fd = os.open(self.plan.retained / name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+                        fd = os.open(
+                            self.plan.retained / name,
+                            os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW,
+                        )
                     except OSError:
                         self.io_acquisition = None
                         receipt['reader_close'] = 'not_opened'
@@ -2832,7 +2940,9 @@ setup:
                         received.extend(block)
                         if len(received) > len(data):
                             raise Refusal('scientific readback byte limit')
-                    receipt['readback'] = asdict(_Blob(name, len(received), hashlib.sha256(received).hexdigest()))
+                    receipt['readback'] = asdict(
+                        _Blob(name, len(received), hashlib.sha256(received).hexdigest())
+                    )
                     receipt['bytes_match'] = received == data
                     self.checkpoint()
                 finally:
@@ -2851,13 +2961,24 @@ setup:
                 self.checkpoint()
                 return receipt
             except BaseException as error:
-                receipt['failure'] = ('io_unconfirmed' if self.io_poisoned or self.io_acquisition is not None else
-                    'cancelled' if self.cancelled is not None else 'deadline' if time.monotonic() >= self.deadline else
-                    'denied' if getattr(error, 'errno', None) in (errno.EACCES, errno.EPERM) else 'changed')
+                receipt['failure'] = (
+                    'io_unconfirmed'
+                    if self.io_poisoned or self.io_acquisition is not None
+                    else 'cancelled'
+                    if self.cancelled is not None
+                    else 'deadline'
+                    if time.monotonic() >= self.deadline
+                    else 'denied'
+                    if getattr(error, 'errno', None) in (errno.EACCES, errno.EPERM)
+                    else 'changed'
+                )
                 if self.io_acquisition is not None:
                     self.io_poisoned = True
-                if (receipt['bytes_match'] is True and receipt['readback'] is not None
-                        and receipt['writer_close'] == receipt['reader_close'] == 'returned'):
+                if (
+                    receipt['bytes_match'] is True
+                    and receipt['readback'] is not None
+                    and receipt['writer_close'] == receipt['reader_close'] == 'returned'
+                ):
                     receipt['state'] = 'verified'
                 raise
 
@@ -2865,10 +2986,21 @@ setup:
             host = self.outcome['host']
             if not core:
                 return host
-            result = dict(host, projection='core', omitted=[
-                'optional_paths', 'optional_flags', 'startup_context', 'extra_stats', 'optional_errors'])
+            result = dict(
+                host,
+                projection='core',
+                omitted=[
+                    'optional_paths',
+                    'optional_flags',
+                    'startup_context',
+                    'extra_stats',
+                    'optional_errors',
+                ],
+            )
             result.pop('startup')
-            result['python'] = {key: value for key, value in host['python'].items() if key != 'flags'}
+            result['python'] = {
+                key: value for key, value in host['python'].items() if key != 'flags'
+            }
             result['python']['implementation'] = {key: value for key, value in
                 host['python']['implementation'].items() if key != 'cache_tag'}
             result['files'] = {key: dict(content=value['content'], close=value['close'])
@@ -2940,11 +3072,18 @@ setup:
                     ('platform', sys.platform, 64, 'string')):
                 values[key] = _scientific_value(value, cap=cap, kind=kind)
                 self.checkpoint()
-            for key, cap, kind in (('name', 64, 'string'), ('version', None, 'version'),
-                                    ('cache_tag', 128, 'string'), ('hexversion', None, 'unsigned')):
+            for key, cap, kind in (
+                ('name', 64, 'string'),
+                ('version', None, 'version'),
+                ('cache_tag', 128, 'string'),
+                ('hexversion', None, 'unsigned'),
+            ):
                 value = getattr(sys.implementation, key, None)
-                values['implementation'][key] = (_scientific_missing('absent') if value is None else
-                    _scientific_value(value, cap=cap, kind=kind))
+                values['implementation'][key] = (
+                    _scientific_missing('absent')
+                    if value is None
+                    else _scientific_value(value, cap=cap, kind=kind)
+                )
                 self.checkpoint()
             for key in values['flags']:
                 value = getattr(sys.flags, key, None)
@@ -2962,21 +3101,46 @@ setup:
                 destination[key] = _scientific_value(value, cap=cap, kind=kind)
                 destination[key]['interval'][0] = started
             except OSError as error:
-                state = 'absent' if error.errno == errno.ENOENT else 'denied' if error.errno in (errno.EACCES, errno.EPERM) else 'unavailable'
-                destination[key] = _scientific_missing(state, 'absent' if state == 'absent' else
-                    'denied' if state == 'denied' else 'invalid_scalar', error, [started, time.monotonic()])
+                state = (
+                    'absent'
+                    if error.errno == errno.ENOENT
+                    else 'denied'
+                    if error.errno in (errno.EACCES, errno.EPERM)
+                    else 'unavailable'
+                )
+                destination[key] = _scientific_missing(
+                    state,
+                    'absent'
+                    if state == 'absent'
+                    else 'denied'
+                    if state == 'denied'
+                    else 'invalid_scalar',
+                    error,
+                    [started, time.monotonic()],
+                )
                 if self.io_acquisition is not None or self.io_poisoned:
                     raise
             self.checkpoint()
 
         @staticmethod
         def _host_stat(value: os.stat_result, started: float) -> dict[str, Any]:
-            fields = dict(dev=value.st_dev, ino=value.st_ino, mode=value.st_mode, size=value.st_size,
-                          mtime_ns=value.st_mtime_ns, ctime_ns=value.st_ctime_ns)
+            fields = dict(
+                dev=value.st_dev,
+                ino=value.st_ino,
+                mode=value.st_mode,
+                size=value.st_size,
+                mtime_ns=value.st_mtime_ns,
+                ctime_ns=value.st_ctime_ns,
+            )
             interval = [started, time.monotonic()]
-            if (any(not 0 <= fields[key] < 2**64 for key in ('dev', 'ino', 'mode', 'size'))
-                    or any(not -(2**63) <= fields[key] < 2**63 for key in ('mtime_ns', 'ctime_ns'))):
-                return _scientific_missing('unavailable', 'invalid_scalar', interval=interval)
+            if any(
+                not 0 <= fields[key] < 2**64 for key in ('dev', 'ino', 'mode', 'size')
+            ) or any(
+                not -(2**63) <= fields[key] < 2**63 for key in ('mtime_ns', 'ctime_ns')
+            ):
+                return _scientific_missing(
+                    'unavailable', 'invalid_scalar', interval=interval
+                )
             return dict(state='observed', value=fields, interval=interval)
 
         def _host_file(self, key: str, path: Any, module_origin: Any) -> None:
@@ -2984,22 +3148,33 @@ setup:
             started = time.monotonic()
             record['origin'] = (_scientific_missing('absent') if path is None else
                                 _scientific_value(path, cap=1024))
-            record['module_origin'] = (_scientific_missing('absent') if module_origin is None else
-                                       _scientific_value(module_origin, cap=1024))
-            content = dict(_scientific_missing('partial', 'not_reached', interval=[started, None]),
-                           size=None, sha256=None)
+            record['module_origin'] = (
+                _scientific_missing('absent')
+                if module_origin is None
+                else _scientific_value(module_origin, cap=1024)
+            )
+            content = dict(
+                _scientific_missing('partial', 'not_reached', interval=[started, None]),
+                size=None,
+                sha256=None,
+            )
             record['content'] = content
             fd = None
             try:
                 self.checkpoint()
                 if record['origin']['state'] != 'observed':
-                    content.update(state='absent' if path is None else 'unavailable', reason='absent' if path is None else 'invalid_scalar')
+                    content.update(
+                        state='absent' if path is None else 'unavailable',
+                        reason='absent' if path is None else 'invalid_scalar',
+                    )
                     return
                 if (path.startswith('/proc/') and path != '/proc/self/exe') or path == EXE:
                     content.update(state='alias', reason='alias')
                     return
                 before_path = os.stat(path)
-                content['size'] = before_path.st_size if 0 <= before_path.st_size < 2**64 else None
+                content['size'] = (
+                    before_path.st_size if 0 <= before_path.st_size < 2**64 else None
+                )
                 if (before_path.st_dev, before_path.st_ino) == self.borrowed_pair:
                     content.update(state='alias', reason='alias')
                     return
@@ -3030,7 +3205,9 @@ setup:
                 if before.st_size > POLICY['text']:
                     content.update(state='oversize', reason='oversize')
                     return
-                self._host_fact(record, 'fd_link', lambda: os.readlink(f'/proc/self/fd/{fd}'), 1024)
+                self._host_fact(
+                    record, 'fd_link', lambda: os.readlink(f'/proc/self/fd/{fd}'), 1024
+                )
                 digest = hashlib.sha256()
                 size = 0
                 while True:
@@ -3052,27 +3229,56 @@ setup:
                 after_path = os.stat(path)
                 link_after = {}
                 self._host_fact(link_after, 'value', lambda: os.readlink(path), 1024)
-                if (self._stat(before) != self._stat(after) or self._stat(before_path) != self._stat(after_path)
-                        or self._stat(before) != self._stat(before_path) or size != before.st_size
-                        or not (link_before['state'] == 'observed' or link_before.get('errno') == errno.EINVAL)
-                        or {k: v for k, v in link_before.items() if k != 'interval'} !=
-                           {k: v for k, v in link_after['value'].items() if k != 'interval'}):
+                if (
+                    self._stat(before) != self._stat(after)
+                    or self._stat(before_path) != self._stat(after_path)
+                    or self._stat(before) != self._stat(before_path)
+                    or size != before.st_size
+                    or not (
+                        link_before['state'] == 'observed'
+                        or link_before.get('errno') == errno.EINVAL
+                    )
+                    or {k: v for k, v in link_before.items() if k != 'interval'}
+                    != {k: v for k, v in link_after['value'].items() if k != 'interval'}
+                ):
                     content.update(state='changed', reason='changed')
                     return
-                record['content'] = dict(state='complete', size=size, sha256=digest.hexdigest(),
-                                          interval=[started, time.monotonic()])
+                record['content'] = dict(
+                    state='complete',
+                    size=size,
+                    sha256=digest.hexdigest(),
+                    interval=[started, time.monotonic()],
+                )
                 self.checkpoint()
             except OSError as error:
-                state = 'absent' if error.errno == errno.ENOENT else 'denied' if error.errno in (errno.EACCES, errno.EPERM) else 'unavailable'
-                content.update(state=state, reason=state if state != 'unavailable' else 'invalid_scalar',
-                               errno=error.errno)
+                state = (
+                    'absent'
+                    if error.errno == errno.ENOENT
+                    else 'denied'
+                    if error.errno in (errno.EACCES, errno.EPERM)
+                    else 'unavailable'
+                )
+                content.update(
+                    state=state,
+                    reason=state if state != 'unavailable' else 'invalid_scalar',
+                    errno=error.errno,
+                )
                 if fd is None and self.io_acquisition is not None:
                     self.io_poisoned = True
                     raise
             except BaseException:
                 if record['content']['state'] != 'complete':
-                    state = 'cancelled' if self.cancelled is not None else 'deadline' if time.monotonic() >= self.deadline else 'partial'
-                    content.update(state=state, reason=state if state != 'partial' else 'io_unconfirmed')
+                    state = (
+                        'cancelled'
+                        if self.cancelled is not None
+                        else 'deadline'
+                        if time.monotonic() >= self.deadline
+                        else 'partial'
+                    )
+                    content.update(
+                        state=state,
+                        reason=state if state != 'partial' else 'io_unconfirmed',
+                    )
                 raise
             finally:
                 record['content']['interval'][1] = time.monotonic()
@@ -3088,12 +3294,37 @@ setup:
         def _observe_host(self) -> None:
             self._host_fact(self.outcome['host']['python'], 'machine', platform.machine, 64)
             process = self.outcome['host']['process']
-            self._host_fact(process, 'ticks', lambda: process_stat(os.getpid())['ticks'], kind='unsigned')
-            self._host_fact(process, 'boot', lambda: self._read('/proc/sys/kernel/random/boot_id', 8192).decode().strip(), 64)
-            for key, namespace_name in (('pid_ns', 'pid'), ('mnt_ns', 'mnt'), ('user_ns', 'user')):
-                self._host_fact(process, key, lambda name=namespace_name: os.readlink('/proc/self/ns/' + name), 64)
+            self._host_fact(
+                process,
+                'ticks',
+                lambda: process_stat(os.getpid())['ticks'],
+                kind='unsigned',
+            )
+            self._host_fact(
+                process,
+                'boot',
+                lambda: (
+                    self._read('/proc/sys/kernel/random/boot_id', 8192).decode().strip()
+                ),
+                64,
+            )
+            for key, namespace_name in (
+                ('pid_ns', 'pid'),
+                ('mnt_ns', 'mnt'),
+                ('user_ns', 'user'),
+            ):
+                self._host_fact(
+                    process,
+                    key,
+                    lambda name=namespace_name: os.readlink('/proc/self/ns/' + name),
+                    64,
+                )
             self._host_file('interpreter', '/proc/self/exe', None)
-            self._host_file('mmap', getattr(mmap, '__file__', None), getattr(getattr(mmap, '__spec__', None), 'origin', None))
+            self._host_file(
+                'mmap',
+                getattr(mmap, '__file__', None),
+                getattr(getattr(mmap, '__spec__', None), 'origin', None),
+            )
             self.outcome['host']['collection'] = 'complete'
 
         def _reference(self, name: str, cap: int = POLICY['text']) -> bytes:
@@ -3188,8 +3419,11 @@ setup:
                         mmap.__file__: '1d85a9fccb48eae9173b5fc8437daa05a62d221bf4b0066c0af332e1fb003c29'}
             for key, digest in zip(('interpreter', 'mmap'), binaries.values()):
                 observed = self.outcome['host']['files'][key]
-                if (observed['content']['state'] != 'complete' or observed['close'] != 'returned'
-                        or observed['content']['sha256'] != digest):
+                if (
+                    observed['content']['state'] != 'complete'
+                    or observed['close'] != 'returned'
+                    or observed['content']['sha256'] != digest
+                ):
                     raise Refusal('scientific interpreter or mmap implementation unsupported')
             page = os.sysconf('SC_PAGE_SIZE')
             self.outcome['runtime_preconditions']['system_page_size'] = page
@@ -3325,7 +3559,10 @@ setup:
                 self.outcome['window'] = dict(asdict(self.window), selected_started=self.selected_started,
                                               lifetime_started=self.plan.started)
                 self.deadline = self.window.observe_by
-                self.borrowed_pair = (borrowed.source_stat.st_dev, borrowed.source_stat.st_ino)
+                self.borrowed_pair = (
+                    borrowed.source_stat.st_dev,
+                    borrowed.source_stat.st_ino,
+                )
                 self._cheap_host()
                 if (borrowed.target is not self.target or borrowed.original_record['path'] != EXE
                         or borrowed.original_record['mirror'] is None
@@ -3335,14 +3572,20 @@ setup:
                         or _scientific_active is not None):
                     raise Refusal('scientific scope owner mismatch')
                 runtime = self.outcome['runtime_preconditions']
-                runtime['main_thread'] = threading.current_thread() is threading.main_thread()
+                runtime['main_thread'] = (
+                    threading.current_thread() is threading.main_thread()
+                )
                 self.checkpoint()
                 runtime['task_ids'] = self._enumerate('/proc/self/task', 2)
                 if not runtime['main_thread'] or len(runtime['task_ids']) != 1:
                     raise Refusal('scientific main single thread required')
                 watched = (signal.SIGALRM, signal.SIGINT, signal.SIGTERM)
                 runtime['timers'] = []
-                for timer in (signal.ITIMER_REAL, signal.ITIMER_VIRTUAL, signal.ITIMER_PROF):
+                for timer in (
+                    signal.ITIMER_REAL,
+                    signal.ITIMER_VIRTUAL,
+                    signal.ITIMER_PROF,
+                ):
                     runtime['timers'].append(signal.getitimer(timer))
                     self.checkpoint()
                 timers = runtime['timers']
@@ -3356,8 +3599,14 @@ setup:
                 self.checkpoint()
                 runtime['profile_absent'] = sys.getprofile() is None
                 self.checkpoint()
-                runtime['signal_handlers'] = {str(int(sig)): 'default' if signal.getsignal(sig) == signal.SIG_DFL
-                    else 'ignored' if signal.getsignal(sig) == signal.SIG_IGN else 'callable' for sig in watched}
+                runtime['signal_handlers'] = {
+                    str(int(sig)): 'default'
+                    if signal.getsignal(sig) == signal.SIG_DFL
+                    else 'ignored'
+                    if signal.getsignal(sig) == signal.SIG_IGN
+                    else 'callable'
+                    for sig in watched
+                }
                 self.checkpoint()
                 if (any(timer != (0.0, 0.0) for timer in timers)
                         or set(watched) & (pending_signals | blocked)
@@ -3379,26 +3628,42 @@ setup:
                 names = ('mapped-object-refusal.json', 'scientific-descriptor-probe-start.json', 'scientific-descriptor-probe.json')
                 if any(os.path.lexists(self.plan.retained / name) for name in names):
                     raise Refusal('scientific evidence already exists')
-                full_reservation = self._retained_size() + len(original) + 4096 + 4 * 1024**2 <= POLICY['total']
+                full_reservation = (
+                    self._retained_size() + len(original) + 4096 + 4 * 1024**2
+                    <= POLICY['total']
+                )
                 self.outcome['reservation'] = full_reservation
                 self._save(names[0], original)
                 if not full_reservation:
                     raise Refusal('scientific evidence reservation unavailable')
                 self._bindings()
-                start_record = dict(state='terminal_pending', progress='unconfirmed_without_terminal',
-                    qualification='not_evaluated', window=asdict(self.window),
-                    collector_pid=os.getpid(), target_pid=self.target.pid, target_ticks=self.target.ticks,
-                    file_fd=borrowed.file_fd, root_fd=borrowed.root_fd,
-                    original_refusal=self.outcome['original_refusal']['readback'], launch_ref='launch.json',
+                start_record = dict(
+                    state='terminal_pending',
+                    progress='unconfirmed_without_terminal',
+                    qualification='not_evaluated',
+                    window=asdict(self.window),
+                    collector_pid=os.getpid(),
+                    target_pid=self.target.pid,
+                    target_ticks=self.target.ticks,
+                    file_fd=borrowed.file_fd,
+                    root_fd=borrowed.root_fd,
+                    original_refusal=self.outcome['original_refusal']['readback'],
+                    launch_ref='launch.json',
                     source_sha256=self.outcome['source_bindings']['source_sha256'],
-                    program_sha256=self.outcome['source_bindings']['program_sha256'], **_SCIENTIFIC_FLAGS)
+                    program_sha256=self.outcome['source_bindings']['program_sha256'],
+                    **_SCIENTIFIC_FLAGS,
+                )
                 self._save(names[1], self._encode(start_record, 4096))
                 self._observe_host()
                 try:
                     mapper = self._support()
-                    self.outcome['qualification'] = dict(state='exactly_supported', evidence=self.outcome['support'])
+                    self.outcome['qualification'] = dict(
+                        state='exactly_supported', evidence=self.outcome['support']
+                    )
                 except BaseException:
-                    self.outcome['qualification'] = dict(state='unsupported', reason='implementation_or_thread_unsupported')
+                    self.outcome['qualification'] = dict(
+                        state='unsupported', reason='implementation_or_thread_unsupported'
+                    )
                     raise
                 page = self.outcome['support']['page_size']
                 info = os.fstat(borrowed.file_fd)
@@ -3466,7 +3731,11 @@ setup:
                 self.outcome['measurement']['reason'] = type(error).__name__ + ': ' + str(error)[:192]
                 self.record_owner_failure('observation', error)
             finally:
-                if acquisition is not None or self.io_acquisition is not None or self.enum_state != 'released':
+                if (
+                    acquisition is not None
+                    or self.io_acquisition is not None
+                    or self.enum_state != 'released'
+                ):
                     cleanup.update(state='unconfirmed', uncertain_acquisition=
                         acquisition or self.io_acquisition or 'enumeration')
                 if activated:
@@ -3504,10 +3773,14 @@ setup:
                     self.deadline = self.window.finish_by
                     try:
                         signal.setitimer(signal.ITIMER_REAL, max(.000001, self.deadline - time.monotonic()))
-                        if (self.outcome['reservation'] and self.outcome['source_association'] == 'verified'
-                                and not self.io_poisoned and self.io_acquisition is None
-                                and self.enum_state == 'released'
-                                and self.outcome['persistence']['state'] == 'not_attempted'):
+                        if (
+                            self.outcome['reservation']
+                            and self.outcome['source_association'] == 'verified'
+                            and not self.io_poisoned
+                            and self.io_acquisition is None
+                            and self.enum_state == 'released'
+                            and self.outcome['persistence']['state'] == 'not_attempted'
+                        ):
                             terminal = {key: value for key, value in self.outcome.items() if key != 'persistence'}
                             terminal['host'] = self._host_projection()
                             self._encode(terminal['host'], 32768)
@@ -3536,17 +3809,32 @@ setup:
 
         def terminal_facts(self) -> Mapping[str, Any]:
             try:
-                result = dict(measurement=self.outcome['measurement']['kind'],
-                    relation=self.outcome['measurement'].get('relation'), evidence=self.outcome['evidence'],
-                    cleanup=self.outcome['cleanup']['state'], host=self.outcome['host']['collection'],
-                    qualification=self.outcome['qualification']['state'], source=self.outcome['source_association'],
-                    **{key: self.outcome[key] for key in ('original_refusal', 'pending', 'persistence')},
-                    owner_failure_count=self.outcome.get('owner_failure_count', 0), owner_failures_omitted=True,
-                    scientific_disposition='refused', decode_permitted=False, **_SCIENTIFIC_FLAGS)
+                result = dict(
+                    measurement=self.outcome['measurement']['kind'],
+                    relation=self.outcome['measurement'].get('relation'),
+                    evidence=self.outcome['evidence'],
+                    cleanup=self.outcome['cleanup']['state'],
+                    host=self.outcome['host']['collection'],
+                    qualification=self.outcome['qualification']['state'],
+                    source=self.outcome['source_association'],
+                    **{
+                        key: self.outcome[key]
+                        for key in ('original_refusal', 'pending', 'persistence')
+                    },
+                    owner_failure_count=self.outcome.get('owner_failure_count', 0),
+                    owner_failures_omitted=True,
+                    scientific_disposition='refused',
+                    decode_permitted=False,
+                    **_SCIENTIFIC_FLAGS,
+                )
                 try:
-                    encoded = json.dumps(result, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+                    encoded = json.dumps(
+                        result, sort_keys=True, separators=(',', ':'), allow_nan=False
+                    ).encode()
                 except Exception:
-                    encoded = json.dumps(result, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+                    encoded = json.dumps(
+                        result, sort_keys=True, separators=(',', ':'), allow_nan=False
+                    ).encode()
                 if len(encoded) > 2048:
                     raise self.primary
                 return result
