@@ -1424,11 +1424,15 @@ def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
     assert specs[0][2] == combined_magnitude
 
 
-def test_write_bids_dataset_logs_source_and_written_volume_statistics(
+@pytest.mark.parametrize("diagnostics", ["", "full"])
+def test_write_bids_dataset_logs_optional_source_and_written_volume_statistics(
     tmp_path,
     caplog,
+    monkeypatch,
+    diagnostics,
 ):
     caplog.set_level(logging.INFO)
+    monkeypatch.setenv("QSMXT_OPENRECON_DIAGNOSTICS", diagnostics)
     settings = qsmxt._settings_from_config(
         {"parameters": {"echotimesms": "10,20"}},
         FakeMetadata(),
@@ -1441,11 +1445,12 @@ def test_write_bids_dataset_logs_source_and_written_volume_statistics(
         settings,
     )
 
-    assert "QSMxT diagnostic source series" in caplog.text
+    full = diagnostics == "full"
+    assert ("QSMxT diagnostic source series" in caplog.text) == full
     assert "QSMxT diagnostic selected input pair" in caplog.text
-    assert "QSMxT diagnostic BIDS magnitude echo=1" in caplog.text
-    assert "QSMxT diagnostic BIDS phase echo=1" in caplog.text
-    assert "sha256=" in caplog.text
+    assert ("QSMxT diagnostic BIDS magnitude echo=1" in caplog.text) == full
+    assert ("QSMxT diagnostic BIDS phase echo=1" in caplog.text) == full
+    assert ("sha256=" in caplog.text) == full
 
 
 def test_write_bids_dataset_pairs_magnitude_and_phase(tmp_path):

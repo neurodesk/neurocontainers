@@ -361,6 +361,7 @@ def process(connection, config, metadata):
                 int(image.getHead().image_series_index)
                 for image in input_images + original_images
             }
+            del original_images
             for input_pair in input_pairs:
                 variant = input_pair["variant"]
                 run_dir = work_dir / input_pair["short_label"].lower()
@@ -618,8 +619,8 @@ def write_bids_dataset(
                 ",".join(f"{value:.6g}" for value in b0_dir),
             )
 
-        nib.save(nib.Nifti1Image(mag_volume.astype(np.float32), affine), mag_path)
-        nib.save(nib.Nifti1Image(phase_volume.astype(np.float32), phase_affine), phase_path)
+        nib.save(nib.Nifti1Image(np.asarray(mag_volume, dtype=np.float32), affine), mag_path)
+        nib.save(nib.Nifti1Image(np.asarray(phase_volume, dtype=np.float32), phase_affine), phase_path)
 
         sidecar = {
             **acquisition_geometry,
@@ -809,9 +810,10 @@ def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settin
         ),
         phase_path,
     )
+    del magnitude_4d, phase_4d, magnitude, phase
     averaged = _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings)
-    magnitude = np.asarray(nib.load(averaged["magnitude"]).get_fdata(), dtype=np.float32)
-    phase = np.asarray(nib.load(averaged["phase"]).get_fdata(), dtype=np.float32)
+    magnitude = nib.load(averaged["magnitude"]).get_fdata(dtype=np.float32)
+    phase = nib.load(averaged["phase"]).get_fdata(dtype=np.float32)
     return (
         [magnitude_volumes[0]],
         [phase_volumes[0]],
@@ -1053,6 +1055,8 @@ def _log_qsmxt_nifti_diagnostics(output_dir):
         output_dir,
         len(paths),
     )
+    if not _full_diagnostics_enabled():
+        return
     for path in paths:
         try:
             nifti = nib.load(str(path))
@@ -2424,7 +2428,13 @@ def _group_images_by_series(images):
     return groups
 
 
+def _full_diagnostics_enabled():
+    return os.environ.get("QSMXT_OPENRECON_DIAGNOSTICS") == "full"
+
+
 def _log_source_series_diagnostics(groups):
+    if not _full_diagnostics_enabled():
+        return
     for group in groups:
         echo_groups = _echo_image_groups(group["images"])
         for echo_index, echo_images in enumerate(echo_groups, start=1):
@@ -2446,6 +2456,8 @@ def _log_source_series_diagnostics(groups):
 
 
 def _log_array_diagnostics(label, values):
+    if not _full_diagnostics_enabled():
+        return
     array = np.asarray(values)
     numeric = np.abs(array) if np.iscomplexobj(array) else array
     finite = np.asarray(numeric[np.isfinite(numeric)], dtype=np.float64)
