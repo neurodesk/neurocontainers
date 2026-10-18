@@ -34,6 +34,7 @@ setup:
     """One read-only ARM diagnostic. Missing or pending evidence is incomplete."""
     from __future__ import annotations
 
+    import base64
     import ctypes
     from bisect import bisect_right
     from dataclasses import asdict, dataclass
@@ -42,6 +43,7 @@ setup:
     import http.client
     import json
     import math
+    import mmap
     import os
     from pathlib import Path
     import platform
@@ -57,6 +59,7 @@ setup:
     import sys
     import tarfile
     import tempfile
+    import threading
     import time
     from types import FrameType, ModuleType
     # Any is confined to heterogeneous JSON record values.
@@ -2781,8 +2784,6 @@ setup:
             return present
 
         def _support(self) -> ModuleType:
-            import mmap
-            import threading
             if (sys.implementation.name != 'cpython' or sys.version_info[:3] != (3, 10, 12)
                     or sys.platform != 'linux' or platform.machine() != 'x86_64'
                     or threading.current_thread() is not threading.main_thread()
@@ -2804,7 +2805,6 @@ setup:
             return mmap
 
         def _member(self, name: str, path: str, owner: _Process) -> bytes:
-            import base64
             start = time.monotonic()
             try:
                 data = self._read(path, _SCIENTIFIC_MEMBERS[name])
@@ -2891,7 +2891,6 @@ setup:
             return collector_rows
 
         def _mounts(self) -> None:
-            import base64
             associations = []
             for phase in ('before', 'final_held'):
                 bracket = self.outcome['brackets'][phase]
@@ -2935,7 +2934,6 @@ setup:
                         or len({os.getpid(), self.target.pid, self.observer.pid, self.plan.owner.pid}) != 4
                         or _scientific_active is not None):
                     raise Refusal('scientific scope owner mismatch')
-                import threading
                 if threading.current_thread() is not threading.main_thread() or len(os.listdir('/proc/self/task')) != 1:
                     raise Refusal('scientific main single thread required')
                 watched = (signal.SIGALRM, signal.SIGINT, signal.SIGTERM)
@@ -3010,6 +3008,7 @@ setup:
                             requested_length=info.st_size, rounded_length=rounded, page_size=page,
                             offset=0, flags='MAP_PRIVATE', protection='PROT_READ|PROT_EXEC', started=time.monotonic())
                 self.outcome['measurement'] = dict(kind='partial', call=call)
+                self.checkpoint()
                 acquisition = 'mapping and implementation duplicate'
                 mapping = mapper.mmap(borrowed.file_fd, info.st_size, flags=mapper.MAP_PRIVATE,
                                       prot=mapper.PROT_READ | mapper.PROT_EXEC, offset=0)
