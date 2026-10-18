@@ -16,6 +16,27 @@ This document describes how container tests are defined, executed locally, and a
 - **`workflows/reporting.py`** turns JSON summaries into PR-friendly Markdown — `build_comment` for inline issue comments, `build_report` for the full report, and `build_aggregate_summary` for the matrix roll-up. It is the single source of report formatting; `test_runner.py`, `release_test_runner.py`, and `full_container_test.py` all call into it. GitHub Actions uploads both the JSON and Markdown outputs as artifacts.
 - **`workflows/summarize_deploy_results.py`** parses the builtin `test_deploy.sh` output into a bins/path tree used by the same reports.
 
+## File assertions
+
+A fulltest entry may declare `validate` as a list of non-empty assertion mappings.
+A non-list `validate` value is rejected before execution. Assertion entries are
+checked after exit-code and output checks, in declaration order; the first
+failure is reported. Paths support the same variable substitutions as commands.
+Relative paths resolve under the test work directory; absolute paths stay absolute.
+
+- `output_exists: path`: the path must exist (files or directories).
+- `same_dimensions: [first, second]`: both images must load with NiBabel and have
+  exactly equal shapes, including any trailing singleton dimensions.
+- `is_3d: path`: the image must load with NiBabel and have exactly three dimensions.
+  A four-dimensional image with a singleton fourth dimension does not pass.
+- `output_dir_not_empty: path`: the path must be a directory with at least one
+  entry. This does not validate the contents of that entry.
+
+Path arguments must be non-empty strings before and after substitution.
+Unsupported keys, malformed arguments,
+and non-mapping or empty assertions fail the test instead of being ignored.
+Omit `validate` or use `validate: []` when no file assertions are needed.
+
 ## Release test artifacts
 
 Each `release_test_runner.py` invocation creates a fresh `fulltest-run-*` directory

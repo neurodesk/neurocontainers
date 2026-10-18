@@ -45,6 +45,9 @@ class TestSpec:
         expected_output = test.get("expected_output_contains") or ()
         if isinstance(expected_output, str):
             expected_output = (expected_output,)
+        validations = test.get("validate", [])
+        if not isinstance(validations, list):
+            raise TypeError("validate must be a list of file assertion mappings")
         return cls(
             name=test.get("name", "Unnamed test"),
             command=test.get("command", ""),
@@ -55,7 +58,7 @@ class TestSpec:
             expected_exit_code=test.get("expected_exit_code", 0),
             expected_exit_code_not=test.get("expected_exit_code_not"),
             expected_output=tuple(str(value) for value in expected_output),
-            validations=tuple(test.get("validate", [])),
+            validations=tuple(validations),
         )
 
 
