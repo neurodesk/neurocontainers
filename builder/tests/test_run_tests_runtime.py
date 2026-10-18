@@ -123,10 +123,10 @@ def test_host_program_inherits_real_stdin_and_environment(tmp_path) -> None:
     yaml_path = _write_host_suite(
         tmp_path / "stdin.yaml",
         host_script=(
-            'IFS= read -r received\n'
+            "IFS= read -r received\n"
             'printf "%s|%s|%s\\n" "$received" "$HOST_TRANSPORT_VALUE" "$#" '
-            '> inherited\n'
-            'cat >> inherited'
+            "> inherited\n"
+            "cat >> inherited"
         ),
         env={"HOST_TRANSPORT_VALUE": "suite-only"},
         env_setup="export HOST_TRANSPORT_VALUE=setup-only",
@@ -206,15 +206,21 @@ def test_host_setup_nonzero_returns_before_health_and_cleanup(
         ("set -e\nfalse\nprintf unreachable", 1, b"", b""),
         (
             'set -eu\nvalue=selected\nprintf %s "$value"\nfalse',
-            1, b"selected", b"",
+            1,
+            b"selected",
+            b"",
         ),
         (
             "trap 'printf trapped >&2' EXIT\nprintf out\nexit 7",
-            7, b"out", b"trapped",
+            7,
+            b"out",
+            b"trapped",
         ),
         (
             "exec /bin/sh -c 'printf replaced; printf \"\\376\" >&2; exit 9'",
-            9, b"replaced", b"\xfe",
+            9,
+            b"replaced",
+            b"\xfe",
         ),
     ],
     ids=["default-options", "errexit", "script-options", "exit-trap", "exec"],
@@ -263,6 +269,7 @@ def test_host_temporary_files_are_removed_on_errors(
         monkeypatch.setattr(run_tests.subprocess, "run", missing_cwd)
         error, message = FileNotFoundError, "missing"
     else:
+
         def fail_run(command, **kwargs):
             launches.append(command)
             assert Path(command[1]).read_bytes() == b"printf unused"
@@ -344,7 +351,9 @@ def test_host_allocation_failure_preserves_phase_error_policy(
     )
 
 
-def test_concurrent_host_suites_use_distinct_live_scripts(tmp_path, host_health) -> None:
+def test_concurrent_host_suites_use_distinct_live_scripts(
+    tmp_path, host_health
+) -> None:
     work_dir = tmp_path / "work"
     work_dir.mkdir()
     script = (
