@@ -602,7 +602,6 @@ def _run_setup_in_container(
 
 
 def _run_host_script(script: str, work_dir: Path) -> subprocess.CompletedProcess[bytes]:
-    """Run a complete host program from a private file outside the work tree."""
     resolved_work_dir = work_dir.resolve()
     seen: set[Path] = set()
     error = OSError("No temporary directory available outside the work directory")
