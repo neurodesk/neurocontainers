@@ -73,11 +73,95 @@ and all original magnitude/phase pixels remained unchanged.
 The supplied data exercised one inferred DC group. Raw reconstruction, scanner
 distortion correction, and a separate ND branch were outside this benchmark.
 The fixture normalized DICOM LPS geometry to the adapter's current convention;
-it does not validate standard scanner MRD geometry interoperability. The default
-mask excluded substantial central tissue, so repeatability does not establish
-scientific adequacy in the excluded region.
+it does not validate standard scanner MRD geometry interoperability. The Otsu
+mask used by that benchmark excluded substantial central tissue, so repeatability
+does not establish scientific adequacy in the excluded region.
 
 The motion estimator differs from MCFLIRT, and cubic B-spline interpolation
 replaces the previous sinc interpolation. The synthetic checks establish the
 runtime contract, not numerical equivalence to FSL. The real-data benchmark
 establishes repeatability and timing for this acquisition and configuration.
+
+## HD-BET default
+
+The 2026-10-18 follow-up changes the OpenRecon mask default to `hd-bet`, both
+in `OpenReconLabel.json` and when configuration omits `maskpreset`. The adapter
+passes `--mask magnitude,hd-bet,close:1,fill-holes:0` to the unchanged official
+QSMxT binary. The model is already packaged and verified against its pinned
+manifest, so extraction works without network access. Otsu thresholding remains
+available through the explicit `robust-threshold` preset. Saved scanner protocols
+that explicitly store a mask preset retain that choice.
+
+This changes the mask and therefore the scientific reconstruction. The earlier
+serial-versus-parallel Otsu timings above remain historical measurements; they
+do not establish HD-BET performance. The follow-up benchmark retains the supplied
+full-resolution MRD fixture, Tikhonov reconstruction, and the 8-CPU/16-GiB limits.
+
+Five complete HD-BET replays passed validation:
+
+| Run | Full replay, seconds |
+| --- | ---: |
+| H01 | 683.013 |
+| H02 | 644.093 |
+| H03 | 627.960 |
+| H04 | 617.445 |
+| H05 | 641.767 |
+
+Median full replay time was 641.767 seconds, with a range of
+617.445 to 683.013 seconds. The first run remains included.
+Median cgroup memory peak was 13.905 GiB; the maximum was
+14.079 GiB. These peaks include filesystem cache. The host was shared
+and caches were not flushed. Input checksums ran outside the client timer.
+
+| Step | Median, seconds | Range, seconds |
+| --- | ---: | ---: |
+| Full OpenRecon replay | 641.767 | 617.445 to 683.013 |
+| Original image copy | 7.809 | 2.665 to 12.281 |
+| Input diagnostics | 20.571 | 18.992 to 22.445 |
+| BIDS preparation, including EPI | 194.880 | 187.961 to 233.874 |
+| EPI preprocessing, nested | 119.570 | 115.211 to 140.339 |
+| Motion estimation, nested | 36.604 | 35.875 to 39.002 |
+| Cartesian resampling wall time, nested | 9.527 | 9.150 to 13.023 |
+| Phase matching and complex average, nested | 22.065 | 20.574 to 27.370 |
+| Other BIDS preparation | 78.687 | 72.750 to 93.535 |
+| Native QSMxT, including stages | 324.257 | 322.723 to 329.353 |
+| Phase scaling, nested | 5.511 | 4.333 to 5.769 |
+| Magnitude and inhomogeneity correction, nested | 61.099 | 60.403 to 62.348 |
+| HD-BET mask and refinements, nested | 126.701 | 125.746 to 128.614 |
+| ROMEO unwrapping, nested | 24.112 | 23.815 to 27.047 |
+| V-SHARP background removal, nested | 80.962 | 79.120 to 83.013 |
+| Tikhonov inversion, nested | 13.443 | 12.602 to 14.268 |
+| Mean reference, nested | 7.364 | 6.535 to 8.005 |
+| Native loading, setup and other I/O, nested | 5.664 | 5.446 to 5.897 |
+| Output diagnostics | 61.942 | 57.904 to 76.715 |
+| Derived image packing | 9.197 | 8.024 to 10.400 |
+| Output validation | 0.453 | 0.448 to 0.470 |
+| Send original and derived images | 4.210 | 3.783 to 5.033 |
+| Other client and protocol work | 5.668 | 3.739 to 7.479 |
+
+Nested rows overlap their parent. Native QSMxT accounts for roughly half the
+elapsed replay time; HD-BET extraction plus mask refinements is its longest
+stage. The measured CPU usage averaged about 1.34 cores despite the 8-CPU
+budget, so these timings include substantial serial processing and I/O.
+
+All five full-resolution Chimap arrays, brain masks, affines, and native
+scientific configurations matched exactly. Every returned display pixel and
+slice position was checked against the native result, and all original
+magnitude/phase pixels remained unchanged. The native configuration confirmed
+`hd-bet` and Tikhonov lambda 0.01 with identity regularization in every run.
+The private MRD copy and canonical original matched the recorded whole-file
+SHA-256 before and after each new replay. H01 had explicit copy verification
+before launch and a post-run check when its completed container was collected.
+
+An initial read-only input mount failed before reconstruction because the MRD
+library opens input files in read/write mode. That setup attempt is retained
+separately and excluded from these five successful timings. The private input
+copy resolved the access requirement without changing the source data.
+
+On the same axial QC slice used for the earlier Otsu result, HD-BET included
+all 12,792 pixels in the largest enclosed gap of the previous mask. This measures
+coverage of that specific two-dimensional gap; it is not an anatomical accuracy
+score. No expert reference mask was supplied. Residual QSM streak artifacts
+remain, and the acquisition and scanner-interoperability limits above still
+apply. The rebuilt container also passed 368 adapter/regional-report tests and
+all 22 checked-in release test commands offline with `HOME=/nonexistent`.

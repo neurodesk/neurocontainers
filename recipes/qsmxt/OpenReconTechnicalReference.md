@@ -153,12 +153,12 @@ sequence instead, and enable both phase and magnitude reconstruction.
 OpenRecon selects RTS with ROMEO and V-SHARP explicitly:
 
 ```text
-qsmxt run <bids_dir> --qsm-algorithm rts --unwrapping-algorithm romeo --bf-algorithm vsharp --mask magnitude,threshold:otsu,close:1,fill-holes:0
+qsmxt run <bids_dir> --qsm-algorithm rts --unwrapping-algorithm romeo --bf-algorithm vsharp --mask magnitude,hd-bet,close:1,fill-holes:0
 ```
 
 The OpenRecon wrapper also supplies the output directory and resource settings.
 Its custom-pipeline defaults are ROMEO phase unwrapping, V-SHARP background-field
-removal, RTS inversion, and robust-threshold magnitude masking with Otsu,
+removal, RTS inversion, and HD-BET magnitude masking using the packaged model,
 closing radius 1, and automatic hole filling. The adapter adds no signal erosion. The QSM map is the only
 derived output returned by default. The source magnitude and phase series
 are always stored alongside it.
@@ -351,9 +351,9 @@ voxels enter those calculations.
 
 | Mask preset | Method |
 | --- | --- |
-| `hd-bet` | HD-BET extraction from magnitude using the packaged model. |
+| `hd-bet` | HD-BET extraction from magnitude using the packaged model. This is the OpenRecon default. |
 | `bet` | Brain Extraction Tool masking of magnitude. |
-| `robust-threshold` | Otsu or percentile thresholding of the selected magnitude or phase-quality input. This is the OpenRecon default. |
+| `robust-threshold` | Otsu or percentile thresholding of the selected magnitude or phase-quality input. |
 | `combined` | Union of independently generated BET and threshold masks. |
 
 The mask preset remains active when an algorithm pipeline preset is selected;
@@ -361,9 +361,11 @@ the pipeline preset only overrides unwrapping, background removal, and QSM
 inversion. Advanced `maskinginput` defaults to `magnitude`, `maskthresholdmethod`
 to `otsu`, and `betfractionalintensity` to 0.5. `maskthresholdpercentile` defaults
 to 65% and applies when `maskthresholdmethod` is `percentile`.
-Magnitude thresholding is the safer choice for single-echo data because a
-single echo provides no inter-echo phase-coherence information. Each mask section
-closes gaps with radius 1 and fills all holes by default (`close:1,fill-holes:0`).
+HD-BET always uses magnitude, including for single-echo input. For the optional
+threshold preset, a single echo provides no inter-echo phase-coherence information,
+so magnitude is the default threshold input. Each mask section closes gaps with
+radius 1 and fills holes using the native automatic cap of 5% of the image volume
+(`close:1,fill-holes:0`). A zero size selects this automatic cap, not unlimited filling.
 Dilation and erosion default to zero. Mask cleanup is no longer a scanner control.
 Historical cleanup presets and numeric refinement overrides remain supported.
 As before, `maskcleanup: none` selects the default close-and-fill behavior.
