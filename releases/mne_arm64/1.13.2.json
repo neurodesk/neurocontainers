@@ -1,7 +1,7 @@
 {
   "apps": {
     "mne_arm64 1.13.2": {
-      "version": "20261014",
+      "version": "20261017",
       "exec": "",
       "apptainer_args": []
     }

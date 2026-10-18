@@ -87,6 +87,25 @@ lesions and 0.608 on multiple sclerosis lesions. With the ensemble it scores
 0.733 and 0.647. These results come from research datasets. They are not a
 clinical validation.
 
+## Output metadata
+
+The lesion outputs are MR magnitude derivatives, not native DICOM SEG
+objects. Their outgoing MRD Image Type is `DERIVED\PRIMARY\M\<product>`.
+`M` retains the Siemens magnitude convention. The implementation-defined
+product values describe the derived pixels:
+
+- `OR_WML_OVERLAY` identifies an image with lesion outlines.
+- `OR_WML_MASK` identifies binary lesion labels.
+- `OR_WML_PROB` identifies the scaled lesion probability map.
+- `OR_WML_REPORT` identifies rendered lesion measurements.
+
+Outgoing metadata records the FLAMeS version, selected model, backend
+provenance, processing parameters, and source geometry identifiers.
+Originals retain their source Image Type. Each processed series has a
+fresh series identity; the scanner allocates final SOP Instance UIDs when
+it combines MRD images into Enhanced MR frames. Verify the final Image
+Type, Frame Type, UIDs, and provenance fields in scanner exports.
+
 ## Citation
 
 Dereskewicz E, La Rosa F, dos Santos Silva J, et al. FLAMeS: a robust deep

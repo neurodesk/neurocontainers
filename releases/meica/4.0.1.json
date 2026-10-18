@@ -1,7 +1,7 @@
 {
   "apps": {
     "meica 4.0.1": {
-      "version": "20261016",
+      "version": "20261017",
       "exec": "",
       "apptainer_args": []
     }

@@ -1189,7 +1189,7 @@ def test_output_meta_publishes_qsm_window_in_integer_ppb_domain():
         source.getHead(),
         qsmxt.OUTPUT_SERIES_START,
         "QSMxT QSM",
-        "QSMXT_CHIMAP",
+        "OR_QSM_CHIMAP",
         "qsm",
         "ppm",
         physical,
@@ -1197,6 +1197,7 @@ def test_output_meta_publishes_qsm_window_in_integer_ppb_domain():
         0,
         1,
         display_meta,
+        series_uid=qsmxt.new_uid(),
     )
 
     assert meta["RescaleType"] == "US"
@@ -1237,7 +1238,7 @@ def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
         source.getHead(),
         qsmxt.OUTPUT_SERIES_START,
         "QSMxT QSM",
-        "QSMXT_CHIMAP",
+        "OR_QSM_CHIMAP",
         "qsm",
         "ppm",
         physical,
@@ -1245,6 +1246,7 @@ def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
         0,
         1,
         display_meta,
+        series_uid=qsmxt.new_uid(),
     )
 
     assert meta["DataRole"] == ["Image", "Quantitative"]
@@ -1317,7 +1319,7 @@ def test_output_meta_uses_robust_t2star_range_for_window():
         source.getHead(),
         qsmxt.OUTPUT_SERIES_START,
         "QSMxT T2star",
-        "QSMXT_T2STAR",
+        "OR_QSM_T2STAR",
         "t2star",
         "s",
         physical,
@@ -1325,6 +1327,7 @@ def test_output_meta_uses_robust_t2star_range_for_window():
         0,
         10,
         display_meta,
+        series_uid=qsmxt.new_uid(),
     )
 
     assert float(meta["WindowCenter"]) == 25.0
@@ -1344,8 +1347,9 @@ def test_t2star_long_fit_tail_preserves_millisecond_precision_and_tissue_window(
     source = _image(1, 1, "gre_qsm", np.ones((1, 10, 100), dtype=np.float32))
     meta = qsmxt._output_meta(
         source, source.getHead(), qsmxt.OUTPUT_SERIES_START,
-        "QSMxT T2star", "QSMXT_T2STAR", "t2star", "s", data,
+        "QSMxT T2star", "OR_QSM_T2STAR", "t2star", "s", data,
         Path("/tmp/t2star.nii.gz"), 0, 10, display_meta,
+        series_uid=qsmxt.new_uid(),
     )
 
     decoded_ms = display.reshape(-1) * float(meta["RescaleSlope"])
@@ -1366,8 +1370,9 @@ def test_t2star_empty_or_small_maps_have_valid_window_and_scaling(values):
     source = _image(1, 1, "gre_qsm", np.ones_like(data))
     meta = qsmxt._output_meta(
         source, source.getHead(), qsmxt.OUTPUT_SERIES_START,
-        "QSMxT T2star", "QSMXT_T2STAR", "t2star", "s", data,
+        "QSMxT T2star", "OR_QSM_T2STAR", "t2star", "s", data,
         Path("/tmp/t2star.nii.gz"), 0, 1, display_meta,
+        series_uid=qsmxt.new_uid(),
     )
     assert 0 < float(meta["RescaleSlope"]) <= 1
     assert float(meta["WindowWidth"]) >= 1
@@ -1674,7 +1679,7 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert output.data.dtype == np.uint16
     assert np.all(output.data == 3548)
     assert meta["QSMxTOutput"] == "qsm"
-    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
+    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\OR_QSM_CHIMAP"
     assert meta["QSMxTDisplayScale"] == "1000"
     assert meta["QSMxTDisplayOffset"] == "2048"
     assert meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
@@ -1695,12 +1700,15 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["QSMxTDisplayMin"] == "3548"
     assert meta["QSMxTDisplayMax"] == "3548"
     assert meta["QSMxTDisplayClippedVoxels"] == "0"
-    assert meta["ImageComment"] == (
+    assert meta["ImageComment"].startswith(
         "QSMxT QSM DC; scanner display uint16 0-4095; "
         "ppm = (display - 2048) / 1000; "
         "stored 0 is DICOM pixel padding"
     )
     assert meta["ImageComments"] == meta["ImageComment"]
+    assert meta["OpenReconSoftware"] == "QSMxT"
+    assert json.loads(meta["OpenReconParameters"])["n_echoes"] == 2
+    assert "product=OR_QSM_CHIMAP" in meta["DerivationDescription"]
     assert meta["slice_count"] == "2"
     assert meta["NumberOfSlices"] == "2"
     assert meta["ImagesInAcquisition"] == "2"
@@ -1721,6 +1729,35 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert second_meta["IsmrmrdSliceNo"] == "1"
     assert second_meta["SeriesInstanceUID"] == meta["SeriesInstanceUID"]
     assert second_meta["SOPInstanceUID"] != meta["SOPInstanceUID"]
+
+
+def test_processing_runs_have_distinct_uids_and_report_their_versions(tmp_path, monkeypatch):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    binary = _fake_qsmxt_binary(tmp_path)
+    outputs = []
+    for version in ("10.0.0", "10.0.1"):
+        monkeypatch.setenv("OPENRECON_SOFTWARE_VERSION", version)
+        connection = FakeConnection(_input_images())
+        qsmxt.process(connection, {"parameters": {
+            "qsmxtbinary": str(binary), "echotimesms": "10,20",
+        }}, FakeMetadata())
+        assert connection.closed and not connection.logs
+        metas = [ismrmrd.Meta.deserialize(image.attribute_string)
+                 for image in connection.sent_batches[-1]]
+        assert {meta["OpenReconSoftwareVersion"] for meta in metas} == {version}
+        assert len({meta["SeriesInstanceUID"] for meta in metas}) == 1
+        assert len({meta["SOPInstanceUID"] for meta in metas}) == len(metas)
+        outputs.append(metas)
+    for key in ("SeriesInstanceUID", "SOPInstanceUID"):
+        assert {meta[key] for meta in outputs[0]}.isdisjoint(
+            meta[key] for meta in outputs[1]
+        )
+
+
+def test_all_qsm_products_fit_the_scanner_image_type_component():
+    tokens = [spec["token"] for spec in qsmxt.QSMXT_OUTPUTS.values()]
+    assert len(tokens) == len(set(tokens))
+    assert all(qsmxt.re.fullmatch(r"OR_[A-Z0-9_]{1,13}", token) for token in tokens)
 
 
 def test_process_both_input_series_runs_separately_and_returns_unique_outputs(

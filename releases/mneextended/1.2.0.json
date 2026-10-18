@@ -1,7 +1,7 @@
 {
   "apps": {
     "mneextended 1.2.0": {
-      "version": "20261013",
+      "version": "20261017",
       "exec": "",
       "apptainer_args": []
     }

@@ -102,6 +102,8 @@ build:
     - environment:
         MEICA_REPO: /opt/meica/me-ica
         MEICA_SOURCE_TAG: "{{ context.upstream_version }}"
+        OPENRECON_SOFTWARE_VERSION: "{{ context.upstream_version }}"
+        OPENRECON_CONTAINER_VERSION: "{{ context.version }}"
         MEICA_RUNTIME_TAG: "{{ context.upstream_version }}"
         MEICA_AFNI_RUNTIME: /opt/meica/me-ica/meica-afni-runtime
         MEICA_AFNI_RUNTIME_ACTIVATE: /opt/meica/me-ica/meica-afni-runtime/activate_meica_afni

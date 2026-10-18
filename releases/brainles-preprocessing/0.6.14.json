@@ -1,7 +1,7 @@
 {
   "apps": {
     "brainles-preprocessing 0.6.14": {
-      "version": "20261013",
+      "version": "20261017",
       "exec": "",
       "apptainer_args": []
     }

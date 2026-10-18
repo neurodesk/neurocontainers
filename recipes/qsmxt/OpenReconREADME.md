@@ -185,6 +185,29 @@ The box count controls local segmentation, not the number of smoothing passes.
 Select **Off** to disable this magnitude correction. CLEAR-SWI retains its internal correction.
 Fine has not been shown to improve 7 T reconstruction quality. Compare the profiles on your acquisition before choosing a setting.
 
+## Output metadata
+
+Processed images carry `DERIVED\PRIMARY\M\<product>` in outgoing MRD
+metadata. `M` retains the Siemens magnitude convention. The product values
+are implementation-defined descriptions of the derived pixels:
+
+- `OR_QSM_CHIMAP`, `OR_QSM_PARA`, `OR_QSM_DIA`, and `OR_QSM_TOTAL` identify
+  QSM, paramagnetic, diamagnetic, and total separated susceptibility maps.
+- `OR_QSM_MASK` and `OR_QSM_MAG` identify the reconstruction mask and
+  combined magnitude image.
+- `OR_QSM_SWI`, `OR_QSM_SMWI_PARA`, and `OR_QSM_SMWI_DIA` identify the SWI
+  and the two SMWI susceptibility-weighted contrasts.
+- `OR_QSM_T2STAR` and `OR_QSM_R2STAR` identify relaxation maps.
+- `OR_QSM_REPORT` identifies rendered regional susceptibility measurements.
+
+Outgoing metadata records the software version, processing parameters,
+and source geometry identifiers. Originals retain their source Image Type.
+Each output series has a fresh identity on each run. QSMxT retains its
+existing per-message SOP UID mapping; final scanner aggregation and UID
+allocation must be checked in both classic and Enhanced MR exports.
+These MRD checks do not establish the final DICOM Image Type, Frame Type,
+or nested source and equipment sequences.
+
 ## Citation
 Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.
 

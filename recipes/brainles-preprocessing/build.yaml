@@ -2,12 +2,170 @@ name: brainles-preprocessing
 version: "0.6.14"
 
 variables:
+  cblas_torch_commit: cf30153c4c131c8164ee7798e5022d810682e2cb
+  cblas_acl_commit: 007264fa740de5723ebddef16b7bb3657692c088
+  cblas_ideep_commit: e087b6e4b32a7ba684db82231d1558123968ac1d
+  cblas_onednn_commit: 80afa71049cd69a3df32adcccb623b12cd7baa22
+  cblas_openblas_commit: 62bcfb0dc9f1cfa685fc04135c50e2780c303137
+  cblas_provider_sha256: 84453b69508ec79902f899c5ed9495acb9e2bbe9fda5f1d5d6f19e3c3842e1a7
+  cblas_libgfortran_so_5_sha256: 36f49edf8de93b5ad7e3324598b921f0229e0841eea3902a4d6fc9f949c77e94
+  cblas_libgomp_so_1_sha256: 7e2abc1b84b1470fa53a0b679e066c11adbc3a8d42aebf37687f6b1254421391
+  cblas_libopenblas_so_0_sha256: 7a6446210edb096b85c713c872f0dfd3b3e0c963a77d2629dfaf83380c441746
+  cblas_cblas_h_sha256: 81f7d936ebf24a06f8d4012db34d90df4dadec55fae598e208d20679491ef4ab
+  cblas_openblas_config_h_sha256: b10f5a9aed767e006e33669aefd226ce52ac06953c16c8e065028ebdeb840166
+  cblas_debs_gcc_14_base_sha256: bddbe21061fdc73a23e7de79ece91693bf61aa22d634d1c69c5048385c114968
+  cblas_debs_gcc_14_base_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libgcc_s1_sha256: 5b191f79ad985a9a653dbba45214619f729f9178a9bdf92f7c68db06c50d070b
+  cblas_debs_libgcc_s1_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libc6_sha256: ad109797c5f78a5eeb6d4c296bfbaae68b239111a0c9ac0eb97b8d430284ac45
+  cblas_debs_libc6_version: 2.39-0ubuntu8.9
+  cblas_debs_libcrypt1_sha256: 5cd73ba112507dabd8e43b528ca9f530719a370e014b8e3e797770e6e940cccf
+  cblas_debs_libcrypt1_version: 1:4.4.36-4build1
+  cblas_debs_libgmp10_sha256: 5a783429ec1a29fb74a9a59c1699579dd9742bd35722280b9ce10e1f3916b003
+  cblas_debs_libgmp10_version: 2:6.3.0+dfsg-2ubuntu6.1
+  cblas_debs_libzstd1_sha256: ea7d6e9fde577ea14dbf07fdfb74d6287eb09c6cba4a9d63abdcb87b0ec54bcc
+  cblas_debs_libzstd1_version: 1.5.5+dfsg2-2build1.1
+  cblas_debs_zlib1g_sha256: e55ab3b4fb7b6edc4a628e28ec13f8780b08abe427d33ae148f030d8586d0e9a
+  cblas_debs_zlib1g_version: 1:1.3.dfsg-3.1ubuntu2.2
+  cblas_debs_libstdc__6_sha256: f84a05ac45a6884109b6527e911081a38263b89e042fc94a338cf975f61a330c
+  cblas_debs_libstdc__6_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libjansson4_sha256: a9d513eae76f4efb1c7370413bd21634fcfc0955e103d26af95f298af6c90abd
+  cblas_debs_libjansson4_version: 2.14-2build2
+  cblas_debs_binutils_common_sha256: e2930005b9e4d599cfa8ebddd1d888cbcef7ebec38c8c7dfbc4babbdeaa52c3b
+  cblas_debs_binutils_common_version: 2.42-4ubuntu2.10
+  cblas_debs_libsframe1_sha256: 4e2ef8c92da324c7f8e8f055c8c698e37c93b886602766e7e72ac178835c9a31
+  cblas_debs_libsframe1_version: 2.42-4ubuntu2.10
+  cblas_debs_libbinutils_sha256: c86634a7471aa27439b9bef7bd91ca8136f01f938c93bf6abe16a8fca758e849
+  cblas_debs_libbinutils_version: 2.42-4ubuntu2.10
+  cblas_debs_libctf_nobfd0_sha256: c80063890a430e42181e7ad3f0277bb563abc22d556fd5e65c798c4ee8318684
+  cblas_debs_libctf_nobfd0_version: 2.42-4ubuntu2.10
+  cblas_debs_libctf0_sha256: 2516f90d292d01eefe9207a623251550d93665f25d262f206f5c6b803389ed6b
+  cblas_debs_libctf0_version: 2.42-4ubuntu2.10
+  cblas_debs_libgprofng0_sha256: ee37f8539eab25c43bd622589932006c6ba90d44e2b7442325fc237f01a3ab5b
+  cblas_debs_libgprofng0_version: 2.42-4ubuntu2.10
+  cblas_debs_binutils_aarch64_linux_gnu_sha256: b5311d11d56f2daa82e952612b9578ef675af67714edb9aef7e3dc6cf2531575
+  cblas_debs_binutils_aarch64_linux_gnu_version: 2.42-4ubuntu2.10
+  cblas_debs_binutils_sha256: f3333e2ef1b857f35905194f42e9541ff6a42bef8fbba6d8bb56abff460d4fa2
+  cblas_debs_binutils_version: 2.42-4ubuntu2.10
+  cblas_debs_gcc_13_base_sha256: 1c1ca489da0d48237036318189a9b6525abe7703b75495f257f68bccae8c45a7
+  cblas_debs_gcc_13_base_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_libisl23_sha256: 250bff60f1405c2fa7cd8cdd839f83105c7fec9b42ed6cb5f62e1bcda709bbc2
+  cblas_debs_libisl23_version: 0.26-3build1.1
+  cblas_debs_libmpfr6_sha256: 83517e4377082a35dcce66ec5310881a848486279f64d737919d1819b7884201
+  cblas_debs_libmpfr6_version: 4.2.1-1build1.1
+  cblas_debs_libmpc3_sha256: efc4a44fb7382db33bf3adbfd0058201fd73d0e56fd48662d653e9a93f6139da
+  cblas_debs_libmpc3_version: 1.3.1-1build1.1
+  cblas_debs_cpp_13_aarch64_linux_gnu_sha256: 5de37686322fdee9432cabbab469088fe15ff99323fd0302139fd73ddb83e0fe
+  cblas_debs_cpp_13_aarch64_linux_gnu_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_cpp_13_sha256: 0f3245c804313d970a2eabb72b68b0f6d8119905e1babdccfcf66f771fa3d9f1
+  cblas_debs_cpp_13_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_libcc1_0_sha256: a72eb7353138e671ce46cdb7afc09cd400eaa8ae20e2e7750d40fbbdf63a3811
+  cblas_debs_libcc1_0_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libgomp1_sha256: cd49d2e8834d41a6618f097b678980defeebc47271bc7c5aa8ea2c2f1a53b7a6
+  cblas_debs_libgomp1_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libitm1_sha256: 7f7d7c5a26888e5e34eb62a193762eb6a8d5805c5d6f22248f638193d1804993
+  cblas_debs_libitm1_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libatomic1_sha256: fdeab74e7ad8572cf69c7024e8040c7ac851f6e667d35f0d429e7a0352840f73
+  cblas_debs_libatomic1_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libasan8_sha256: 0b7957bc5bbc5d30eabe8b71bab06e624ac530be7b1b1315d2bd54629cf2559f
+  cblas_debs_libasan8_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_liblsan0_sha256: 21bb80325192b0cce6ccd041a8d823609c5e656bdda43368db6cdfe501593188
+  cblas_debs_liblsan0_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libtsan2_sha256: 00beb501f4979c7fd3a978b52a489ea7dbfc1203e5c56936e4c0ea5c2032fb3d
+  cblas_debs_libtsan2_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libubsan1_sha256: a5b4383f70f41cd949315c89e99e6416a0ee48037f7c5ea6b33f88f3c733757a
+  cblas_debs_libubsan1_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libhwasan0_sha256: 44851293eede488ad89fd12db1bd8bfcb2b732f68ad4c13b83d6e0ce5d7b4bfa
+  cblas_debs_libhwasan0_version: 14.2.0-4ubuntu2~24.04.1
+  cblas_debs_libgcc_13_dev_sha256: 609a9410d9a1f25a1cb7847de92ee9f438336a0a3a82d282c3686f52ddd61526
+  cblas_debs_libgcc_13_dev_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_gcc_13_aarch64_linux_gnu_sha256: 618086c3f64d780d0d8ffff2a07bef6115a301e71ee364bcf92c10b9b7dd499c
+  cblas_debs_gcc_13_aarch64_linux_gnu_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_libc_dev_bin_sha256: 85564f1ba7dce372d0fdec055986b428f72cd9c235af1dd29950f589562d19bc
+  cblas_debs_libc_dev_bin_version: 2.39-0ubuntu8.9
+  cblas_debs_linux_libc_dev_sha256: e489840ff836f22ae92c1bc3534ea8c68bcce2c4500e39ba560bbefc1b25e359
+  cblas_debs_linux_libc_dev_version: 6.8.0-147.147
+  cblas_debs_libcrypt_dev_sha256: cadcc00021aa1082a8cb5cd1c2686b25b7a4d396f2029eaa1b12159ca46f1766
+  cblas_debs_libcrypt_dev_version: 1:4.4.36-4build1
+  cblas_debs_rpcsvc_proto_sha256: ae527152fc2bf9c1a645c2620d802b0849db32c8aa48328b4ae94c59cc57bcc9
+  cblas_debs_rpcsvc_proto_version: 1.4.2-0ubuntu7
+  cblas_debs_libc6_dev_sha256: 9bf6acb8a3433ffe561182517640970d324425fabbbeb54a24d737ba1f3c816b
+  cblas_debs_libc6_dev_version: 2.39-0ubuntu8.9
+  cblas_debs_libstdc___13_dev_sha256: e4911c9281d73b318ca47cb7976011a7dc13e299a91a06bc6d3e2d174cc2ce51
+  cblas_debs_libstdc___13_dev_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_g___13_aarch64_linux_gnu_sha256: 2b172a55a06c454608e3004d446779b6f31792b2007d17f93d292c007e336c8f
+  cblas_debs_g___13_aarch64_linux_gnu_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_gcc_13_sha256: 04b729a6c728b92c941926be688f8c1a90a89602b10f131516a1e7574cc5b418
+  cblas_debs_gcc_13_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_debs_g___13_sha256: 2bc3b9363781481b5b3b1c24baa18a3876e12126f355181db83303e9e0bede3b
+  cblas_debs_g___13_version: 13.3.0-6ubuntu2~24.04.1
+  cblas_wheels_markupsafe_sha256: 2cb8438c3cbb25e220c2ab33bb226559e7afb3baec11c4f218ffa7308603c832
+  cblas_wheels_markupsafe_version: 3.0.2
+  cblas_wheels_pyyaml_sha256: 5d225db5a45f21e78dd9358e58a98702a0302f2659a3c6cd320564b75b86f47c
+  cblas_wheels_pyyaml_version: 6.0.2
+  cblas_wheels_scons_sha256: 93308e564966760a63a4c1e016b2cc15d07bb40db67b1c907732da0b9e9f8959
+  cblas_wheels_scons_version: 4.7.0
+  cblas_wheels_certifi_sha256: 30350364dfe371162649852c63336a15c70c6510c2ad5015b21c2345311805f3
+  cblas_wheels_certifi_version: 2025.4.26
+  cblas_wheels_charset_normalizer_sha256: aa88ca0b1932e93f2d961bf3addbb2db902198dca337d88c89e1559e066e7645
+  cblas_wheels_charset_normalizer_version: 3.4.2
+  cblas_wheels_cmake_sha256: 42d9883b8958da285d53d5f69d40d9650c2d1bcf922d82b3ebdceb2b3a7d4521
+  cblas_wheels_cmake_version: 3.31.6
+  cblas_wheels_filelock_sha256: c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de
+  cblas_wheels_filelock_version: 3.18.0
+  cblas_wheels_fsspec_sha256: 2daf8dc3d1dfa65b6aa37748d112773a7a08416f6c70d96b264c96476ecaf711
+  cblas_wheels_fsspec_version: 2025.3.2
+  cblas_wheels_idna_sha256: 946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3
+  cblas_wheels_idna_version: '3.10'
+  cblas_wheels_jinja2_sha256: 85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
+  cblas_wheels_jinja2_version: 3.1.6
+  cblas_wheels_mpmath_sha256: a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c
+  cblas_wheels_mpmath_version: 1.3.0
+  cblas_wheels_networkx_sha256: df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f
+  cblas_wheels_networkx_version: 3.4.2
+  cblas_wheels_ninja_sha256: d3090d4488fadf6047d0d7a1db0c9643a8d391f0d94729554dbb89b5bdc769d7
+  cblas_wheels_ninja_version: 1.11.1.4
+  cblas_wheels_numpy_sha256: 5a3d94942c331dd4e0e1147f7a8699a4aa47dffc11bf8a1523c12af8b2e91bbe
+  cblas_wheels_numpy_version: 2.0.1
+  cblas_wheels_packaging_sha256: 29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484
+  cblas_wheels_packaging_version: '25.0'
+  cblas_wheels_pip_sha256: 2cd581cf58ab7fcfca4ce8efa6dcacd0de5bf8d0a3eb9ec927e07405f4d9e2a2
+  cblas_wheels_pip_version: '24.2'
+  cblas_wheels_psutil_sha256: a5f098451abc2828f7dc6b58d44b532b22f2088f4999a937557b603ce72b1993
+  cblas_wheels_psutil_version: 7.0.0
+  cblas_wheels_requests_sha256: 27babd3cda2a6d50b30443204ee89830707d396671944c998b5975b031ac2b2c
+  cblas_wheels_requests_version: 2.32.4
+  cblas_wheels_setuptools_sha256: 062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922
+  cblas_wheels_setuptools_version: 80.9.0
+  cblas_wheels_six_sha256: 4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+  cblas_wheels_six_version: 1.17.0
+  cblas_wheels_sympy_sha256: 54612cf55a62755ee71824ce692986f23c88ffa77207b30c1368eda4a7060f73
+  cblas_wheels_sympy_version: 1.13.3
+  cblas_wheels_typing_extensions_sha256: f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
+  cblas_wheels_typing_extensions_version: 4.15.0
+  cblas_wheels_urllib3_sha256: 4e16665048960a0900c702d4a66415956a584919c03361cac9f1df5c5dd7e813
+  cblas_wheels_urllib3_version: 2.4.0
+  cblas_wheels_wheel_sha256: 708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248
+  cblas_wheels_wheel_version: 0.45.1
   upstream_version: "0.6.14"
+  niftyreg_version: "1.5.77"
+  antspyx_version: "0.5.4"
+  arm_torch_version: "2.13.0"
+  base_image:
+    try:
+      - value: ubuntu:22.04
+        condition: arch == "x86_64"
+      - value: ubuntu:24.04
+        condition: arch == "aarch64"
   hdbet_record: "2540695"
+  synthstrip_record: "16535634"
+  synthstrip_version: "1.0.0"
+  synthstrip_sha256: 7c7b18e8cfcfca0acd80d429063ff7aea66f2406f296452c0be6dca2f1ff540c
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlEQVR42u3dsRHCMAwF0CxBywhUDMQajMIATMQSrAAVC3CHogQnsp9OdYp39p2U4nualFK7rMPxVKiJbOrVE83KTL3SrMM0gk7eaBydjNFoOvOMxtSZYQSIzgIjQHQWGKEBBAjQZkBcfhglvnK5v6t0U6BCLmmpPFBpnbhREqgDnaARIEDtgbrRiRg5Qa4YoD0CmYNM0naxlkC2eUCAAAECBAgQIEBf+/y4VemmQIVc0lJ5oNI6caMkUAc6QSNAgNoDdaMTMXKCXDFAewQyB5mk7WK2eb87AAECBAgQIECANgd6Xl9VuilQIZe0VB6otE7cKAnUgU7QCBCg9kDd6ESMnCBXDNAegcxBJmm7mPAF2R2AAAESYyYFDxAjSZx/AhJ2y2ixjsBtRmvoCP33bIRnNlqKKKXm1wc7XnMcuYuNogAAAABJRU5ErkJggg==
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "brainles-preprocessing"
@@ -19,6 +177,12 @@ auto_update:
       target:
         variable: upstream_version
         fulltest_variable: upstream_version
+    - id: synthstrip-weights
+      dependency: true
+      method: http_digest
+      url: https://zenodo.org/api/records/{{ context.synthstrip_record }}/files/synthstrip_weights.zip/content
+      target:
+        variable: synthstrip_sha256
     - id: hdbet-models
       dependency: true
       method: zenodo
@@ -27,9 +191,471 @@ auto_update:
       target:
         variable: hdbet_record
 
+    - id: native-niftyreg
+      dependency: true
+      method: github_tags
+      repo: KCL-BMEIS/niftyreg
+      version_regex: 'v(?P<version>1\.5\.\d+)'
+      target:
+        variable: niftyreg_version
+        fulltest_variable: niftyreg_version
+    - id: native-antspyx
+      dependency: true
+      method: pypi
+      package: antspyx
+      target:
+        variable: antspyx_version
+        fulltest_variable: antspyx_version
+    - id: arm-cpu-torch
+      dependency: true
+      method: pypi
+      package: torch
+      target:
+        variable: arm_torch_version
+        fulltest_variable: arm_torch_version
+
+    - id: cblas-torch
+      dependency: true
+      method: github_commit
+      repo: pytorch/pytorch
+      target:
+        variable: cblas_torch_commit
+    - id: cblas-acl
+      dependency: true
+      method: github_commit
+      repo: ARM-software/ComputeLibrary
+      target:
+        variable: cblas_acl_commit
+    - id: cblas-ideep
+      dependency: true
+      method: github_commit
+      repo: intel/ideep
+      target:
+        variable: cblas_ideep_commit
+    - id: cblas-onednn
+      dependency: true
+      method: github_commit
+      repo: uxlfoundation/oneDNN
+      target:
+        variable: cblas_onednn_commit
+    - id: cblas-openblas
+      dependency: true
+      method: github_commit
+      repo: OpenMathLib/OpenBLAS
+      target:
+        variable: cblas_openblas_commit
+    - id: cblas-provider
+      dependency: true
+      method: http_digest
+      url: https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl
+      target:
+        variable: cblas_provider_sha256
+    - id: cblas-debs-gcc-14-base
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_gcc_14_base_sha256
+    - id: cblas-debs-libgcc-s1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libgcc_s1_sha256
+    - id: cblas-debs-libc6
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb
+      target:
+        variable: cblas_debs_libc6_sha256
+    - id: cblas-debs-libcrypt1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_arm64.deb
+      target:
+        variable: cblas_debs_libcrypt1_sha256
+    - id: cblas-debs-libgmp10
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
+      target:
+        variable: cblas_debs_libgmp10_sha256
+    - id: cblas-debs-libzstd1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
+      target:
+        variable: cblas_debs_libzstd1_sha256
+    - id: cblas-debs-zlib1g
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
+      target:
+        variable: cblas_debs_zlib1g_sha256
+    - id: cblas-debs-libstdc--6
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libstdc__6_sha256
+    - id: cblas-debs-libjansson4
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/j/jansson/libjansson4_2.14-2build2_arm64.deb
+      target:
+        variable: cblas_debs_libjansson4_sha256
+    - id: cblas-debs-binutils-common
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-common_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_binutils_common_sha256
+    - id: cblas-debs-libsframe1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libsframe1_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_libsframe1_sha256
+    - id: cblas-debs-libbinutils
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libbinutils_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_libbinutils_sha256
+    - id: cblas-debs-libctf-nobfd0
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_libctf_nobfd0_sha256
+    - id: cblas-debs-libctf0
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf0_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_libctf0_sha256
+    - id: cblas-debs-libgprofng0
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libgprofng0_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_libgprofng0_sha256
+    - id: cblas-debs-binutils-aarch64-linux-gnu
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_binutils_aarch64_linux_gnu_sha256
+    - id: cblas-debs-binutils
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils_2.42-4ubuntu2.10_arm64.deb
+      target:
+        variable: cblas_debs_binutils_sha256
+    - id: cblas-debs-gcc-13-base
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_gcc_13_base_sha256
+    - id: cblas-debs-libisl23
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/i/isl/libisl23_0.26-3build1.1_arm64.deb
+      target:
+        variable: cblas_debs_libisl23_sha256
+    - id: cblas-debs-libmpfr6
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpfr4/libmpfr6_4.2.1-1build1.1_arm64.deb
+      target:
+        variable: cblas_debs_libmpfr6_sha256
+    - id: cblas-debs-libmpc3
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpclib3/libmpc3_1.3.1-1build1.1_arm64.deb
+      target:
+        variable: cblas_debs_libmpc3_sha256
+    - id: cblas-debs-cpp-13-aarch64-linux-gnu
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_cpp_13_aarch64_linux_gnu_sha256
+    - id: cblas-debs-cpp-13
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_cpp_13_sha256
+    - id: cblas-debs-libcc1-0
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libcc1_0_sha256
+    - id: cblas-debs-libgomp1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libgomp1_sha256
+    - id: cblas-debs-libitm1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libitm1_sha256
+    - id: cblas-debs-libatomic1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libatomic1_sha256
+    - id: cblas-debs-libasan8
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libasan8_sha256
+    - id: cblas-debs-liblsan0
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_liblsan0_sha256
+    - id: cblas-debs-libtsan2
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libtsan2_sha256
+    - id: cblas-debs-libubsan1
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libubsan1_sha256
+    - id: cblas-debs-libhwasan0
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libhwasan0_sha256
+    - id: cblas-debs-libgcc-13-dev
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libgcc_13_dev_sha256
+    - id: cblas-debs-gcc-13-aarch64-linux-gnu
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_gcc_13_aarch64_linux_gnu_sha256
+    - id: cblas-debs-libc-dev-bin
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
+      target:
+        variable: cblas_debs_libc_dev_bin_sha256
+    - id: cblas-debs-linux-libc-dev
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-libc-dev_6.8.0-147.147_arm64.deb
+      target:
+        variable: cblas_debs_linux_libc_dev_sha256
+    - id: cblas-debs-libcrypt-dev
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt-dev_4.4.36-4build1_arm64.deb
+      target:
+        variable: cblas_debs_libcrypt_dev_sha256
+    - id: cblas-debs-rpcsvc-proto
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
+      target:
+        variable: cblas_debs_rpcsvc_proto_sha256
+    - id: cblas-debs-libc6-dev
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.9_arm64.deb
+      target:
+        variable: cblas_debs_libc6_dev_sha256
+    - id: cblas-debs-libstdc---13-dev
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_libstdc___13_dev_sha256
+    - id: cblas-debs-g---13-aarch64-linux-gnu
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_g___13_aarch64_linux_gnu_sha256
+    - id: cblas-debs-gcc-13
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_gcc_13_sha256
+    - id: cblas-debs-g---13
+      dependency: true
+      method: http_digest
+      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      target:
+        variable: cblas_debs_g___13_sha256
+    - id: cblas-wheels-markupsafe
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/f2/96/9cdafba8445d3a53cae530aaf83c38ec64c4d5427d975c974084af5bc5d2/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_markupsafe_sha256
+    - id: cblas-wheels-pyyaml
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/ad/0c/c804f5f922a9a6563bab712d8dcc70251e8af811fce4524d57c2c0fd49a4/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_pyyaml_sha256
+    - id: cblas-wheels-scons
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/b9/f7/ba9224b44691535426b07fae648fce898ccf17fd360a19a526f1f6d5c0ba/SCons-4.7.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_scons_sha256
+    - id: cblas-wheels-certifi
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/4a/7e/3db2bd1b1f9e95f7cddca6d6e75e2f2bd9f51b1246e546d88addca0106bd/certifi-2025.4.26-py3-none-any.whl
+      target:
+        variable: cblas_wheels_certifi_sha256
+    - id: cblas-wheels-charset-normalizer
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/41/d9/7a6c0b9db952598e97e93cbdfcb91bacd89b9b88c7c983250a77c008703c/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_charset_normalizer_sha256
+    - id: cblas-wheels-cmake
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/1e/97/c950850b00daf4a79c38a9f2e463dc75581a43a9575186439cff43cf4740/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_cmake_sha256
+    - id: cblas-wheels-filelock
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/4d/36/2a115987e2d8c300a974597416d9de88f2444426de9571f4b59b2cca3acc/filelock-3.18.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_filelock_sha256
+    - id: cblas-wheels-fsspec
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/44/4b/e0cfc1a6f17e990f3e64b7d941ddc4acdc7b19d6edd51abf495f32b1a9e4/fsspec-2025.3.2-py3-none-any.whl
+      target:
+        variable: cblas_wheels_fsspec_sha256
+    - id: cblas-wheels-idna
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
+      target:
+        variable: cblas_wheels_idna_sha256
+    - id: cblas-wheels-jinja2
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
+      target:
+        variable: cblas_wheels_jinja2_sha256
+    - id: cblas-wheels-mpmath
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_mpmath_sha256
+    - id: cblas-wheels-networkx
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl
+      target:
+        variable: cblas_wheels_networkx_sha256
+    - id: cblas-wheels-ninja
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/e3/ad/fb6cca942528e25e8e0ab0f0cf98fe007319bf05cf69d726c564b815c4af/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_ninja_sha256
+    - id: cblas-wheels-numpy
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/72/44/71ac0090d4ccb512fcac0ef0e5208248423a1ce30381541700470ac09b75/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_numpy_sha256
+    - id: cblas-wheels-packaging
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_packaging_sha256
+    - id: cblas-wheels-pip
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/d4/55/90db48d85f7689ec6f81c0db0622d704306c5284850383c090e6c7195a5c/pip-24.2-py3-none-any.whl
+      target:
+        variable: cblas_wheels_pip_sha256
+    - id: cblas-wheels-psutil
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/eb/a2/709e0fe2f093556c17fbafda93ac032257242cabcc7ff3369e2cb76a97aa/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      target:
+        variable: cblas_wheels_psutil_sha256
+    - id: cblas-wheels-requests
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/7c/e4/56027c4a6b4ae70ca9de302488c5ca95ad4a39e190093d6c1a8ace08341b/requests-2.32.4-py3-none-any.whl
+      target:
+        variable: cblas_wheels_requests_sha256
+    - id: cblas-wheels-setuptools
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_setuptools_sha256
+    - id: cblas-wheels-six
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl
+      target:
+        variable: cblas_wheels_six_sha256
+    - id: cblas-wheels-sympy
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/99/ff/c87e0622b1dadea79d2fb0b25ade9ed98954c9033722eb707053d310d4f3/sympy-1.13.3-py3-none-any.whl
+      target:
+        variable: cblas_wheels_sympy_sha256
+    - id: cblas-wheels-typing-extensions
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_typing_extensions_sha256
+    - id: cblas-wheels-urllib3
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/6b/11/cc635220681e93a0183390e26485430ca2c7b5f9d33b15c74c2861cb8091/urllib3-2.4.0-py3-none-any.whl
+      target:
+        variable: cblas_wheels_urllib3_sha256
+    - id: cblas-wheels-wheel
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl
+      target:
+        variable: cblas_wheels_wheel_sha256
+
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: "{{ context.base_image }}"
   pkg-manager: apt
 
   directives:
@@ -38,6 +664,24 @@ build:
         - wget
         - ca-certificates
         - unzip
+        - libgomp1
+
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - cmake
+        - libjpeg-dev
+        - libpng-dev
+        - libstdc++6
+        - libtiff-dev
+        - zlib1g-dev
+    - condition: arch == "aarch64"
+      run:
+        - git clone --branch v{{ context.niftyreg_version }} --depth 1 https://github.com/KCL-BMEIS/niftyreg.git /tmp/brainles-niftyreg-source
+        - cmake -S /tmp/brainles-niftyreg-source -B /tmp/brainles-niftyreg-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/brainles-niftyreg-{{ context.niftyreg_version }} -DUSE_SSE=OFF -DUSE_CUDA=OFF -DUSE_OPENCL=OFF
+        - cmake --build /tmp/brainles-niftyreg-build --parallel 2
+        - cmake --install /tmp/brainles-niftyreg-build
+        - rm -rf /tmp/brainles-niftyreg-source /tmp/brainles-niftyreg-build
 
     - template:
         name: miniconda
@@ -46,13 +690,13 @@ build:
         env_name: brainles
         env_exists: "false"
 
-    - run:
-        # Core library. antspyx (registration) + SimpleITK ship self-contained
-        # manylinux wheels, so no extra system libraries are needed on x86_64.
+    - condition: arch == "x86_64"
+      run:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.upstream_version }}
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # SynthStrip is one of the two brain extractors this package exposes and
         # its weights are baked in below, but it lives behind an optional extra:
         # brain_extraction/synthstrip.py imports nipreps.synthstrip, so without
@@ -66,7 +710,12 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2"
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip check
+
+    - condition: arch == "x86_64"
+      run:
         # The `preprocessor` console script fails on every invocation as
         # shipped. See the patch.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }}
@@ -103,13 +752,15 @@ build:
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import inspect, torch; from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor as S; assert inspect.signature(S.extract).parameters['device'].default is None, 'device default not patched'; torch.cuda.is_available=lambda: False; assert S._resolve_device(None)==torch.device('cpu'), S._resolve_device(None); torch.cuda.is_available=lambda: True; assert S._resolve_device(None)==torch.device('cuda'), S._resolve_device(None); assert S._resolve_device('cpu')==torch.device('cpu'); assert S._resolve_device(torch.device('cuda:1'))==torch.device('cuda:1'); print('synthstrip picks a device')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # python itself is deliberately not exported (see deploy), so give the
         # library a named interpreter rather than no route in at all.
         - install -m 0755 {{ get_file("preprocessing_python_helper") }} /usr/local/bin/brainles-preprocessing-python
         - brainles-preprocessing-python -c "import brainles_preprocessing; print('wrapper ok')"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # Bake the atlases and SynthStrip weights into the image.
         #
         # Without this the container cannot do the one job it exists for. Both
@@ -119,12 +770,7 @@ build:
         # There is also no other source: no container in the stack ships an
         # SRI24 template, so a user asked to produce atlas-space input for petu
         # or gliomoda had no supported route to one.
-        #
-        # Fetched per file rather than through upstream's fetch_atlases(), which
-        # requests Zenodo's files-archive endpoint. That endpoint is unreliable
-        # for these records, and the per-file API is what actually works. Adds
-        # about 120 MB.
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }}
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }} {{ get_file("synthstrip_weights") }} {{ context.synthstrip_version }}
         # HD-BET weights too. HDBetExtractor is the only brain extractor this
         # package has, and brainles_hd_bet writes its weights into its own
         # package directory, so without this the brain-extraction stage fails
@@ -143,7 +789,8 @@ build:
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_synthstrip; p=fetch_synthstrip(); assert p.is_dir() and any(p.iterdir()), p; print('synthstrip resolves to', p)"
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         # The --help gates prove the console scripts start; N2 was a command
         # that starts and cannot finish. This is the next rung: one synthetic
         # volume through the exported hd-bet command at the CPU profile the
@@ -161,10 +808,919 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} check /tmp/hdbet_gate_bet_mask.nii.gz
         - rm -f /tmp/hdbet_gate*.nii.gz
 
+    # Keep the original Torch payload and its replacement in one ARM layer.
+    # Subshells retain the former RUN scopes; CBLAS still runs last.
+    - condition: arch == "aarch64"
+      run:
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}" --index-url https://download.pytorch.org/whl/cpu &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir --no-binary=antspyx "antspyx=={{ context.antspyx_version }}" &&
+          ln -sf /usr/lib/aarch64-linux-gnu/libstdc++.so.6 /opt/miniconda-py311_24.9.2-0/envs/brainles/lib/libstdc++.so.6 )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.upstream_version }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_native_niftyreg.py") }} )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip check )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_hdbet_cli") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_synthstrip_device") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/preprocessor --help > /dev/null && echo "preprocessor --help ok" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet --help > /dev/null && echo "hd-bet --help ok" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import typer; from brainles_preprocessing import cli; c=typer.main.get_command(cli.app); n=set(); [n.update(p.opts+p.secondary_opts) for p in c.params]; need={'--bet-mode','--bet-device','--bet-tta','--no-bet-tta'}; assert need <= n, 'missing '+str(sorted(need-n)); print('bet profile selectable')" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.hd_bet import HDBetExtractor; from brainles_preprocessing.cli import _ProfiledHDBetExtractor as E; seen={}; HDBetExtractor.extract=lambda self,*a,**k: seen.update(k); E(mode='fast',device='cpu',do_tta=False).extract(); assert seen=={'mode':'fast','device':'cpu','do_tta':False}, seen; seen.clear(); E().extract(); assert seen=={'mode':'accurate','device':0,'do_tta':True}, seen; print('bet profile reaches hd-bet')" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import inspect, torch; from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor as S; assert inspect.signature(S.extract).parameters['device'].default is None, 'device default not patched'; torch.cuda.is_available=lambda: False; assert S._resolve_device(None)==torch.device('cpu'), S._resolve_device(None); torch.cuda.is_available=lambda: True; assert S._resolve_device(None)==torch.device('cuda'), S._resolve_device(None); assert S._resolve_device('cpu')==torch.device('cpu'); assert S._resolve_device(torch.device('cuda:1'))==torch.device('cuda:1'); print('synthstrip picks a device')" )
+        - >-
+          ( install -m 0755 {{ get_file("preprocessing_python_helper") }} /usr/local/bin/brainles-preprocessing-python &&
+          brainles-preprocessing-python -c "import brainles_preprocessing; print('wrapper ok')" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }} {{ get_file("synthstrip_weights") }} {{ context.synthstrip_version }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_hdbet_models.py") }} {{ get_file("hdbet_0_model") }} {{ get_file("hdbet_1_model") }} {{ get_file("hdbet_2_model") }} {{ get_file("hdbet_3_model") }} {{ get_file("hdbet_4_model") }} &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib; from brainles_hd_bet.utils import folder_with_parameter_files as d; f=sorted(pathlib.Path(d).glob('*.model')); assert len(f)==5, [x.name for x in f]; print('hd-bet folds:', [x.name for x in f])" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_atlases; from brainles_preprocessing.constants import Atlas; p=fetch_atlases()/Atlas.BRATS_SRI24.value; assert p.is_file(), p; print('atlases resolve to', p)" &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_synthstrip; p=fetch_synthstrip(); assert p.is_dir() and any(p.iterdir()), p; print('synthstrip resolves to', p)" )
+        - >-
+          ( /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} make /tmp/hdbet_gate.nii.gz &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet -i /tmp/hdbet_gate.nii.gz -o /tmp/hdbet_gate_bet.nii.gz -mode fast -device cpu -tta 0 &&
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} check /tmp/hdbet_gate_bet_mask.nii.gz &&
+          rm -f /tmp/hdbet_gate*.nii.gz )
+        - >-
+          ( install -d /opt/brainles-cblas-inputs/headers /opt/brainles-cblas-inputs/debs /opt/brainles-cblas-inputs/wheels &&
+          cp {{ get_file("cblas/build-native.sh") }} /opt/brainles-cblas-inputs/build-native.sh &&
+          cp {{ get_file("cblas/check-config.py") }} /opt/brainles-cblas-inputs/check-config.py &&
+          cp {{ get_file("cblas/provider.cmake") }} /opt/brainles-cblas-inputs/provider.cmake &&
+          cp {{ get_file("cblas/headers/cblas.h") }} /opt/brainles-cblas-inputs/headers/cblas.h &&
+          cp {{ get_file("cblas/headers/openblas_config.h") }} /opt/brainles-cblas-inputs/headers/openblas_config.h &&
+          cp {{ get_file("cblas/reference.whl") }} /opt/brainles-cblas-inputs/reference.whl &&
+          cp {{ get_file("cblas/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libc6_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc6_2.39-0ubuntu8.9_arm64.deb &&
+          cp {{ get_file("cblas/debs/libcrypt1_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt1_4.4.36-4build1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb &&
+          cp {{ get_file("cblas/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libjansson4_2.14-2build2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libjansson4_2.14-2build2_arm64.deb &&
+          cp {{ get_file("cblas/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libctf0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libctf0_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/binutils_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils_2.42-4ubuntu2.10_arm64.deb &&
+          cp {{ get_file("cblas/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libisl23_0.26-3build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libisl23_0.26-3build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libmpfr6_4.2.1-1build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libmpfr6_4.2.1-1build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libmpc3_1.3.1-1build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libmpc3_1.3.1-1build1.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb &&
+          cp {{ get_file("cblas/debs/linux-libc-dev_6.8.0-147.147_arm64.deb") }} /opt/brainles-cblas-inputs/debs/linux-libc-dev_6.8.0-147.147_arm64.deb &&
+          cp {{ get_file("cblas/debs/libcrypt-dev_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt-dev_4.4.36-4build1_arm64.deb &&
+          cp {{ get_file("cblas/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb") }} /opt/brainles-cblas-inputs/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb &&
+          cp {{ get_file("cblas/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb &&
+          cp {{ get_file("cblas/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb &&
+          cp {{ get_file("cblas/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/SCons-4.7.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/SCons-4.7.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/certifi-2025.4.26-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/certifi-2025.4.26-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/filelock-3.18.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/filelock-3.18.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/fsspec-2025.3.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/fsspec-2025.3.2-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/idna-3.10-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/idna-3.10-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/jinja2-3.1.6-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/jinja2-3.1.6-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/mpmath-1.3.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/mpmath-1.3.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/networkx-3.4.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/networkx-3.4.2-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/packaging-25.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/packaging-25.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/pip-24.2-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/pip-24.2-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl") }} /opt/brainles-cblas-inputs/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl &&
+          cp {{ get_file("cblas/wheels/requests-2.32.4-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/requests-2.32.4-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/setuptools-80.9.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/setuptools-80.9.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/six-1.17.0-py2.py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/six-1.17.0-py2.py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/sympy-1.13.3-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/sympy-1.13.3-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/typing_extensions-4.15.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/typing_extensions-4.15.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/urllib3-2.4.0-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/urllib3-2.4.0-py3-none-any.whl &&
+          cp {{ get_file("cblas/wheels/wheel-0.45.1-py3-none-any.whl") }} /opt/brainles-cblas-inputs/wheels/wheel-0.45.1-py3-none-any.whl &&
+          cp {{ get_file("cblas/pins.json") }} /opt/brainles-cblas-inputs/pins.json &&
+          bash /opt/brainles-cblas-inputs/build-native.sh &&
+          rm -rf /opt/brainles-cblas-inputs )
+
     - environment:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
 files:
+  - name: synthstrip_weights
+    url: https://zenodo.org/api/records/{{ context.synthstrip_record }}/files/synthstrip_weights.zip/content
+    sha256: "{{ context.synthstrip_sha256 }}"
+  - name: cblas/build-native.sh
+    condition: arch == "aarch64"
+    filename: cblas/build-native.sh
+  - name: cblas/check-config.py
+    condition: arch == "aarch64"
+    filename: cblas/check-config.py
+  - name: cblas/provider.cmake
+    condition: arch == "aarch64"
+    filename: cblas/provider.cmake
+  - name: cblas/headers/cblas.h
+    condition: arch == "aarch64"
+    filename: cblas/headers/cblas.h
+  - name: cblas/headers/openblas_config.h
+    condition: arch == "aarch64"
+    filename: cblas/headers/openblas_config.h
+  - name: cblas/reference.whl
+    condition: arch == "aarch64"
+    url: https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl
+    sha256: '{{ context.cblas_provider_sha256 }}'
+  - name: cblas/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_gcc_14_base_sha256 }}'
+  - name: cblas/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libgcc_s1_sha256 }}'
+  - name: cblas/debs/libc6_2.39-0ubuntu8.9_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb
+    sha256: '{{ context.cblas_debs_libc6_sha256 }}'
+  - name: cblas/debs/libcrypt1_4.4.36-4build1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_arm64.deb
+    sha256: '{{ context.cblas_debs_libcrypt1_sha256 }}'
+  - name: cblas/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libgmp10_sha256 }}'
+  - name: cblas/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libzstd1_sha256 }}'
+  - name: cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
+    sha256: '{{ context.cblas_debs_zlib1g_sha256 }}'
+  - name: cblas/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libstdc__6_sha256 }}'
+  - name: cblas/debs/libjansson4_2.14-2build2_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/j/jansson/libjansson4_2.14-2build2_arm64.deb
+    sha256: '{{ context.cblas_debs_libjansson4_sha256 }}'
+  - name: cblas/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-common_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_binutils_common_sha256 }}'
+  - name: cblas/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libsframe1_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_libsframe1_sha256 }}'
+  - name: cblas/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libbinutils_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_libbinutils_sha256 }}'
+  - name: cblas/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_libctf_nobfd0_sha256 }}'
+  - name: cblas/debs/libctf0_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf0_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_libctf0_sha256 }}'
+  - name: cblas/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libgprofng0_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_libgprofng0_sha256 }}'
+  - name: cblas/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_binutils_aarch64_linux_gnu_sha256 }}'
+  - name: cblas/debs/binutils_2.42-4ubuntu2.10_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils_2.42-4ubuntu2.10_arm64.deb
+    sha256: '{{ context.cblas_debs_binutils_sha256 }}'
+  - name: cblas/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_gcc_13_base_sha256 }}'
+  - name: cblas/debs/libisl23_0.26-3build1.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/i/isl/libisl23_0.26-3build1.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libisl23_sha256 }}'
+  - name: cblas/debs/libmpfr6_4.2.1-1build1.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpfr4/libmpfr6_4.2.1-1build1.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libmpfr6_sha256 }}'
+  - name: cblas/debs/libmpc3_1.3.1-1build1.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpclib3/libmpc3_1.3.1-1build1.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libmpc3_sha256 }}'
+  - name: cblas/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_cpp_13_aarch64_linux_gnu_sha256 }}'
+  - name: cblas/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_cpp_13_sha256 }}'
+  - name: cblas/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libcc1_0_sha256 }}'
+  - name: cblas/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libgomp1_sha256 }}'
+  - name: cblas/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libitm1_sha256 }}'
+  - name: cblas/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libatomic1_sha256 }}'
+  - name: cblas/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libasan8_sha256 }}'
+  - name: cblas/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_liblsan0_sha256 }}'
+  - name: cblas/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libtsan2_sha256 }}'
+  - name: cblas/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libubsan1_sha256 }}'
+  - name: cblas/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libhwasan0_sha256 }}'
+  - name: cblas/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libgcc_13_dev_sha256 }}'
+  - name: cblas/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_gcc_13_aarch64_linux_gnu_sha256 }}'
+  - name: cblas/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
+    sha256: '{{ context.cblas_debs_libc_dev_bin_sha256 }}'
+  - name: cblas/debs/linux-libc-dev_6.8.0-147.147_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-libc-dev_6.8.0-147.147_arm64.deb
+    sha256: '{{ context.cblas_debs_linux_libc_dev_sha256 }}'
+  - name: cblas/debs/libcrypt-dev_4.4.36-4build1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt-dev_4.4.36-4build1_arm64.deb
+    sha256: '{{ context.cblas_debs_libcrypt_dev_sha256 }}'
+  - name: cblas/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
+    sha256: '{{ context.cblas_debs_rpcsvc_proto_sha256 }}'
+  - name: cblas/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.9_arm64.deb
+    sha256: '{{ context.cblas_debs_libc6_dev_sha256 }}'
+  - name: cblas/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_libstdc___13_dev_sha256 }}'
+  - name: cblas/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_g___13_aarch64_linux_gnu_sha256 }}'
+  - name: cblas/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_gcc_13_sha256 }}'
+  - name: cblas/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    condition: arch == "aarch64"
+    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    sha256: '{{ context.cblas_debs_g___13_sha256 }}'
+  - name: cblas/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/f2/96/9cdafba8445d3a53cae530aaf83c38ec64c4d5427d975c974084af5bc5d2/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_markupsafe_sha256 }}'
+  - name: cblas/wheels/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/ad/0c/c804f5f922a9a6563bab712d8dcc70251e8af811fce4524d57c2c0fd49a4/PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_pyyaml_sha256 }}'
+  - name: cblas/wheels/SCons-4.7.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/b9/f7/ba9224b44691535426b07fae648fce898ccf17fd360a19a526f1f6d5c0ba/SCons-4.7.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_scons_sha256 }}'
+  - name: cblas/wheels/certifi-2025.4.26-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/4a/7e/3db2bd1b1f9e95f7cddca6d6e75e2f2bd9f51b1246e546d88addca0106bd/certifi-2025.4.26-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_certifi_sha256 }}'
+  - name: cblas/wheels/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/41/d9/7a6c0b9db952598e97e93cbdfcb91bacd89b9b88c7c983250a77c008703c/charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_charset_normalizer_sha256 }}'
+  - name: cblas/wheels/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/1e/97/c950850b00daf4a79c38a9f2e463dc75581a43a9575186439cff43cf4740/cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_cmake_sha256 }}'
+  - name: cblas/wheels/filelock-3.18.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/4d/36/2a115987e2d8c300a974597416d9de88f2444426de9571f4b59b2cca3acc/filelock-3.18.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_filelock_sha256 }}'
+  - name: cblas/wheels/fsspec-2025.3.2-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/44/4b/e0cfc1a6f17e990f3e64b7d941ddc4acdc7b19d6edd51abf495f32b1a9e4/fsspec-2025.3.2-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_fsspec_sha256 }}'
+  - name: cblas/wheels/idna-3.10-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_idna_sha256 }}'
+  - name: cblas/wheels/jinja2-3.1.6-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_jinja2_sha256 }}'
+  - name: cblas/wheels/mpmath-1.3.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_mpmath_sha256 }}'
+  - name: cblas/wheels/networkx-3.4.2-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_networkx_sha256 }}'
+  - name: cblas/wheels/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/e3/ad/fb6cca942528e25e8e0ab0f0cf98fe007319bf05cf69d726c564b815c4af/ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_ninja_sha256 }}'
+  - name: cblas/wheels/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/72/44/71ac0090d4ccb512fcac0ef0e5208248423a1ce30381541700470ac09b75/numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_numpy_sha256 }}'
+  - name: cblas/wheels/packaging-25.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_packaging_sha256 }}'
+  - name: cblas/wheels/pip-24.2-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/d4/55/90db48d85f7689ec6f81c0db0622d704306c5284850383c090e6c7195a5c/pip-24.2-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_pip_sha256 }}'
+  - name: cblas/wheels/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/eb/a2/709e0fe2f093556c17fbafda93ac032257242cabcc7ff3369e2cb76a97aa/psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    sha256: '{{ context.cblas_wheels_psutil_sha256 }}'
+  - name: cblas/wheels/requests-2.32.4-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/7c/e4/56027c4a6b4ae70ca9de302488c5ca95ad4a39e190093d6c1a8ace08341b/requests-2.32.4-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_requests_sha256 }}'
+  - name: cblas/wheels/setuptools-80.9.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_setuptools_sha256 }}'
+  - name: cblas/wheels/six-1.17.0-py2.py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_six_sha256 }}'
+  - name: cblas/wheels/sympy-1.13.3-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/99/ff/c87e0622b1dadea79d2fb0b25ade9ed98954c9033722eb707053d310d4f3/sympy-1.13.3-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_sympy_sha256 }}'
+  - name: cblas/wheels/typing_extensions-4.15.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_typing_extensions_sha256 }}'
+  - name: cblas/wheels/urllib3-2.4.0-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/6b/11/cc635220681e93a0183390e26485430ca2c7b5f9d33b15c74c2861cb8091/urllib3-2.4.0-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_urllib3_sha256 }}'
+  - name: cblas/wheels/wheel-0.45.1-py3-none-any.whl
+    condition: arch == "aarch64"
+    url: https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl
+    sha256: '{{ context.cblas_wheels_wheel_sha256 }}'
+  - name: cblas/pins.json
+    condition: arch == "aarch64"
+    contents: |
+      {
+        "status": "DIAGNOSTIC_BLOCKED",
+        "merge_eligible": false,
+        "base": "5e339e17b45d2dcc8f01480ceadf74566a16fb53",
+        "torch": {
+          "repository": "https://github.com/pytorch/pytorch",
+          "commit": "{{ context.cblas_torch_commit }}",
+          "version": "{{ context.arm_torch_version }}+cpu"
+        },
+        "ideep_commit": "{{ context.cblas_ideep_commit }}",
+        "onednn_commit": "{{ context.cblas_onednn_commit }}",
+        "acl": {
+          "repository": "https://github.com/ARM-software/ComputeLibrary",
+          "commit": "{{ context.cblas_acl_commit }}",
+          "basis": "default v52.6.0 in pinned official build script, not recovered wheel cache"
+        },
+        "openblas_source": {
+          "repository": "https://github.com/OpenMathLib/OpenBLAS",
+          "commit": "{{ context.cblas_openblas_commit }}"
+        },
+        "wheel": {
+          "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl",
+          "sha256": "{{ context.cblas_provider_sha256 }}",
+          "bytes": 154993387
+        },
+        "provider_members": {
+          "torch/lib/libgfortran.so.5": {
+            "sha256": "{{ context.cblas_libgfortran_so_5_sha256 }}",
+            "bytes": 1485025
+          },
+          "torch/lib/libgomp.so.1": {
+            "sha256": "{{ context.cblas_libgomp_so_1_sha256 }}",
+            "bytes": 1655209
+          },
+          "torch/lib/libopenblas.so.0": {
+            "sha256": "{{ context.cblas_libopenblas_so_0_sha256 }}",
+            "bytes": 24020337
+          }
+        },
+        "headers": {
+          "basis": "cblas.h transformed exactly as upstream Makefile.install; config uses exact public config template with LP64 defaults, not recovered config_last.h",
+          "source_files": [
+            "OpenBLAS__cblas.h",
+            "OpenBLAS__openblas_config_template.h",
+            "OpenBLAS__Makefile.install"
+          ],
+          "sha256": {
+            "cblas.h": "{{ context.cblas_cblas_h_sha256 }}",
+            "openblas_config.h": "{{ context.cblas_openblas_config_h_sha256 }}"
+          }
+        },
+        "comparison": "feasibility only; original full wheel CMake cache, ACL provenance and compiler invocations unavailable",
+        "header_sources": {
+          "OpenBLAS__cblas.h": {
+            "url": "https://raw.githubusercontent.com/OpenMathLib/OpenBLAS/{{ context.cblas_openblas_commit }}/cblas.h",
+            "commit": "{{ context.cblas_openblas_commit }}",
+            "sha256": "e1ea572d8fcb0de68a1c4e9b40bc60e0d2d6eca263716943c2e0161dc0635f74",
+            "bytes": 62004
+          },
+          "OpenBLAS__openblas_config_template.h": {
+            "url": "https://raw.githubusercontent.com/OpenMathLib/OpenBLAS/{{ context.cblas_openblas_commit }}/openblas_config_template.h",
+            "sha256": "4377b494cd16f6204fe5d9525d0b5da416d6b1f5436021b44f45a43964dcdf8b",
+            "bytes": 4018
+          },
+          "OpenBLAS__Makefile.install": {
+            "url": "https://raw.githubusercontent.com/OpenMathLib/OpenBLAS/{{ context.cblas_openblas_commit }}/Makefile.install",
+            "commit": "{{ context.cblas_openblas_commit }}",
+            "sha256": "9819dc61c96452dd4ca8a135011452767c94dd148b1643901c518dd6ae077492",
+            "bytes": 17155
+          }
+        },
+        "tools": {
+          "debs": [
+            {
+              "name": "gcc-14-base",
+              "version": "{{ context.cblas_debs_gcc_14_base_version }}",
+              "filename": "gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_gcc_14_base_sha256 }}"
+            },
+            {
+              "name": "libgcc-s1",
+              "version": "{{ context.cblas_debs_libgcc_s1_version }}",
+              "filename": "libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libgcc_s1_sha256 }}"
+            },
+            {
+              "name": "libc6",
+              "version": "{{ context.cblas_debs_libc6_version }}",
+              "filename": "libc6_2.39-0ubuntu8.9_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libc6_sha256 }}"
+            },
+            {
+              "name": "libcrypt1",
+              "version": "{{ context.cblas_debs_libcrypt1_version }}",
+              "filename": "libcrypt1_4.4.36-4build1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libcrypt1_sha256 }}"
+            },
+            {
+              "name": "libgmp10",
+              "version": "{{ context.cblas_debs_libgmp10_version }}",
+              "filename": "libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libgmp10_sha256 }}"
+            },
+            {
+              "name": "libzstd1",
+              "version": "{{ context.cblas_debs_libzstd1_version }}",
+              "filename": "libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libzstd1_sha256 }}"
+            },
+            {
+              "name": "zlib1g",
+              "version": "{{ context.cblas_debs_zlib1g_version }}",
+              "filename": "zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb",
+              "sha256": "{{ context.cblas_debs_zlib1g_sha256 }}"
+            },
+            {
+              "name": "libstdc++6",
+              "version": "{{ context.cblas_debs_libstdc__6_version }}",
+              "filename": "libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libstdc__6_sha256 }}"
+            },
+            {
+              "name": "libjansson4",
+              "version": "{{ context.cblas_debs_libjansson4_version }}",
+              "filename": "libjansson4_2.14-2build2_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libjansson4_sha256 }}"
+            },
+            {
+              "name": "binutils-common",
+              "version": "{{ context.cblas_debs_binutils_common_version }}",
+              "filename": "binutils-common_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_binutils_common_sha256 }}"
+            },
+            {
+              "name": "libsframe1",
+              "version": "{{ context.cblas_debs_libsframe1_version }}",
+              "filename": "libsframe1_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libsframe1_sha256 }}"
+            },
+            {
+              "name": "libbinutils",
+              "version": "{{ context.cblas_debs_libbinutils_version }}",
+              "filename": "libbinutils_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libbinutils_sha256 }}"
+            },
+            {
+              "name": "libctf-nobfd0",
+              "version": "{{ context.cblas_debs_libctf_nobfd0_version }}",
+              "filename": "libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libctf_nobfd0_sha256 }}"
+            },
+            {
+              "name": "libctf0",
+              "version": "{{ context.cblas_debs_libctf0_version }}",
+              "filename": "libctf0_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libctf0_sha256 }}"
+            },
+            {
+              "name": "libgprofng0",
+              "version": "{{ context.cblas_debs_libgprofng0_version }}",
+              "filename": "libgprofng0_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libgprofng0_sha256 }}"
+            },
+            {
+              "name": "binutils-aarch64-linux-gnu",
+              "version": "{{ context.cblas_debs_binutils_aarch64_linux_gnu_version }}",
+              "filename": "binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_binutils_aarch64_linux_gnu_sha256 }}"
+            },
+            {
+              "name": "binutils",
+              "version": "{{ context.cblas_debs_binutils_version }}",
+              "filename": "binutils_2.42-4ubuntu2.10_arm64.deb",
+              "sha256": "{{ context.cblas_debs_binutils_sha256 }}"
+            },
+            {
+              "name": "gcc-13-base",
+              "version": "{{ context.cblas_debs_gcc_13_base_version }}",
+              "filename": "gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_gcc_13_base_sha256 }}"
+            },
+            {
+              "name": "libisl23",
+              "version": "{{ context.cblas_debs_libisl23_version }}",
+              "filename": "libisl23_0.26-3build1.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libisl23_sha256 }}"
+            },
+            {
+              "name": "libmpfr6",
+              "version": "{{ context.cblas_debs_libmpfr6_version }}",
+              "filename": "libmpfr6_4.2.1-1build1.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libmpfr6_sha256 }}"
+            },
+            {
+              "name": "libmpc3",
+              "version": "{{ context.cblas_debs_libmpc3_version }}",
+              "filename": "libmpc3_1.3.1-1build1.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libmpc3_sha256 }}"
+            },
+            {
+              "name": "cpp-13-aarch64-linux-gnu",
+              "version": "{{ context.cblas_debs_cpp_13_aarch64_linux_gnu_version }}",
+              "filename": "cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_cpp_13_aarch64_linux_gnu_sha256 }}"
+            },
+            {
+              "name": "cpp-13",
+              "version": "{{ context.cblas_debs_cpp_13_version }}",
+              "filename": "cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_cpp_13_sha256 }}"
+            },
+            {
+              "name": "libcc1-0",
+              "version": "{{ context.cblas_debs_libcc1_0_version }}",
+              "filename": "libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libcc1_0_sha256 }}"
+            },
+            {
+              "name": "libgomp1",
+              "version": "{{ context.cblas_debs_libgomp1_version }}",
+              "filename": "libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libgomp1_sha256 }}"
+            },
+            {
+              "name": "libitm1",
+              "version": "{{ context.cblas_debs_libitm1_version }}",
+              "filename": "libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libitm1_sha256 }}"
+            },
+            {
+              "name": "libatomic1",
+              "version": "{{ context.cblas_debs_libatomic1_version }}",
+              "filename": "libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libatomic1_sha256 }}"
+            },
+            {
+              "name": "libasan8",
+              "version": "{{ context.cblas_debs_libasan8_version }}",
+              "filename": "libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libasan8_sha256 }}"
+            },
+            {
+              "name": "liblsan0",
+              "version": "{{ context.cblas_debs_liblsan0_version }}",
+              "filename": "liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_liblsan0_sha256 }}"
+            },
+            {
+              "name": "libtsan2",
+              "version": "{{ context.cblas_debs_libtsan2_version }}",
+              "filename": "libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libtsan2_sha256 }}"
+            },
+            {
+              "name": "libubsan1",
+              "version": "{{ context.cblas_debs_libubsan1_version }}",
+              "filename": "libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libubsan1_sha256 }}"
+            },
+            {
+              "name": "libhwasan0",
+              "version": "{{ context.cblas_debs_libhwasan0_version }}",
+              "filename": "libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libhwasan0_sha256 }}"
+            },
+            {
+              "name": "libgcc-13-dev",
+              "version": "{{ context.cblas_debs_libgcc_13_dev_version }}",
+              "filename": "libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libgcc_13_dev_sha256 }}"
+            },
+            {
+              "name": "gcc-13-aarch64-linux-gnu",
+              "version": "{{ context.cblas_debs_gcc_13_aarch64_linux_gnu_version }}",
+              "filename": "gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_gcc_13_aarch64_linux_gnu_sha256 }}"
+            },
+            {
+              "name": "libc-dev-bin",
+              "version": "{{ context.cblas_debs_libc_dev_bin_version }}",
+              "filename": "libc-dev-bin_2.39-0ubuntu8.9_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libc_dev_bin_sha256 }}"
+            },
+            {
+              "name": "linux-libc-dev",
+              "version": "{{ context.cblas_debs_linux_libc_dev_version }}",
+              "filename": "linux-libc-dev_6.8.0-147.147_arm64.deb",
+              "sha256": "{{ context.cblas_debs_linux_libc_dev_sha256 }}"
+            },
+            {
+              "name": "libcrypt-dev",
+              "version": "{{ context.cblas_debs_libcrypt_dev_version }}",
+              "filename": "libcrypt-dev_4.4.36-4build1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libcrypt_dev_sha256 }}"
+            },
+            {
+              "name": "rpcsvc-proto",
+              "version": "{{ context.cblas_debs_rpcsvc_proto_version }}",
+              "filename": "rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb",
+              "sha256": "{{ context.cblas_debs_rpcsvc_proto_sha256 }}"
+            },
+            {
+              "name": "libc6-dev",
+              "version": "{{ context.cblas_debs_libc6_dev_version }}",
+              "filename": "libc6-dev_2.39-0ubuntu8.9_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libc6_dev_sha256 }}"
+            },
+            {
+              "name": "libstdc++-13-dev",
+              "version": "{{ context.cblas_debs_libstdc___13_dev_version }}",
+              "filename": "libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_libstdc___13_dev_sha256 }}"
+            },
+            {
+              "name": "g++-13-aarch64-linux-gnu",
+              "version": "{{ context.cblas_debs_g___13_aarch64_linux_gnu_version }}",
+              "filename": "g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_g___13_aarch64_linux_gnu_sha256 }}"
+            },
+            {
+              "name": "gcc-13",
+              "version": "{{ context.cblas_debs_gcc_13_version }}",
+              "filename": "gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_gcc_13_sha256 }}"
+            },
+            {
+              "name": "g++-13",
+              "version": "{{ context.cblas_debs_g___13_version }}",
+              "filename": "g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb",
+              "sha256": "{{ context.cblas_debs_g___13_sha256 }}"
+            }
+          ],
+          "wheels": [
+            {
+              "name": "MarkupSafe",
+              "version": "{{ context.cblas_wheels_markupsafe_version }}",
+              "filename": "MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_markupsafe_sha256 }}"
+            },
+            {
+              "name": "PyYAML",
+              "version": "{{ context.cblas_wheels_pyyaml_version }}",
+              "filename": "PyYAML-6.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_pyyaml_sha256 }}"
+            },
+            {
+              "name": "SCons",
+              "version": "{{ context.cblas_wheels_scons_version }}",
+              "filename": "SCons-4.7.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_scons_sha256 }}"
+            },
+            {
+              "name": "certifi",
+              "version": "{{ context.cblas_wheels_certifi_version }}",
+              "filename": "certifi-2025.4.26-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_certifi_sha256 }}"
+            },
+            {
+              "name": "charset-normalizer",
+              "version": "{{ context.cblas_wheels_charset_normalizer_version }}",
+              "filename": "charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_charset_normalizer_sha256 }}"
+            },
+            {
+              "name": "cmake",
+              "version": "{{ context.cblas_wheels_cmake_version }}",
+              "filename": "cmake-3.31.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_cmake_sha256 }}"
+            },
+            {
+              "name": "filelock",
+              "version": "{{ context.cblas_wheels_filelock_version }}",
+              "filename": "filelock-3.18.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_filelock_sha256 }}"
+            },
+            {
+              "name": "fsspec",
+              "version": "{{ context.cblas_wheels_fsspec_version }}",
+              "filename": "fsspec-2025.3.2-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_fsspec_sha256 }}"
+            },
+            {
+              "name": "idna",
+              "version": "{{ context.cblas_wheels_idna_version }}",
+              "filename": "idna-3.10-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_idna_sha256 }}"
+            },
+            {
+              "name": "Jinja2",
+              "version": "{{ context.cblas_wheels_jinja2_version }}",
+              "filename": "jinja2-3.1.6-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_jinja2_sha256 }}"
+            },
+            {
+              "name": "mpmath",
+              "version": "{{ context.cblas_wheels_mpmath_version }}",
+              "filename": "mpmath-1.3.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_mpmath_sha256 }}"
+            },
+            {
+              "name": "networkx",
+              "version": "{{ context.cblas_wheels_networkx_version }}",
+              "filename": "networkx-3.4.2-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_networkx_sha256 }}"
+            },
+            {
+              "name": "ninja",
+              "version": "{{ context.cblas_wheels_ninja_version }}",
+              "filename": "ninja-1.11.1.4-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_ninja_sha256 }}"
+            },
+            {
+              "name": "numpy",
+              "version": "{{ context.cblas_wheels_numpy_version }}",
+              "filename": "numpy-2.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_numpy_sha256 }}"
+            },
+            {
+              "name": "packaging",
+              "version": "{{ context.cblas_wheels_packaging_version }}",
+              "filename": "packaging-25.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_packaging_sha256 }}"
+            },
+            {
+              "name": "pip",
+              "version": "{{ context.cblas_wheels_pip_version }}",
+              "filename": "pip-24.2-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_pip_sha256 }}"
+            },
+            {
+              "name": "psutil",
+              "version": "{{ context.cblas_wheels_psutil_version }}",
+              "filename": "psutil-7.0.0-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+              "sha256": "{{ context.cblas_wheels_psutil_sha256 }}"
+            },
+            {
+              "name": "requests",
+              "version": "{{ context.cblas_wheels_requests_version }}",
+              "filename": "requests-2.32.4-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_requests_sha256 }}"
+            },
+            {
+              "name": "setuptools",
+              "version": "{{ context.cblas_wheels_setuptools_version }}",
+              "filename": "setuptools-80.9.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_setuptools_sha256 }}"
+            },
+            {
+              "name": "six",
+              "version": "{{ context.cblas_wheels_six_version }}",
+              "filename": "six-1.17.0-py2.py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_six_sha256 }}"
+            },
+            {
+              "name": "sympy",
+              "version": "{{ context.cblas_wheels_sympy_version }}",
+              "filename": "sympy-1.13.3-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_sympy_sha256 }}"
+            },
+            {
+              "name": "typing_extensions",
+              "version": "{{ context.cblas_wheels_typing_extensions_version }}",
+              "filename": "typing_extensions-4.15.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_typing_extensions_sha256 }}"
+            },
+            {
+              "name": "urllib3",
+              "version": "{{ context.cblas_wheels_urllib3_version }}",
+              "filename": "urllib3-2.4.0-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_urllib3_sha256 }}"
+            },
+            {
+              "name": "wheel",
+              "version": "{{ context.cblas_wheels_wheel_version }}",
+              "filename": "wheel-0.45.1-py3-none-any.whl",
+              "sha256": "{{ context.cblas_wheels_wheel_sha256 }}"
+            }
+          ]
+        }
+      }
+  - name: install_native_niftyreg.py
+    contents: |
+      import importlib.util
+      import shutil
+      from pathlib import Path
+      root=Path(importlib.util.find_spec('brainles_preprocessing').origin).parent/'registration'/'niftyreg'/'niftyreg_scripts'
+      prefix=Path('/opt/brainles-niftyreg-{{ context.niftyreg_version }}')
+      for name in ['reg_aladin','reg_resample']:
+          target=root/name
+          target.unlink()
+          target.symlink_to(prefix/'bin'/name)
+      # The unused x86 SDK must not remain falsely presented as an ARM installation.
+      for sdk in root.glob('niftyreg_*'):
+          if sdk.is_dir(): shutil.rmtree(sdk)
+      (root/'niftyreg_{{ context.niftyreg_version }}').symlink_to(prefix,target_is_directory=True)
+      print('BrainLesion NiftyReg backend points to the native released SDK')
   - name: install_hdbet_models.py
     contents: |
       import shutil
@@ -238,25 +1794,22 @@ files:
           raise SystemExit("unknown mode %r" % mode)
   - name: bake_atlases.py
     contents: |
-      """Download the atlases and SynthStrip weights into the installed package.
+      """Install the atlases and SynthStrip weights into the installed package.
 
       brainles_preprocessing resolves both to directories inside its own package
       (utils/zenodo.py: ATLASES_FOLDER and SYNTHSTRIP_FOLDER) and downloads them
       on first use. Those paths are read-only once the image is built, so the
-      download must happen here or registration fails at run time.
+      assets must be installed here or registration fails at run time.
 
       The layout matters as much as the files. ZenodoRecord globs for
       "<record_id>_v*.*.*" inside the target directory and treats a bare
       directory of files as "nothing downloaded yet", so the files go into
       <target>/<record_id>_v<version>/ exactly as _build_folder_path would.
-
-      Files are fetched individually rather than through upstream's fetch, which
-      requests Zenodo's files-archive endpoint: that endpoint is unreliable for
-      these records, while the per-file API works.
       """
       import json
       import pathlib
       import shutil
+      import sys
       import zipfile
       from urllib.request import urlopen
 
@@ -292,7 +1845,14 @@ files:
 
 
       bake(z.ATLASES_RECORD_ID, z.ATLASES_FOLDER, "atlases")
-      bake(z.SYNTHSTRIP_RECORD_ID, z.SYNTHSTRIP_FOLDER, "synthstrip")
+      asset_path, asset_version = sys.argv[1:]
+      folder = z.SYNTHSTRIP_FOLDER / f"{z.SYNTHSTRIP_RECORD_ID}_v{asset_version}"
+      folder.mkdir(parents=True, exist_ok=True)
+      with zipfile.ZipFile(asset_path) as archive:
+          assert archive.namelist() == ["synthstrip.1.pt"], archive.namelist()
+          archive.extract("synthstrip.1.pt", folder)
+      assert (folder / "synthstrip.1.pt").is_file(), folder
+      print(f"synthstrip: ready at {folder}", flush=True)
 
 deploy:
   # Named individually rather than exporting the environment's bin directory.
@@ -315,6 +1875,8 @@ categories:
   - structural imaging
 
 readme: |
+  ARM64 uses official CPU PyTorch {{ context.arm_torch_version }}, ANTsPy {{ context.antspyx_version }} built from released source, and native NiftyReg {{ context.niftyreg_version }} with the supported USE_SSE=OFF configuration. The x86_64 backend keeps the package-provided NiftyReg binaries. Both actual registration backends, HD-BET CPU inference and SynthStrip inference are exercised in the runtime suite; synthetic operations do not establish clinical accuracy.
+
   ----------------------------------
   ## brainles-preprocessing/{{ context.version }} ##
   brainles-preprocessing provides a preprocessing pipeline
