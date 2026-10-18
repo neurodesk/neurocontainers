@@ -601,6 +601,32 @@ def _run_setup_in_container(
             pass
 
 
+def _run_host_script(script: str, work_dir: Path) -> subprocess.CompletedProcess[bytes]:
+    resolved_work_dir = work_dir.resolve()
+    seen: set[Path] = set()
+    error = OSError("No temporary directory available outside the work directory")
+    for root in (Path(tempfile.gettempdir()), Path("/tmp"), Path("/var/tmp")):
+        root = root.resolve()
+        if root in seen or root.is_relative_to(resolved_work_dir):
+            continue
+        seen.add(root)
+        try:
+            directory = tempfile.TemporaryDirectory(prefix="host-script-", dir=root)
+        except OSError as exc:
+            error = exc
+            continue
+        break
+    else:
+        raise error
+
+    with directory as script_dir:
+        script_path = Path(script_dir) / "script.sh"
+        script_path.write_bytes(os.fsencode(script))
+        return subprocess.run(
+            ["/bin/sh", str(script_path)], cwd=work_dir, capture_output=True
+        )
+
+
 def run_test_suite(
     yaml_path: Path,
     containers_dir: Path,
@@ -748,13 +774,7 @@ def run_test_suite(
     if host_script:
         host_script = substitute_variables(host_script, variables)
         try:
-            subprocess.run(
-                host_script,
-                shell=True,
-                check=True,
-                cwd=work_dir,
-                capture_output=True,
-            )
+            _run_host_script(host_script, work_dir).check_returncode()
         except subprocess.CalledProcessError as e:
             return TestSuiteResult(
                 name=suite_name,
@@ -929,12 +949,7 @@ def run_test_suite(
     if cleanup_script:
         cleanup_script = substitute_variables(cleanup_script, variables)
         try:
-            subprocess.run(
-                cleanup_script,
-                shell=True,
-                cwd=work_dir,
-                capture_output=True,
-            )
+            _run_host_script(cleanup_script, work_dir)
         except Exception:
             pass  # Ignore cleanup errors
 

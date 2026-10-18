@@ -1,16 +1,414 @@
 from __future__ import annotations
 
 import os
+import queue
+import shlex
 import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+import yaml
 
 from builder import run_tests
 from builder.runtime_execution import (
     TestSpec as RuntimeTestSpec,
     evaluate_process_assertions,
 )
+
+
+def _write_host_suite(
+    path: Path, *, host_script: str = "", cleanup_script: str = "", **variables
+) -> Path:
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "name": path.stem,
+                "version": "1.0.0",
+                "setup": {"host_script": host_script},
+                "cleanup": {"script": cleanup_script},
+                "tests": [],
+                **variables,
+            }
+        )
+    )
+    return path
+
+
+@pytest.fixture
+def host_health(monkeypatch) -> list[dict[str, bytes]]:
+    calls = []
+
+    def health(container_path, work_dir, variables):
+        calls.append(
+            {p.name: p.read_bytes() for p in work_dir.iterdir() if p.is_file()}
+        )
+        return run_tests.TestResult(name="health sentinel", passed=True, duration=0)
+
+    monkeypatch.setattr(run_tests, "_run_container_health_check", health)
+    return calls
+
+
+@pytest.mark.parametrize("phase", ["setup", "cleanup"])
+def test_oversized_host_program_runs_completely(tmp_path, host_health, phase) -> None:
+    work_dir = tmp_path / "work with 'quotes' $dollars;"
+    work_dir.mkdir()
+    data = "".join(f"record {i:06d} | café '$HOME' ; \\literal\n" for i in range(6000))
+    script = (
+        "cat > data <<'PAYLOAD'\n"
+        + data
+        + "PAYLOAD\nprintf END > end\n"
+        + ("exit 7" if phase == "cleanup" else "")
+    )
+    yaml_path = _write_host_suite(
+        tmp_path / "oversized.yaml",
+        host_script=script if phase == "setup" else "",
+        cleanup_script=script if phase == "cleanup" else "",
+    )
+
+    result = run_tests.run_test_suite(
+        yaml_path, tmp_path, work_dir, container_override="/bin/true"
+    )
+
+    assert (work_dir / "end").is_file(), f"host {phase} did not reach END"
+    expected = {"data": data.encode(), "end": b"END"}
+    assert {p.name: p.read_bytes() for p in work_dir.iterdir()} == expected
+    assert host_health == [expected if phase == "setup" else {}]
+    assert result.total == result.failed == 0
+    assert result.results == []
+
+
+@pytest.mark.parametrize("phase", ["setup", "cleanup"])
+def test_host_program_preserves_substitution_and_exact_bytes(
+    tmp_path, host_health, phase
+) -> None:
+    work_dir = tmp_path / "work with 'quotes' $dollars;"
+    work_dir.mkdir()
+    script = (
+        'cat "$0" > program\nprintf %s "$0" > script-path\n'
+        "cat > data <<'PAYLOAD'\n"
+        "${alias}|$label|$HOME|${untouched}|\\literal\n"
+        "PAYLOAD\nprintf '%s' '" + os.fsdecode(b"\xfe") + "' >> data"
+    )
+    yaml_path = _write_host_suite(
+        tmp_path / "bytes.yaml",
+        host_script=script if phase == "setup" else "",
+        cleanup_script=script if phase == "cleanup" else "",
+        alias="${label}",
+        label="café",
+    )
+
+    result = run_tests.run_test_suite(
+        yaml_path, tmp_path, work_dir, container_override="/bin/true"
+    )
+
+    assert result.failed == 0
+    assert (work_dir / "data").read_bytes() == (
+        "café|café|$HOME|${untouched}|\\literal\n".encode() + b"\xfe"
+    )
+    expected_script = script.replace("${alias}", "café").replace("$label", "café")
+    assert (work_dir / "program").read_bytes() == os.fsencode(expected_script)
+    script_path = Path((work_dir / "script-path").read_text())
+    assert script_path.is_absolute()
+    assert not script_path.is_relative_to(work_dir.resolve())
+    assert not script_path.parent.exists()
+    assert len(host_health) == 1
+
+
+def test_host_program_inherits_real_stdin_and_environment(tmp_path) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    yaml_path = _write_host_suite(
+        tmp_path / "stdin.yaml",
+        host_script=(
+            "IFS= read -r received\n"
+            'printf "%s|%s|%s\\n" "$received" "$HOST_TRANSPORT_VALUE" "$#" '
+            "> inherited\n"
+            "cat >> inherited"
+        ),
+        env={"HOST_TRANSPORT_VALUE": "suite-only"},
+        env_setup="export HOST_TRANSPORT_VALUE=setup-only",
+    )
+    driver = """
+import sys
+from pathlib import Path
+from builder import run_tests
+run_tests._run_container_health_check = lambda *args: run_tests.TestResult(
+    name="health sentinel", passed=True, duration=0
+)
+result = run_tests.run_test_suite(
+    Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[2]),
+    container_override="/bin/true",
+)
+assert result.failed == 0, result
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", driver, str(yaml_path), str(work_dir)],
+        input=b"input \\ literal\nchild-input\n",
+        env={**os.environ, "HOST_TRANSPORT_VALUE": "inherited"},
+        capture_output=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (work_dir / "inherited").read_bytes() == (
+        b"input \\ literal|inherited|0\nchild-input\n"
+    )
+
+
+@pytest.mark.parametrize("stderr", ["setup-error", ""])
+def test_host_setup_nonzero_returns_before_health_and_cleanup(
+    tmp_path, host_health, stderr
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    yaml_path = _write_host_suite(
+        tmp_path / "nonzero.yaml",
+        host_script=f"printf setup-out; printf '%s' '{stderr}' >&2; exit 7",
+        cleanup_script="touch cleanup-ran",
+    )
+    callbacks = []
+    results = queue.Queue()
+
+    result = run_tests.run_test_suite(
+        yaml_path,
+        tmp_path,
+        work_dir,
+        container_override="/bin/true",
+        on_test_complete=lambda *args: callbacks.append(args),
+        result_queue=results,
+    )
+
+    assert result.total == 0
+    assert result.failed == 1
+    (failure,) = result.results
+    assert failure.name == "Setup (host)"
+    assert not failure.passed
+    if stderr:
+        assert failure.message == "Host setup failed: setup-error"
+    else:
+        assert failure.message.startswith("Host setup failed: Command '")
+        assert "returned non-zero exit status 7" in failure.message
+    assert failure.stdout == failure.stderr == failure.start_time == ""
+    assert failure.exit_code == failure.duration == 0
+    assert not host_health
+    assert not callbacks
+    assert results.empty()
+    assert not list(work_dir.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("body", "status", "stdout", "stderr"),
+    [
+        ("false\nprintf 'continued\\377'", 0, b"continued\xff", b""),
+        ("set -e\nfalse\nprintf unreachable", 1, b"", b""),
+        (
+            'set -eu\nvalue=selected\nprintf %s "$value"\nfalse',
+            1,
+            b"selected",
+            b"",
+        ),
+        (
+            "trap 'printf trapped >&2' EXIT\nprintf out\nexit 7",
+            7,
+            b"out",
+            b"trapped",
+        ),
+        (
+            "exec /bin/sh -c 'printf replaced; printf \"\\376\" >&2; exit 9'",
+            9,
+            b"replaced",
+            b"\xfe",
+        ),
+    ],
+    ids=["default-options", "errexit", "script-options", "exit-trap", "exec"],
+)
+def test_host_shell_policy_and_file_disposal(
+    tmp_path, body, status, stdout, stderr
+) -> None:
+    script = '#!/not/a/real/interpreter\nprintf %s "$0" > script-path\n' + body
+
+    result = run_tests._run_host_script(script, tmp_path)
+
+    assert result.returncode == status
+    assert result.stdout == stdout
+    assert result.stderr == stderr
+    script_path = Path((tmp_path / "script-path").read_text())
+    assert not script_path.parent.exists()
+
+
+@pytest.mark.parametrize("failure", ["partial-write", "missing-cwd", "unexpected"])
+def test_host_temporary_files_are_removed_on_errors(
+    tmp_path, monkeypatch, failure
+) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    monkeypatch.setattr(run_tests.tempfile, "gettempdir", lambda: str(scratch))
+    launches = []
+    if failure == "partial-write":
+        write_bytes = Path.write_bytes
+
+        def fail_write(path, data):
+            write_bytes(path, data[:5])
+            raise OSError("partial write")
+
+        monkeypatch.setattr(Path, "write_bytes", fail_write)
+        error, message = OSError, "partial write"
+    elif failure == "missing-cwd":
+        work_dir = work_dir / "missing"
+        real_run = subprocess.run
+
+        def missing_cwd(command, **kwargs):
+            launches.append(command)
+            return real_run(command, **kwargs)
+
+        monkeypatch.setattr(run_tests.subprocess, "run", missing_cwd)
+        error, message = FileNotFoundError, "missing"
+    else:
+
+        def fail_run(command, **kwargs):
+            launches.append(command)
+            assert Path(command[1]).read_bytes() == b"printf unused"
+            raise RuntimeError("unexpected launch error")
+
+        monkeypatch.setattr(run_tests.subprocess, "run", fail_run)
+        error, message = RuntimeError, "unexpected launch error"
+
+    with pytest.raises(error, match=message):
+        run_tests._run_host_script("printf unused", work_dir)
+    assert not list(scratch.iterdir())
+    assert len(launches) == (0 if failure == "partial-write" else 1)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="requires enforced directory permissions")
+@pytest.mark.parametrize("temp_root", ["overlapping-alias", "unwritable"])
+def test_host_scratch_does_not_require_writable_work_parent(
+    tmp_path, monkeypatch, temp_root
+) -> None:
+    parent = tmp_path / "parent"
+    work_dir = parent / "work"
+    work_dir.mkdir(parents=True)
+    standard = tmp_path / "standard-temp"
+    if temp_root == "overlapping-alias":
+        (work_dir / "scratch").mkdir()
+        standard.symlink_to(work_dir / "scratch", target_is_directory=True)
+    else:
+        standard.mkdir(mode=0o555)
+    monkeypatch.setattr(run_tests.tempfile, "gettempdir", lambda: str(standard))
+    parent.chmod(0o555)
+    try:
+        with pytest.raises(PermissionError):
+            (parent / "sibling").mkdir()
+        result = run_tests._run_host_script('printf %s "$0" > script-path', work_dir)
+        assert result.returncode == 0, result.stderr
+        script_path = Path((work_dir / "script-path").read_text())
+        assert not script_path.is_relative_to(work_dir.resolve())
+        assert not script_path.parent.exists()
+        assert not list(standard.iterdir())
+    finally:
+        parent.chmod(0o755)
+        if temp_root == "unwritable":
+            standard.chmod(0o755)
+
+
+@pytest.mark.parametrize("phase", ["setup", "cleanup"])
+def test_host_allocation_failure_preserves_phase_error_policy(
+    tmp_path, monkeypatch, host_health, phase
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    yaml_path = _write_host_suite(
+        tmp_path / "allocation.yaml",
+        host_script="true" if phase == "setup" else "",
+        cleanup_script="true" if phase == "cleanup" else "",
+    )
+    roots = []
+
+    def fail_allocation(*, prefix, dir):
+        roots.append(dir)
+        raise PermissionError("scratch unavailable")
+
+    monkeypatch.setattr(run_tests.tempfile, "gettempdir", lambda: "/tmp")
+    monkeypatch.setattr(run_tests.tempfile, "TemporaryDirectory", fail_allocation)
+    if phase == "setup":
+        with pytest.raises(PermissionError, match="scratch unavailable"):
+            run_tests.run_test_suite(
+                yaml_path, tmp_path, work_dir, container_override="/bin/true"
+            )
+        assert not host_health
+    else:
+        result = run_tests.run_test_suite(
+            yaml_path, tmp_path, work_dir, container_override="/bin/true"
+        )
+        assert result.failed == 0
+        assert host_health == [{}]
+    assert roots == list(
+        dict.fromkeys([Path("/tmp").resolve(), Path("/var/tmp").resolve()])
+    )
+
+
+def test_concurrent_host_suites_use_distinct_live_scripts(
+    tmp_path, host_health
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    script = (
+        'set -e\nprintf %s "$0" > ${token}.path\n'
+        + shlex.quote(sys.executable)
+        + " - <<'WAIT'\n"
+        "import time\nfrom pathlib import Path\n"
+        "Path('${token}.ready').touch()\n"
+        "deadline = time.monotonic() + 10\n"
+        "while not Path('release').exists():\n"
+        "    if time.monotonic() >= deadline:\n"
+        "        raise SystemExit('barrier timed out')\n"
+        "    time.sleep(0.01)\n"
+        "WAIT\nprintf '${token}-END' > ${token}.out"
+    )
+    suites = [
+        _write_host_suite(tmp_path / f"{token}.yaml", host_script=script, token=token)
+        for token in ("first", "second")
+    ]
+    paths = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                run_tests.run_test_suite,
+                suite,
+                tmp_path,
+                work_dir,
+                container_override="/bin/true",
+            )
+            for suite in suites
+        ]
+        try:
+            deadline = time.monotonic() + 5
+            while len(list(work_dir.glob("*.ready"))) != 2:
+                assert time.monotonic() < deadline, "scripts must reach the barrier"
+                time.sleep(0.01)
+            for token in ("first", "second"):
+                path = Path((work_dir / f"{token}.path").read_text())
+                assert path.is_absolute()
+                assert not path.is_relative_to(work_dir.resolve())
+                assert path.parent.stat().st_mode & 0o777 == 0o700
+                assert not path.stat().st_mode & 0o111
+                assert path.read_bytes() == os.fsencode(
+                    script.replace("${token}", token)
+                )
+                paths.append(path)
+            assert paths[0].parent != paths[1].parent
+        finally:
+            (work_dir / "release").touch()
+        for future in futures:
+            assert future.result(timeout=15).failed == 0
+    assert len(host_health) == 2
+    assert (work_dir / "first.out").read_bytes() == b"first-END"
+    assert (work_dir / "second.out").read_bytes() == b"second-END"
+    assert all(not path.parent.exists() for path in paths)
 
 
 @pytest.mark.parametrize(
