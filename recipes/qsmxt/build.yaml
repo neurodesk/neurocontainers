@@ -7,10 +7,8 @@ copyright:
     url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
   - name: ep3d-highres-preprocessing (no license file upstream; packaged with the author's permission)
     url: https://github.com/mrphysics-bonn/ep3d-highres-preprocessing
-  - name: fsl license
-    url: https://fsl.fmrib.ox.ac.uk/fsl/docs/#/license
-  - license: Apache-2.0
-    url: https://github.com/nipy/nipype/blob/master/LICENSE
+  - license: BSD-2-Clause
+    url: https://github.com/rordenlab/niimath/blob/master/LICENSE
   - license: Apache-2.0
     url: https://github.com/ANTsX/ANTsPy/blob/master/LICENSE
 architectures:
@@ -28,12 +26,9 @@ variables:
   mni_template_revision: "1ce9602a5cde67af4dbb8566180b3ce906c5a376"
   mni_template_sha256: 0585cd056bf5ccfb8bf97a5f6a66082d4e7caad525718fc11e40d80a827fcb92
   model_revision: 31b08225f3adf2d732dafad4e3c5a94c350ef51b
-  ep3d_preprocessing_commit: 8062dc1a6e368f3d1c329c50dbea42c8fdc5c3e8
-  nipype_version: "1.12.0"
+  niimath_version: "1.0.20261016"
+  niimath_sha256: 0e5c48c7c301490d259c3e83ea213bfac8f3b0a28acc6a2e842ce25b474cfdc0
   antspyx_version: "0.6.3"
-  fsl_mcflirt_sha256: dadac722951f869e918513807a189d243fb4b1faa8c63f382530cf35c72926d8
-  fsl_flirt_sha256: f12fcd76e08db2847d0eb334fc877f2af3f991d33f65e16c9389d4c28f9bc809
-  fsl_avwutils_sha256: ea2a9eb89877d200c83260ce215acb16172b04dc8cdc46bf03f077a9b4e4c8bf
   qsmxt_tarball:
     try:
       - value: qsmxt_x86_64_tar_gz
@@ -93,49 +88,24 @@ auto_update:
     ref: fix/ismrmrd-compatibility
     target:
       variable: openrecon_server_commit
-  - id: ep3d_preprocessing
+  - id: niimath
     dependency: true
-    method: github_commit
-    repo: mrphysics-bonn/ep3d-highres-preprocessing
-    ref: HEAD
+    method: github_release_asset
+    repo: rordenlab/niimath
+    asset: niimath_lnx.zip
+    version_regex: v?(?P<version>\d+\.\d+\.\d+)
     target:
-      variable: ep3d_preprocessing_commit
-  - id: nipype
-    dependency: true
-    method: pypi
-    package: nipype
-    target:
-      variable: nipype_version
+      variable: niimath_version
+      value: version
+      fulltest_variable: niimath_version
+      variables:
+        niimath_sha256: sha256
   - id: antspyx
     dependency: true
     method: pypi
     package: antspyx
     target:
       variable: antspyx_version
-  - id: fsl_mcflirt
-    dependency: true
-    method: http_digest
-    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-mcflirt-2111.0-h465c9ab_11.conda
-    target:
-      variable: fsl_mcflirt_sha256
-  - id: fsl_flirt
-    dependency: true
-    method: http_digest
-    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-flirt-2111.4-h28ab0de_3.conda
-    target:
-      variable: fsl_flirt_sha256
-  - id: fsl_avwutils
-    dependency: true
-    method: http_digest
-    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-avwutils-2209.8-h67d7eeb_2.conda
-    target:
-      variable: fsl_avwutils_sha256
-  - id: micromamba
-    dependency: true
-    method: http_digest
-    url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
-    target:
-      file: micromamba
   local:
   - macros/openrecon
 
@@ -151,8 +121,8 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
-        - bzip2
         - ca-certificates
+        - libgomp1
         - python3-dev
         - python-is-python3
         - python3-pip
@@ -204,25 +174,11 @@ build:
         QSM_MODEL_DIR: /opt/qsmxt/models
         QSM_MODEL_CACHE: /tmp/share/qsmxt_models
 
-    # 3D EPI dual polarity QSM: complex preprocessing from
-    # mrphysics-bonn/ep3d-highres-preprocessing needs nipype, ANTsPy and the
-    # FSL motion-correction tools. FSL lives in its own prefix; only the tools
-    # nipype calls are linked onto PATH so its python never shadows the system one.
     - run:
-        - tar -xjf {{ get_file("micromamba") }} -C /tmp bin/micromamba
-        - MAMBA_ROOT_PREFIX=/tmp/mamba /tmp/bin/micromamba create -y -p /opt/fsl --file {{ get_file("fsl-explicit") }}
-        - rm -rf /tmp/mamba /tmp/bin/micromamba
-        - mkdir -p /opt/fsl-tools
-        - ln -s /opt/fsl/bin/mcflirt /opt/fsl/bin/flirt /opt/fsl/bin/fslsplit /opt/fsl/bin/fslmerge /opt/fsl/bin/fslcpgeom /opt/fsl-tools/
-        - python3 -m pip install --break-system-packages --no-cache-dir nipype=={{ context.nipype_version }} antspyx=={{ context.antspyx_version }}
-        - git clone https://github.com/mrphysics-bonn/ep3d-highres-preprocessing.git /opt/ep3d-highres-preprocessing
-        - git -C /opt/ep3d-highres-preprocessing checkout {{ context.ep3d_preprocessing_commit }}
-        - rm -rf /opt/ep3d-highres-preprocessing/.git
-
-    - environment:
-        FSLDIR: /opt/fsl
-        FSLOUTPUTTYPE: NIFTI_GZ
-        PATH: $PATH:/opt/fsl-tools
+        - python3 -m zipfile -e {{ get_file("niimath_zip") }} /tmp/niimath
+        - install -m 755 /tmp/niimath/niimath /opt/qsmxt/niimath
+        - rm -rf /tmp/niimath
+        - python3 -m pip install --break-system-packages --no-cache-dir antspyx=={{ context.antspyx_version }}
 
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
@@ -240,6 +196,7 @@ build:
     - run:
         - install -m 644 {{ get_file("verify_v10_runtime.py") }} /opt/qsmxt/verify_v10_runtime.py
         - install -m 644 {{ get_file("verify_output_echoes.py") }} /opt/qsmxt/verify_output_echoes.py
+        - install -m 644 {{ get_file("verify_ep3d_runtime.py") }} /opt/qsmxt/verify_ep3d_runtime.py
 
     - boutique:
         name: qsmxt
@@ -359,6 +316,8 @@ readme: |-
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
 
 files:
+  - name: verify_ep3d_runtime.py
+    filename: verify_ep3d_runtime.py
   - name: verify_output_echoes.py
     filename: verify_output_echoes.py
   - name: verify_v10_runtime.py
@@ -380,94 +339,9 @@ files:
     filename: qsmxt_ep3d_denoise.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
-  - name: micromamba
-    url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
-    sha256: 5512233cdd8564a671626081026dc861537a963baa06706baab08fac6f3bb9d2
-  - name: fsl-explicit
-    contents: |
-      @EXPLICIT
-      https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda#92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd758
-      https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda#1dd3fffd892081df9726d7eb7e0dea6198962ba775bd88842135a4ddb4deb3c9
-      https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda#e031634c3a928f9594eba868bc46ef5230d6571a364a0c63215b06c4563bfcea
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-common-0.14.3-hb03c661_0.conda#8ea79f36d50ba90d7147fe1a047f9a7f2d33b114a3d4bacf1360cd8df43986e4
-      https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda#0a0544cf95f64394fe4959286f5c71f5444ad58feb0602e53becb27448d24da6
-      https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.5-h781a0a9_0.conda#9c1533f1cf784f0e250919c0c9762d0b0e6bc727a79290ffb7cea1ceca1d038c
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-cal-0.9.15-h6bbde05_1.conda#6eb21a0129e0aa7c6be733c7f2d1de6bc97a60c8382c1016f19dced722600d73
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-compression-0.3.2-h01ee8f8_5.conda#27f8581573c533a92a1a9619516ebb66d390b9923d296331985cfd342dc32d29
-      https://conda.anaconda.org/conda-forge/linux-64/s2n-1.7.6-h7e3ee7f_0.conda#1e1ccc56fdf3fe82150b4eac1d626c806e612af208fbf40ce3abfe9a2eb2a626
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-io-0.27.5-h4f381ba_1.conda#76ab4eb6cae12e14244cb1fe11ecccc2f103f8ffa7e80e222099c6b16c19ae20
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-http-0.11.0-hbe094ff_5.conda#a4a5e24b398e7c0ef64de5a341ecb3f0fa87c2879177695c5d0bcbde0c4f8b5e
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-sdkutils-0.2.7-h01ee8f8_3.conda#b308c393a3db78cef29942c6b83ca7321f86d357fbb47504d59f55254601c87a
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-auth-0.10.4-h4610da3_2.conda#0c92dc5ddf4edd4038a63adb79f9f0b03f61e9455ce3253b7d2cf708e06ff99e
-      https://conda.anaconda.org/conda-forge/linux-64/aws-checksums-0.2.10-h01ee8f8_5.conda#f8d2cd9faccb273df739fc28431b484a90aca10027ef44f7fec1d4f0bd229a76
-      https://conda.anaconda.org/conda-forge/linux-64/aws-c-s3-0.13.1-h7508075_1.conda#d24f7f34b3b564535b533b17176e71f71b6944aa2cb71813283bece139908d9f
-      https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda#1a0d382c515ebf55f8ee1f38c8b81bc95af5c2acc42ad53b66bc5df932032f96
-      https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda#eb8a0db0aa570124f7d2a93d7c7f596e3390df5e047818d873baad32985fc736
-      https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda#47d682b9f6d6ec9eb1a6e6c3e75ea6273e899e78fb7fc59f81d39745009fbc60
-      https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_103.conda#901649b1edbe841fd4ee7e2d491a05184ed540eb01cdae506872f344babc1d28
-      https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.6-hdb14827_1.conda#5d46557214ed184381dafe835b7c94a474a1c3b307a08a250b1ea4779b44ffb3
-      https://conda.anaconda.org/conda-forge/linux-64/libedit-3.1.20260512-pl5321h373387f_0.conda#45301f14f4eb66da57cfaf2d265f3eeee73f8b07e99614ee3afc5b26eea91126
-      https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.8.5-hd2095e1_0.conda#6de73033a7c5f712c9c5a54124e4581e025691029835e5bceaf10a333a7e7bc0
-      https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h81df57d_1.conda#c8c7583ef063bc3c430f1d48298e5ad24f796a35c22ed5b14183325825a61106
-      https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda#9787df8c22a59c9a70d3e5a10db9ad663485e75e9ccc3f09bd092cb7b95e0dab
-      https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda#46820b4a835e175940ae20bec00fdddaff804cda27a1408ab1b95e77a2196437
-      https://conda.anaconda.org/conda-forge/linux-64/libsqlite-3.54.0-h0737f62_101.conda#b4d5d4428bd1931eede11d2d69389c5b9d396a7f3c8df9d7c39c9efd80761eb3
-      https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.4-hcfc3c73_0.conda#f34b8d1de9a2bf62476d8608057d9b8a918d97444236dc53a47128f2fae79041
-      https://conda.anaconda.org/conda-forge/noarch/python_abi-3.15-9_cp315.conda#976c4a6db967a62385aa633daaab19a929f986b979a7ad836b8b70e15ca7aefd
-      https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_h1df4ec4_4.conda#a1a241d172c1ccab067ba245206dd048bc3c2d1b84504b53c9468e99adfc16a1
-      https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda#b928c30ddcb0e3f544c6eade8352737e6e610e263276b90232db6a578ef899d8
-      https://conda.anaconda.org/conda-forge/linux-64/python-3.15.0-h6e52b48_101_cp315.conda#cc0ffb9c7f141f4fb5e0dda57f10bad49bb222b30f39f400c1d84f2dd9733d06
-      https://conda.anaconda.org/conda-forge/noarch/backports.zstd-1.8.0-py314h680f03e_0.conda#8567ada5e3db2edf644ea87fdd2e8bedbadb8989c4daac53a15b0ebfcb9ebd1a
-      https://conda.anaconda.org/conda-forge/linux-64/c-ares-1.34.8-hebe6cf0_2.conda#9c37cc233238adf366ea75b0e845662a5be07ceadf62e458183516369340274b
-      https://conda.anaconda.org/conda-forge/noarch/cached_property-2.0.1-pyhcf101f3_0.conda#4bd96dab5a434e4ee59fb6910cae704d4c5b453907d4886272a9943d37e42b6f
-      https://conda.anaconda.org/conda-forge/noarch/cached-property-2.0.1-pyhcf101f3_0.conda#39358005c3cc44d8315ed79789b18a960d69365be979970cc6bae8f7a6177703
-      https://conda.anaconda.org/conda-forge/noarch/dill-0.4.1-pyhcf101f3_0.conda#1ef84c0cc4efd0c2d58c3cb365945edbd9ee42a1c54514d1ccba4b641005f757
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-installer-3.21.0-py_0.conda#89c3ce138e69ed3f1faa9d623a5a03372f74eab6e283c8fc07ddc98e6d495019
-      https://conda.anaconda.org/conda-forge/linux-64/ruamel.yaml.clib-0.2.15-py315hd4e796c_5.conda#b8d8b7a0226fea7d83385b599b5a7ddd9e9cd931a727304f0ff9464a63cfbd26
-      https://conda.anaconda.org/conda-forge/noarch/ruamel.yaml-0.19.1-pyhcf101f3_0.conda#b48bebe297a63ae60f52e50be328262e880702db4d9b4e86731473ada459c2a1
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-sub-2.11-py_0.conda#ed1ac37eb66fc79dfed1d6b02576e92a28d9a92c19c9978b96f8c26cc387b546
-      https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda#fa7018298629fc429971fffd6ecba3d27a7b02e4e890d6a93ea01ffebe8cb745
-      https://conda.anaconda.org/conda-forge/linux-64/libaec-1.1.5-h088129d_0.conda#822e4ae421a7e9c04e841323526321185f6659222325e1a9aedec811c686e688
-      https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-h7cc23a3_1.conda#dd053c96dcb0dcfd59422aefea9d2fe937a190167f34fba7893ec1e10a7e8963
-      https://conda.anaconda.org/conda-forge/linux-64/krb5-1.22.2-hbc21106_2.conda#2a5c38c85e63df84c4e69ee71439841ce570d259ae3060627bb9a49a938d66f4
-      https://conda.anaconda.org/conda-forge/linux-64/libev-4.33-h280c20c_3.conda#e4418f68d01a6307c4431b585c71b584f40189877364e542ee87deb777f5e85b
-      https://conda.anaconda.org/conda-forge/linux-64/libnghttp2-1.68.1-h74cf4be_1.conda#11a2f54a6f391e25738bce0023e6ef499600147bbcf21c1fa69d2e251b03cc6a
-      https://conda.anaconda.org/conda-forge/linux-64/libssh2-1.11.1-h6154650_1.conda#7e463000fa1cba3f3a6597b776f6ab301d425a96e3bc20d0d9d76a3b9f237aa3
-      https://conda.anaconda.org/conda-forge/linux-64/libcurl-8.21.0-hcf29cc6_1.conda#7d243f45a48f62cb8e3b871dd336137fe0fb90094a191756fb553508837f6338
-      https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.2.0-h6b99dfc_7.conda#04dbab12c925b92977bb835dd2f5eda413607afa79f95a554e5a04b07a380322
-      https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.2.0-h69a702a_7.conda#9682ae4dd11487e10b904b3cb3ab6379cad25233d45fdfdf90d54349df244494
-      https://conda.anaconda.org/conda-forge/linux-64/hdf5-2.2.0-nompi_hc529623_100.conda#786d126bfb33b923dd1341a92c2a3edd0ff5d0a71db8557fca9324ea4e93d677
-      https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_hf13c14d_2.conda#69a722751e14eab2eb3bfdcb9acb1187afbd962b0c49b48d829341e0f6787f60
-      https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-11_h4a7cf45_openblas.conda#d942e0c820d60a613a6f786d074f0820fb6343e3f1ccfb110b1d98b44fb75968
-      https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-11_h0358290_openblas.conda#f7d1bbdea61cf94ba219d17b2cb571a29830f8025385af799bff5a7ad1ef45e6
-      https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-11_h47877c9_openblas.conda#1ad3f43c9319ef398a8ef45989f4903a06e3965b51e77fc669a4c894168a8411
-      https://conda.anaconda.org/conda-forge/linux-64/numpy-2.5.4-py315h11958a5_0.conda#a3fb581f1a04a25a211f3a95c57dcde750587ee9c47a32055e857b752f4fab7d
-      https://conda.anaconda.org/conda-forge/linux-64/h5py-3.16.0-nompi_py315hf8c75a6_105.conda#f4001feb4c95d46fabc14f8bc8714ba296a13e54f5295be9530115bd5a6dd758
-      https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.1-pyh5ded981_0.conda#3aa601ef121f42dcb79400375e72f833ddc68bc6243f3e5535168b2d69cc9c70
-      https://conda.anaconda.org/conda-forge/noarch/importlib_resources-7.1.0-pyhd8ed1ab_0.conda#a563a51aa522998172838e867e6dedcf630bc45796e8612f5a1f6d73e9c8125a
-      https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda#c432626b16768b8dab228bfb706f7060c2d462a21c516d240f68f2f902b5a044
-      https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda#2d888f90af0686044882c74193ec80a90ec1943145d94a7b1b048958acda1848
-      https://conda.anaconda.org/conda-forge/noarch/nibabel-5.4.2-pyhcf101f3_0.conda#b69d81c1570a1a9f25fd90416428d1ad40f49c15e0c1cfe8135ba6c912c985d9
-      https://conda.anaconda.org/conda-forge/linux-64/scipy-1.18.1-py315heedce22_1.conda#d8a27d682abd3b8b45727f78506d46ac72f4b7a4a8196ff9cdb77f4bfaa740d9
-      https://conda.anaconda.org/conda-forge/noarch/fslpy-3.29.1-pyhc364b38_0.conda#76646b1782794b70c13e4e356e95a1107f625291c9d6018436da9feac886fb16
-      https://conda.anaconda.org/conda-forge/linux-64/yaml-0.2.5-hebe6cf0_3.conda#d164dfa75ecd538f6fd68765defcc06aa875bc697b9b215362d79a2a73125dd0
-      https://conda.anaconda.org/conda-forge/noarch/pyyaml-6.0.3-pyh7db6752_1.conda#5f938d208c284cc1f910fd84f2adffe59d01de73f62d8448ae311eb4f0340bd3
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-base-2608.1-pyh4616a5c_0.conda#807d9e77650de04c751b7396d2e912626b99a64da53df09c32cd820d522a424f
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-cprob-2111.0-h9f0ab69_8.conda#94c80b8f0ee9c229e780e301bda2f8ada088b4dde254f838be05f8c5631d9f7c
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-misc_c-2111.1-h3986bbc_1.conda#cf4cfa654c35f5aa929ffa47e5c5b4c3031553212d531ea45793fb63ca7b2c63
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-utils-2412.6-hdf63e7b_1.conda#b6616878217f97dc07aa1358e7282b66e1b18c1236725ca0afe264d01c93b9e0
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-znzlib-2511.3-hcc786c9_101_zlib.conda#9722b02e530a5677a7973b24c0612d8e04994213d394743c8c956095ded44334
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-newnifti-5.0.0-h56e42e0_0.conda#b6b5305dfed3fbc30ceba9a4da37bd074136bf91373d2a2c611aa82b8f2442ad
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-miscmaths-2412.7-hb1b1de1_0.conda#e4b1b9071f3ab75b6c92f8dfcc8bed839432d8e671306f1b128c6801550df1bc
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-newimage-2601.0-h541c7df_0.conda#7e27e07cc37de25b435458a3232e0759dfb92ac67c55fa1388bc0171f4ac3c99
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-avwutils-2209.8-h67d7eeb_2.conda#{{ context.fsl_avwutils_sha256 }}
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-basisfield-2203.4-h465c9ab_3.conda#71c10ef8d60c778469f69fef8e891c99a672f84bc6727e1ce13fc184ce73950d
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-misc_tcl-2607.0-0.conda#c5a9fe23bacdb164e36aa62424ebfe3e88db1f61ab01fc7582754e0f61a4f264
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-meshclass-2111.0-h8c873e0_12.conda#c5e71e8f99e6e9c4962dffa9735712b0db3624808fa8bc8be7589088079a54f1
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-warpfns-2501.1-h49c61e4_0.conda#64a50e8b882beb5cca422ed24faa95daefb31aee0c9060fd8ee954442b93b008
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-flirt-2111.4-h28ab0de_3.conda#{{ context.fsl_flirt_sha256 }}
-      https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-mcflirt-2111.0-h465c9ab_11.conda#{{ context.fsl_mcflirt_sha256 }}
-      https://conda.anaconda.org/conda-forge/noarch/pip-26.2.1-pyh145f28c_0.conda#0f7021cfb3ff454c91a5e28e1f5060906a52c6d1cde3f879a7d03ac33c28b1c3
+  - name: niimath_zip
+    url: https://github.com/rordenlab/niimath/releases/download/v{{ context.niimath_version }}/niimath_lnx.zip
+    sha256: "{{ context.niimath_sha256 }}"
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
   - name: qsmxt_x86_64_tar_gz

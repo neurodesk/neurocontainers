@@ -508,6 +508,35 @@ tables against `qsmci-in-silico-2019.json`. The snapshot records source hashes.
 
 <!-- END QSM-CI benchmarks -->
 
+## 3D EPI preprocessing
+
+The EPI configurations run `ep3d_preproc.py` before QSMxT. niimath estimates rigid
+motion from the 4D magnitude series with `-moco -ref 0 -estimate`. Its
+`-resample` operation applies the same `-hmc` parameters to both Cartesian components on the
+first repetition's grid, using cubic B-spline interpolation and zero outside the
+field of view.
+
+The driver removes smooth phase differences relative to the first repetition
+with Gaussian sigma 2 voxels, then averages the corrected complex values across
+all repetitions. The denoising mode applies ANTs NLM to the complex average.
+Both modes write one magnitude and phase pair for single-echo QSM reconstruction.
+The driver calls niimath directly and uses NumPy, SciPy, and NiBabel for the
+remaining operations.
+
+Temporary Cartesian volumes use uncompressed NIfTI files. Real and imaginary
+resampling run concurrently, splitting the available thread budget between them.
+The two Gaussian phase filters and the final magnitude/phase writes also run
+concurrently. These scheduling and I/O changes preserve the niimath motion model,
+interpolation, phase matching, and final output format.
+
+The adapter shares a CPU budget between EPI preprocessing and native QSMxT,
+bounded by CPU affinity, the cgroup v2 quota, and 24 workers. Each native call
+contains one acquisition, including all its echoes. It uses `--no-mem-limit`
+because QSMxT 10 otherwise uses its memory-based concurrent-acquisition limit as
+the intra-acquisition Rayon worker count. This flag changes scheduling; it does
+not reduce the memory required by one acquisition. Container or job memory limits
+still apply.
+
 ## Native version 10 controls
 
 The scanner label retains 14 controls. **Pipeline preset** defaults to Custom.
