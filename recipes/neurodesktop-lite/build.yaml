@@ -16,7 +16,7 @@ show_in_applist: false
 
 variables:
   apptainer_version: "1.5.4"
-  firefox_version: "157.0.1"
+  firefox_version: "158.0"
   code_server_version: "4.141.0"
   firefox_arch:
     try:
@@ -42,15 +42,15 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "5e13a89bf48b8b4344b370e402a4a3482f31e69c"
+  neurocommand_commit: "c385ae150a926c3033bee4c294060fe75535c7bb"
   nf_neuro_commit: "c2909599fbf995031dbeb70d2d7f0f62f9238064"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
   hatchling_build_version: 1.32.0
-  codex_version: "0.162.1"
-  claude_version: "2.1.296"
-  opencode_version: "1.19.0"
-  nextflow_tag: "v26.10.0"
+  codex_version: "0.163.0"
+  claude_version: "2.1.302"
+  opencode_version: "1.19.3"
+  nextflow_tag: "v26.10.2"
   nf_test_version: 0.9.5
   datalad_version: "1.7.1"
   nipype_version: 1.12.0
