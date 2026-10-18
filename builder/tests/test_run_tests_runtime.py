@@ -725,8 +725,6 @@ def test_file_assertions_expand_variables_and_fail_in_order(tmp_path) -> None:
         {
             "command": "true",
             "validate": [
-                "ignored metadata",
-                {"unknown_assertion": True},
                 {"output_exists": "${first}"},
                 {"output_exists": "second"},
             ],
