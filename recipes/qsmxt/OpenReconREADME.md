@@ -10,7 +10,7 @@ This package uses QSMxT 10.0.0. SWI now uses CLEAR-SWI across every echo, and V-
 
 Use a plain gradient-echo (GRE) sequence with both magnitude and **unfiltered phase** reconstruction enabled. Filtered phase from an SWI sequence is not a suitable input. Magnitude and phase images must have matching echoes and the same distortion-correction setting.
 
-An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves WH-QSM, HARPERELLA, and Robust threshold masking instead of the package defaults RTS, V-SHARP, and Robust threshold. Check the OpenRecon algorithm and mask controls after loading it.
+An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves WH-QSM, HARPERELLA, and Robust threshold masking instead of the package defaults RTS, V-SHARP, and HD-BET. Check the OpenRecon algorithm and mask controls after loading it.
 
 ## Run a reconstruction
 
@@ -19,7 +19,7 @@ With the QSMxT package installed in OpenRecon:
 1. Select **qsmxt** as the reconstruction package. Leave **Config** set to **standard GRE**.
 2. Set **Input images** to match your acquisition. The default is **Prefer distortion corrected**.
 3. Leave **Pipeline preset** on **Custom algorithm controls**. Leave **Dipole inversion** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
-4. Leave **Mask preset** on **Robust threshold** to threshold the combined magnitude image.
+4. Leave **Mask preset** on **HD-BET** to extract the brain from magnitude using the packaged model.
 5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
 6. Run the acquisition with OpenRecon enabled. When reconstruction finishes, look for the **QSMxT QSM** series alongside the original images.
 
@@ -116,7 +116,7 @@ Complete methods ignore stages they replace, even when those controls show other
 
 The mask defines the region included in reconstruction. To inspect its coverage alongside the QSM map, select **All available** under **Output maps**.
 
-Start with **Robust threshold**. It uses Otsu thresholding of combined magnitude, then closes small gaps and fills holes. It adds no dilation or erosion. **HD-BET**, **BET**, and **BET + threshold union** remain alternatives in **Mask preset**.
+Start with **HD-BET**, the default. It extracts the brain from magnitude using the packaged model, then closes small gaps and fills holes up to the native automatic size cap. It works offline and adds no dilation or erosion. **Robust threshold**, **BET**, and **BET + threshold union** remain alternatives in **Mask preset**. Check coverage on your acquisition, including central tissue and the brain boundary.
 
 Threshold input, threshold method, BET fractional intensity, and percentile cutoff remain advanced configuration options. They no longer occupy scanner controls. See the [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md) for their keys and defaults.
 

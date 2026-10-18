@@ -42,7 +42,7 @@ setup:
     if "--mask" not in sys.argv:
         raise SystemExit("qsmxt OpenRecon must pass --mask")
     mask_index = sys.argv.index("--mask")
-    expected_mask = "magnitude,threshold:otsu,close:1,fill-holes:0"
+    expected_mask = "magnitude,hd-bet,close:1,fill-holes:0"
     if mask_index + 1 >= len(sys.argv) or sys.argv[mask_index + 1] != expected_mask:
         raise SystemExit(f"qsmxt OpenRecon should pass --mask {expected_mask}")
 
@@ -580,7 +580,7 @@ tests:
       ]
       assert len(data["parameters"]) == len(parameters) == 14
       assert "maskcleanup" not in parameter_ids
-      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
+      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "hd-bet"
       assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
       for parameter_id in ("twopass",):
           assert parameters[parameter_id]["type"] == "boolean"

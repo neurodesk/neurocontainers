@@ -342,8 +342,8 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
                 mask_index = sys.argv.index("--mask")
             except ValueError:
                 raise SystemExit("qsmxt OpenRecon must pass --mask")
-            if sys.argv[mask_index + 1] != "magnitude,threshold:otsu,close:1,fill-holes:0":
-                raise SystemExit("qsmxt OpenRecon must pass the default robust-threshold section")
+            if sys.argv[mask_index + 1] != "magnitude,hd-bet,close:1,fill-holes:0":
+                raise SystemExit("qsmxt OpenRecon must pass the default HD-BET section")
             bids = Path(sys.argv[2])
             output = Path(sys.argv[3])
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
@@ -371,7 +371,7 @@ def test_openrecon_defaults_select_rts_romeo_and_vsharp():
     assert settings["qsm_algorithm"] == "rts"
     assert settings["unwrapping_algorithm"] == "romeo"
     assert settings["bf_algorithm"] == "vsharp"
-    assert settings["mask_preset"] == "robust-threshold"
+    assert settings["mask_preset"] == "hd-bet"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
     assert settings["mask_cleanup"] == "close-fill"
@@ -983,7 +983,7 @@ def test_openrecon_pipeline_preset_reaches_qsmxt_command(preset, tmp_path, monke
         else:
             assert command[command.index(flag) + 1] == expected
     assert command[command.index("--mask") + 1] == (
-        "magnitude,threshold:otsu,close:1,fill-holes:0"
+        "magnitude,hd-bet,close:1,fill-holes:0"
     )
     assert kwargs["cwd"] == str(bids_dir)
 
@@ -1105,7 +1105,7 @@ def test_openrecon_label_exposes_processing_defaults():
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }
     assert "resharp" in bf_algorithms
-    assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
+    assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "hd-bet"
     assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
     assert "maskinginput" not in parameters
     assert "betfractionalintensity" not in parameters
@@ -2719,12 +2719,12 @@ def test_mask_defaults_close_and_fill_each_section(preset, sections):
 
 def test_legacy_mask_cleanup_none_retains_close_fill_default():
     settings = qsmxt._settings_from_config({"parameters": {"maskcleanup": "none"}})
-    assert qsmxt._mask_sections(settings) == ["magnitude,threshold:otsu,close:1,fill-holes:0"]
+    assert qsmxt._mask_sections(settings) == ["magnitude,hd-bet,close:1,fill-holes:0"]
 
 
 @pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_gre_motion", "qsmxt_ep3d", "qsmxt_ep3d_denoise"])
-@pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "robust-threshold"}])
-def test_robust_threshold_default_reaches_all_config_commands(
+@pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "hd-bet"}])
+def test_hdbet_default_reaches_all_config_commands(
     module_name, params, tmp_path, monkeypatch,
 ):
     import importlib
@@ -2752,7 +2752,7 @@ def test_robust_threshold_default_reaches_all_config_commands(
     qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
     command = commands[0]
     for flag, expected in (
-        ("--mask", "magnitude,threshold:otsu,close:1,fill-holes:0"),
+        ("--mask", "magnitude,hd-bet,close:1,fill-holes:0"),
         ("--qsm-algorithm", "rts"),
         ("--unwrapping-algorithm", "romeo"),
         ("--bf-algorithm", "vsharp"),
@@ -2801,7 +2801,7 @@ def test_v10_reference_and_independent_controls_reach_native_command(reference, 
         ("--qsm-reference", reference), ("--motion-reference", "last"),
         ("--vsharp-grid", "isotropic"), ("--vsharp-grid-spacing", "1.2"),
         ("--swi-unwrapping", "laplacian-slice"),
-        ("--mask", "magnitude,threshold:otsu,close:1,fill-holes:0"),
+        ("--mask", "magnitude,hd-bet,close:1,fill-holes:0"),
     ]:
         assert command[command.index(flag) + 1] == value
     assert {"--two-pass", "--motion-correction", "--ignore-slice-gap"} <= set(command)

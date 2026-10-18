@@ -73,11 +73,26 @@ and all original magnitude/phase pixels remained unchanged.
 The supplied data exercised one inferred DC group. Raw reconstruction, scanner
 distortion correction, and a separate ND branch were outside this benchmark.
 The fixture normalized DICOM LPS geometry to the adapter's current convention;
-it does not validate standard scanner MRD geometry interoperability. The default
-mask excluded substantial central tissue, so repeatability does not establish
-scientific adequacy in the excluded region.
+it does not validate standard scanner MRD geometry interoperability. The Otsu
+mask used by that benchmark excluded substantial central tissue, so repeatability
+does not establish scientific adequacy in the excluded region.
 
 The motion estimator differs from MCFLIRT, and cubic B-spline interpolation
 replaces the previous sinc interpolation. The synthetic checks establish the
 runtime contract, not numerical equivalence to FSL. The real-data benchmark
 establishes repeatability and timing for this acquisition and configuration.
+
+## HD-BET default
+
+The 2026-10-18 follow-up changes the OpenRecon mask default to `hd-bet`, both
+in `OpenReconLabel.json` and when configuration omits `maskpreset`. The adapter
+passes `--mask magnitude,hd-bet,close:1,fill-holes:0` to the unchanged official
+QSMxT binary. The model is already packaged and verified against its pinned
+manifest, so extraction works without network access. Otsu thresholding remains
+available through the explicit `robust-threshold` preset. Saved scanner protocols
+that explicitly store a mask preset retain that choice.
+
+This changes the mask and therefore the scientific reconstruction. The earlier
+serial-versus-parallel Otsu timings above remain historical measurements; they
+do not establish HD-BET performance. The follow-up benchmark retains the supplied
+full-resolution MRD fixture, Tikhonov reconstruction, and the 8-CPU/16-GiB limits.

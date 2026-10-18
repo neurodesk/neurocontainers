@@ -112,8 +112,8 @@
         { "id": "combined", "name": { "en": "BET + threshold union" } },
         { "id": "hd-bet", "name": { "en": "HD-BET" } }
       ],
-      "default": "robust-threshold",
-      "information": { "en": "Robust threshold uses Otsu on combined magnitude, with closing and hole filling. Combined unions BET and threshold masks. HD-BET uses the packaged brain extraction model." }
+      "default": "hd-bet",
+      "information": { "en": "HD-BET uses the packaged brain extraction model and is the default. Robust threshold uses Otsu on combined magnitude. Combined unions BET and threshold masks. Masks receive closing and hole filling." }
     },
     {
       "id": "pipelinepreset",
