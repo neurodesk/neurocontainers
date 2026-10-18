@@ -50,9 +50,9 @@ geometry.
 
 Set **Config** to **3D EPI dual polarity QSM** for a single-TE 3D EPI acquisition that repeats the volume with alternating readout polarity. The package needs at least two repetitions in both the magnitude and the phase series.
 
-Before QSMxT runs, the repetitions are combined with the basic preprocessing pipeline from [ep3d-highres-preprocessing](https://github.com/mrphysics-bonn/ep3d-highres-preprocessing):
+Before QSMxT runs, niimath corrects motion and the adapter combines the repetitions. Phase matching and optional denoising follow [ep3d-highres-preprocessing](https://github.com/mrphysics-bonn/ep3d-highres-preprocessing):
 
-1. FSL MCFLIRT estimates motion on the magnitude images. The same transforms are applied to the real and imaginary parts.
+1. niimath estimates rigid motion on the magnitude images relative to the first repetition. It applies the same motion to the real and imaginary parts with cubic B-spline interpolation.
 2. The smooth phase differences between repetitions, including the polarity-dependent offset, are removed relative to the first repetition.
 3. The repetitions are averaged as complex images.
 

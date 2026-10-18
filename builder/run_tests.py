@@ -405,22 +405,54 @@ def _evaluate_file_assertions(
 ) -> str | None:
     """Return the first filesystem assertion failure in declaration order."""
     for validation in spec.validations:
-        if not isinstance(validation, dict):
-            continue
+        if not isinstance(validation, dict) or not validation:
+            return "File assertion must be a non-empty mapping"
         for validation_type, argument in validation.items():
-            if validation_type == "output_exists":
-                path = str(work_dir / substitute_variables(str(argument), variables))
-                if not check_file_exists(path):
-                    return f"Output file not found: {path}"
-            elif validation_type == "same_dimensions":
-                if isinstance(argument, list) and len(argument) == 2:
-                    paths = [
-                        str(work_dir / substitute_variables(str(value), variables))
-                        for value in argument
-                    ]
-                    ok, message = check_same_dimensions(*paths)
-                    if not ok:
-                        return message
+            if validation_type == "same_dimensions":
+                if (
+                    not isinstance(argument, list)
+                    or len(argument) != 2
+                    or not all(
+                        isinstance(value, str) and value.strip() for value in argument
+                    )
+                ):
+                    return "same_dimensions requires two non-empty path strings"
+                expanded = [
+                    substitute_variables(value, variables) for value in argument
+                ]
+                if not all(value.strip() for value in expanded):
+                    return "same_dimensions requires two non-empty path strings"
+                paths = [str(work_dir / value) for value in expanded]
+                ok, message = check_same_dimensions(*paths)
+                if not ok:
+                    return message
+            elif validation_type in {"output_exists", "is_3d", "output_dir_not_empty"}:
+                if not isinstance(argument, str) or not argument.strip():
+                    return f"{validation_type} requires a non-empty path string"
+                expanded_path = substitute_variables(argument, variables)
+                if not expanded_path.strip():
+                    return f"{validation_type} requires a non-empty path string"
+                path = str(work_dir / expanded_path)
+                if validation_type == "output_exists":
+                    if not check_file_exists(path):
+                        return f"Output file not found: {path}"
+                elif validation_type == "is_3d":
+                    try:
+                        import nibabel as nib
+
+                        shape = nib.load(path).shape
+                    except Exception as error:
+                        return f"Error reading image dimensions: {path}: {error}"
+                    if len(shape) != 3:
+                        return f"Expected 3D image: {path}, got shape {shape}"
+                else:
+                    directory = Path(path)
+                    if not directory.is_dir():
+                        return f"Output directory not found: {path}"
+                    if not any(directory.iterdir()):
+                        return f"Output directory is empty: {path}"
+            else:
+                return f"Unsupported file assertion: {validation_type}"
     return None
 
 

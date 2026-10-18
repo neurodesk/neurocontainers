@@ -20,7 +20,7 @@ variables:
   topaz_commit: "c8dd487cbf9d27139d0d430068033fb90dd9a393"
   modelangelo_commit: "994945bdfa6e5368e0d62349a47792f4864eebc3"
   torch_home: /opt/relion-{{ context.version }}/torch
-  relion_commit: "a85a7b92f44ea9e3d92fa5e61bc0b1b0e8601443"
+  relion_commit: "afdd81670886e26362bd9d6d006f3e06ab481765"
   ctffind_version: 4.1.14
   motioncor2_version: 1.6.4
   cuda_version: "11.8"

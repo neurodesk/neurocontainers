@@ -371,8 +371,8 @@ setup:
             raise Refusal('runner container unavailable')
         sources = {}
         for relative, expected in {
-            'builder/run_tests.py': '0b394cb4a05b537ad5ae21c3e502f434efadcdb0623b4958785ac943e2073187',
-            'builder/runtime_execution.py': '5238d9d7f7ee07015e857cc2f1573b969f412dbbc6857bfc0c621e541ab32c95',
+            'builder/run_tests.py': '6cccf9ef6719fe02ce8555eb6b715c6f3d76d738f79af8e1083084ad022ff678',
+            'builder/runtime_execution.py': '739accb7a55a39db7b5631c855f34c510c2555929e1fc18f51763203ef2f8233',
             'recipes/pydeface/build.yaml': '2f815b51e86ce05ac553bfe0dd93f1e951052c504851456c54e698d5a89bd4c6',
         }.items():
             digest = hashlib.sha256(read_bytes(script.parent.parent / relative)).hexdigest()
