@@ -796,8 +796,8 @@ def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settin
     )
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    magnitude_path = work_dir / "magnitude.nii.gz"
-    phase_path = work_dir / "phase.nii.gz"
+    magnitude_path = work_dir / "magnitude.nii"
+    phase_path = work_dir / "phase.nii"
     nib.save(
         nib.Nifti1Image(np.stack(magnitude_4d, axis=-1), reference_affine),
         magnitude_path,
@@ -853,6 +853,20 @@ def _phase_to_radians(phase_volume, phase_wrap):
     return np.angle(np.exp(1j * phase * (2.0 * np.pi / phase_wrap))).astype(np.float32)
 
 
+def _cpu_budget():
+    """Respect CPU affinity and a cgroup v2 quota, up to 24 workers."""
+    available = os.cpu_count() or 1
+    if hasattr(os, "sched_getaffinity"):
+        available = min(available, len(os.sched_getaffinity(0)))
+    try:
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if quota != "max":
+            available = min(available, max(1, int(quota) // int(period)))
+    except (OSError, ValueError, ZeroDivisionError):
+        pass
+    return max(1, min(24, available))
+
+
 def _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings):
     outputs_path = work_dir / "outputs.json"
     cmd = [
@@ -860,10 +874,10 @@ def _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings):
         str(EP3D_PREPROC_DRIVER),
         str(magnitude_path),
         str(phase_path),
-        str(work_dir / "nipype"),
+        str(work_dir / "preprocessing"),
         str(outputs_path),
         "--n-procs",
-        str(os.cpu_count() or 1),
+        str(_cpu_budget()),
     ]
     if settings["ep3d_denoise"]:
         cmd.append("--denoise")
@@ -894,7 +908,10 @@ def _qsmxt_command(bids_dir, output_dir, settings):
         str(output_dir),
         "--force",
         "--n-procs",
-        "24",
+        str(_cpu_budget()),
+        # Each adapter invocation writes exactly one BIDS acquisition. QSMxT
+        # 10 otherwise uses its memory-limited run count as the Rayon pool size.
+        "--no-mem-limit",
     ]
 
     _append_optional_arg(cmd, "--qsm-algorithm", settings["qsm_algorithm"])

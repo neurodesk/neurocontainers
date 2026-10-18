@@ -14,6 +14,26 @@ import pytest
 import qsmxt
 
 
+@pytest.mark.parametrize(
+    "cpu_count,affinity_count,quota,expected",
+    [
+        (64, 16, "400000 100000", 4),
+        (64, 16, "max 100000", 16),
+        (64, 64, "max 100000", 24),
+        (8, 8, "50000 100000", 1),
+        (64, 16, "unavailable", 16),
+        (None, 8, "max 100000", 1),
+    ],
+)
+def test_cpu_budget_respects_available_resources(
+    monkeypatch, cpu_count, affinity_count, quota, expected
+):
+    monkeypatch.setattr(qsmxt.os, "cpu_count", lambda: cpu_count)
+    monkeypatch.setattr(qsmxt.os, "sched_getaffinity", lambda pid: set(range(affinity_count)))
+    monkeypatch.setattr(Path, "read_text", lambda self: quota)
+    assert qsmxt._cpu_budget() == expected
+
+
 class FakeAcquisitionSystemInformation:
     systemFieldStrength_T = 7.0
 
@@ -302,9 +322,11 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
             try:
                 nprocs_index = sys.argv.index("--n-procs")
             except ValueError:
-                raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
-            if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
-                raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
+                raise SystemExit("qsmxt OpenRecon should set its worker budget")
+            if not 1 <= int(sys.argv[nprocs_index + 1]) <= 24:
+                raise SystemExit("qsmxt OpenRecon worker budget must be within 1..24")
+            if "--no-mem-limit" not in sys.argv:
+                raise SystemExit("single-acquisition OpenRecon should enable intra-run workers")
             for flag, expected in (
                 ("--qsm-algorithm", "rts"),
                 ("--unwrapping-algorithm", "romeo"),
