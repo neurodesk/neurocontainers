@@ -58,9 +58,9 @@ setup:
     import tarfile
     import tempfile
     import time
-    from types import FrameType
+    from types import FrameType, ModuleType
     # Any is confined to heterogeneous JSON record values.
-    from typing import Any, Callable, Literal, Mapping, Sequence
+    from typing import Any, Callable, Literal, Mapping, NoReturn, Sequence
 
     from typing import Generic, TypeVar
 
@@ -88,6 +88,21 @@ setup:
 
     class Refusal(Exception):
         pass
+
+
+    _scientific_active: _ScientificMismatch | None = None
+
+
+    def _scientific_checkpoint() -> None:
+        if _scientific_active is not None:
+            _scientific_active.checkpoint()
+
+
+    def _scientific_close_io(fd: int) -> None:
+        if _scientific_active is None:
+            os.close(fd)
+        else:
+            _scientific_active.close_io(fd)
 
 
     @dataclass(frozen=True)
@@ -176,10 +191,17 @@ setup:
     def read_bytes(path: str | Path, cap: int | None = None) -> bytes:
         cap = cap or POLICY['metadata']
         deadline = time.monotonic() + POLICY['read']
+        _scientific_checkpoint()
+        if _scientific_active is not None:
+            _scientific_active.io_acquisition = 'read_bytes'
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
         try:
+            if _scientific_active is not None:
+                _scientific_active.io_acquisition = None
+            _scientific_checkpoint()
             data = bytearray()
             while True:
+                _scientific_checkpoint()
                 if time.monotonic() > deadline:
                     raise Refusal('read deadline')
                 block = os.read(fd, min(65536, cap + 1 - len(data)))
@@ -189,7 +211,7 @@ setup:
                 if len(data) > cap:
                     raise Refusal('read byte limit')
         finally:
-            os.close(fd)
+            _scientific_close_io(fd)
 
 
     def process_stat(pid: int) -> dict[str, int | str]:
@@ -320,6 +342,7 @@ setup:
 
 
     def hash_fd(fd: int) -> str:
+        _scientific_checkpoint()
         before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode) or before.st_size > POLICY['object_bytes']:
             raise Refusal('object type or size limit')
@@ -328,6 +351,7 @@ setup:
         size = 0
         os.lseek(fd, 0, os.SEEK_SET)
         while True:
+            _scientific_checkpoint()
             if time.monotonic() > deadline:
                 raise Refusal('hash deadline')
             block = os.read(fd, 65536)
@@ -461,8 +485,14 @@ setup:
 
     def trace_records(path: Path, plan: RunPlan) -> tuple[
             list[dict[str, Any]], bytes, tuple[int, int]]:
+        _scientific_checkpoint()
+        if _scientific_active is not None:
+            _scientific_active.io_acquisition = 'trace_records'
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
+            if _scientific_active is not None:
+                _scientific_active.io_acquisition = None
+            _scientific_checkpoint()
             before = os.fstat(fd)
             if not stat.S_ISREG(before.st_mode) or before.st_mtime < plan.wall-1 or before.st_size > POLICY['trace_bytes']:
                 raise Refusal('stale, nonregular or oversized trace')
@@ -471,12 +501,14 @@ setup:
             if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino) or len(data) > POLICY['trace_bytes']:
                 raise Refusal('trace identity or size changed')
         finally:
-            os.close(fd)
+            _scientific_close_io(fd)
+        _scientific_checkpoint()
         lines = data.split(b'\n')
         if len(lines) > POLICY['records'] or any(len(line) > POLICY['line'] for line in lines):
             raise Refusal('trace record limit')
         records = [json.loads(line) for line in lines[:-1]]
         for row in records:
+            _scientific_checkpoint()
             if not isinstance(row, dict) or not isinstance(row.get('time'), (float, int)) or row['time'] < plan.wall:
                 raise Refusal('malformed or stale trace record')
         return records, data[:data.rfind(b'\n')+1], (before.st_dev, before.st_ino)
@@ -500,13 +532,19 @@ setup:
             raise Refusal('observer live argv mismatch')
         if argv(target.pid) != selected['argv'] or os.readlink(f'/proc/{target.pid}/exe') != EXE:
             raise Refusal('live FLIRT argv or executable path mismatch')
+        _scientific_checkpoint()
+        if _scientific_active is not None:
+            _scientific_active.io_acquisition = 'verify_target'
         fd = os.open(f'/proc/{target.pid}/exe', os.O_RDONLY)
         try:
+            if _scientific_active is not None:
+                _scientific_active.io_acquisition = None
+            _scientific_checkpoint()
             header = os.read(fd, 20)
             if header[:6] != b'\x7fELF\x02\x01' or struct.unpack_from('<H', header, 18)[0] != 183 or hash_fd(fd) != EXE_SHA:
                 raise Refusal('FLIRT executable machine or digest mismatch')
         finally:
-            os.close(fd)
+            _scientific_close_io(fd)
         rows, _, key = trace_records(trace, plan)
         if key != trace_key or parse_registration(rows, plan, trace.name) != selected:
             raise Refusal('stage or trace changed')
@@ -958,7 +996,8 @@ setup:
 
 
     def mapped_objects(plan: RunPlan, target: ObservedProcess,
-                       mirror: Path | None = None) -> list[dict[str, Any]]:
+                       mirror: Path | None = None, *,
+                       scientific: _ScientificMismatch | None = None) -> list[dict[str, Any]]:
         target.check()
         rootfd = os.open(f'/proc/{target.pid}/root', os.O_RDONLY | os.O_DIRECTORY)
         objects = []
@@ -980,7 +1019,7 @@ setup:
                     info = os.fstat(fd)
                     actual = f'{os.major(info.st_dev):02x}:{os.minor(info.st_dev):02x}'
                     if (actual, info.st_ino) != (device, inode):
-                        save(plan, 'mapped-object-refusal.json', dict(
+                        original = dict(
                             kind='mapped_object_identity_refusal', call_site='mapped_objects.device_inode',
                             pid=target.pid, start_ticks=target.ticks, boot_id=plan.boot,
                             path=name, ordinal=len(objects)+1, selected_count=len(paths),
@@ -988,8 +1027,12 @@ setup:
                             actual=dict(st_dev=info.st_dev, device=actual, st_ino=info.st_ino,
                                         st_mode=info.st_mode, st_size=info.st_size),
                             mirror=str(mirror) if mirror is not None else None,
-                            maps=maps, maps_sha256=hashlib.sha256(maps.encode('utf-8')).hexdigest()))
-                        raise Refusal('mapped object device/inode mismatch')
+                            maps=maps, maps_sha256=hashlib.sha256(maps.encode('utf-8')).hexdigest())
+                        primary = Refusal('mapped object device/inode mismatch')
+                        if scientific is not None and name == EXE and mirror is not None:
+                            scientific.refuse(_BorrowedMismatch(target, fd, rootfd, original, info), primary)
+                        save(plan, 'mapped-object-refusal.json', original)
+                        raise primary
                     aggregate += info.st_size
                     if aggregate > 256*1024**2:
                         raise Refusal('aggregate mapped hash limit')
@@ -1005,6 +1048,12 @@ setup:
                                         build_id=identity, source_before=before, source_after=after,
                                         source_revision=None, source_status='unresolved', package=None))
                 finally:
+                    if scientific is not None and scientific.primary is not None:
+                        try:
+                            os.close(fd)
+                        except BaseException as error:
+                            scientific.record_owner_failure('mapped_objects file', error)
+                        raise scientific.primary
                     os.close(fd)
             metadata_dir = '/opt/fsl-6.0.7.23/conda-meta'
             try:
@@ -1048,6 +1097,12 @@ setup:
                      copies=copies, bytes=aggregate, temporary=True))
             return objects
         finally:
+            if scientific is not None and scientific.primary is not None:
+                try:
+                    os.close(rootfd)
+                except BaseException as error:
+                    scientific.record_owner_failure('mapped_objects root', error)
+                raise scientific.primary
             os.close(rootfd)
 
 
@@ -1894,6 +1949,7 @@ setup:
         plan.control = channel
         phase = 'bootstrap'
         raw_capture = False
+        scientific = None
         try:
             bind_runner(plan)
             _stage_inert_mmap(plan)
@@ -1953,6 +2009,7 @@ setup:
                 if time.monotonic() > plan.started+POLICY['lifetime']:
                     raise Refusal('helper lifetime')
                 time.sleep(POLICY['service'])
+            selected_started = time.monotonic()
             send(channel, 'selected')
             phase = 'selected'
             target = ObservedProcess.open(selected['pid'])
@@ -1967,11 +2024,21 @@ setup:
                 raw_capture = True
                 save(plan, 'after.json', dict(target=snapshot(target), observer=snapshot(observer),
                      owner=snapshot(plan.owner), ancestry=validate()))
-                with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
-                    mirror = Path(directory)
-                    objects = mapped_objects(plan, target, mirror)
-                    save(plan, 'objects-before.json', objects)
-                    quality = decode(plan, perf, raw, target.pid, 'flirt', mirror)
+                scientific = _ScientificMismatch.after_stopped_capture(
+                    plan=plan, target=target, observer=observer, selected=selected,
+                    trace=path, trace_key=key, raw=raw, selected_started=selected_started)
+                try:
+                    with tempfile.TemporaryDirectory(prefix='native-symbols-', dir=plan.work) as directory:
+                        mirror = Path(directory)
+                        objects = mapped_objects(plan, target, mirror, scientific=scientific)
+                        save(plan, 'objects-before.json', objects)
+                        quality = decode(plan, perf, raw, target.pid, 'flirt', mirror)
+                except BaseException as error:
+                    if scientific.primary is not None:
+                        if error is not scientific.primary:
+                            scientific.record_owner_failure('mirror directory', error)
+                        raise scientific.primary
+                    raise
                 after_objects = mapped_objects(plan, target)
                 save(plan, 'objects-after.json', after_objects)
                 if after_objects != objects:
@@ -1993,6 +2060,13 @@ setup:
                      raw_capture=True, source_attribution='unresolved', samples=quality,
                      object_count=len(objects), reason='unknown symbols' if (quality['unknown_symbols'] or quality['unknown_dsos']) else None)
             finally:
+                if scientific is not None and scientific.primary is not None:
+                    for label, owner in (('worker target pidfd', target), ('worker observer pidfd', observer)):
+                        try:
+                            os.close(owner.pidfd)
+                        except BaseException as error:
+                            scientific.record_owner_failure(label, error)
+                    raise scientific.primary
                 os.close(target.pidfd)
                 os.close(observer.pidfd)
         except BaseException as error:
@@ -2005,8 +2079,20 @@ setup:
                     shutil.rmtree(plan.private)
                     result['supply_cleanup'] = dict(complete=True, excluded_work=True)
                 except BaseException as error:
-                    result = dict(outcome='incomplete', reason='supply cleanup failed: '+str(error)[:512])
-        send(channel, 'done', **result)
+                    if scientific is not None and scientific.primary is not None:
+                        scientific.record_owner_failure('private supply', error)
+                        result['supply_cleanup'] = dict(complete=False, excluded_work=True)
+                    else:
+                        result = dict(outcome='incomplete', reason='supply cleanup failed: '+str(error)[:512])
+        if scientific is not None and scientific.primary is not None:
+            try:
+                result['scientific_probe'] = scientific.terminal_facts()
+                send(channel, 'done', **result)
+            except BaseException as error:
+                scientific.record_owner_failure('done projection or delivery', error)
+                raise scientific.primary
+        else:
+            send(channel, 'done', **result)
 
 
     def supervise(plan: RunPlan, readiness: socket.socket, launcher: int) -> None:
@@ -2124,16 +2210,39 @@ setup:
                     if not readable(up):
                         raise Refusal('worker ended without terminal evidence')
         except BaseException as error:
-            result = dict(outcome='incomplete', reason=type(error).__name__+': '+str(error)[:2000])
+            if 'scientific_probe' in result:
+                _scientific_secondary(result['scientific_probe'], 'supervisor result', error)
+            else:
+                result = dict(outcome='incomplete', reason=type(error).__name__+': '+str(error)[:2000])
         finally:
             for child in children:
-                child.signal(signal.SIGTERM)
-            time.sleep(POLICY['grace'])
+                try:
+                    child.signal(signal.SIGTERM)
+                except BaseException as error:
+                    if 'scientific_probe' not in result:
+                        raise
+                    _scientific_secondary(result['scientific_probe'], 'supervisor signal', error)
+            try:
+                time.sleep(POLICY['grace'])
+            except BaseException as error:
+                if 'scientific_probe' not in result:
+                    raise
+                _scientific_secondary(result['scientific_probe'], 'supervisor grace', error)
             for child in children:
-                child.signal(signal.SIGKILL)
+                try:
+                    child.signal(signal.SIGKILL)
+                except BaseException as error:
+                    if 'scientific_probe' not in result:
+                        raise
+                    _scientific_secondary(result['scientific_probe'], 'supervisor signal', error)
             # A pre-arm child may not have established its group yet.
             if worker_child:
-                OwnedChild(worker_child.pid).signal(signal.SIGKILL)
+                try:
+                    OwnedChild(worker_child.pid).signal(signal.SIGKILL)
+                except BaseException as error:
+                    if 'scientific_probe' not in result:
+                        raise
+                    _scientific_secondary(result['scientific_probe'], 'supervisor signal', error)
             end = time.monotonic()+POLICY['grace']
             reaped = []
             complete = False
@@ -2143,12 +2252,27 @@ setup:
                 except ChildProcessError:
                     complete = True
                     break
+                except BaseException as error:
+                    if 'scientific_probe' not in result:
+                        raise
+                    _scientific_secondary(result['scientific_probe'], 'supervisor reap', error)
+                    break
                 if pid:
                     reaped.append(dict(pid=pid, status=status))
                 else:
-                    time.sleep(.01)
+                    try:
+                        time.sleep(.01)
+                    except BaseException as error:
+                        if 'scientific_probe' not in result:
+                            raise
+                        _scientific_secondary(result['scientific_probe'], 'supervisor reap grace', error)
+                        break
             if not complete:
-                result = dict(outcome='incomplete', reason='owned descendants pending cleanup')
+                if 'scientific_probe' in result:
+                    _scientific_secondary(result['scientific_probe'], 'supervisor cleanup',
+                                          Refusal('owned descendants pending cleanup'))
+                else:
+                    result = dict(outcome='incomplete', reason='owned descendants pending cleanup')
             manifest(plan.retained, **result, handoff=handoff, cleanup=dict(reaped=reaped, complete=complete))
 
 
@@ -2398,6 +2522,600 @@ setup:
         scientific_acceptance: Literal[False] = False
         release_pass: Literal[False] = False
         merge_eligible: Literal[False] = False
+
+
+    _SCIENTIFIC_MEMBERS = {
+        **{f'{role}.maps.{phase}': 128 * 1024
+           for role in ('collector', 'target') for phase in ('before', 'live', 'final_held')},
+        **{f'{role}.mountinfo.{phase}': 256 * 1024
+           for role in ('collector', 'target') for phase in ('before', 'final_held')},
+        **{f'{role}.fdinfo.{phase}': 8192
+           for role in ('file', 'root') for phase in ('before', 'live', 'final_held')},
+        **{f'{role}.stat.{phase}': 8192
+           for role in ('collector', 'target', 'observer', 'runner')
+           for phase in ('before', 'live', 'final_held')},
+    }
+    _SCIENTIFIC_FLAGS = dict(native_acceptance=False, scientific_acceptance=False,
+                             release_pass=False, merge_eligible=False, entire_pr_approved=False)
+
+
+    @dataclass(frozen=True)
+    class _BorrowedMismatch:
+        target: ObservedProcess
+        file_fd: int
+        root_fd: int
+        original_record: Mapping[str, Any]
+        source_stat: os.stat_result
+
+
+    @dataclass(frozen=True)
+    class _ProbeWindow:
+        entered: float
+        enclosing_end: float
+        observe_by: float
+        cleanup_by: float
+        finish_by: float
+
+
+    def _reserve_probe_window(*, selected_started: float, lifetime_started: float,
+                              now: float) -> _ProbeWindow:
+        if (not all(math.isfinite(t) for t in (selected_started, lifetime_started, now))
+                or not lifetime_started <= selected_started <= now):
+            raise Refusal('scientific timestamp order')
+        end = min(selected_started + POLICY['selected'], lifetime_started + POLICY['lifetime'])
+        allowance = min(12, end - now - 3)
+        if allowance < 9:
+            raise Refusal('scientific observation budget unavailable')
+        return _ProbeWindow(now, end, now + allowance - 4, now + allowance - 3, now + allowance)
+
+
+    def _compare_current_segments(*, target_rows: tuple[_Mapping, ...], collector_row: _Mapping,
+                                   file_size: int, page_size: int) -> str:
+        if any((row.device, row.inode) != (collector_row.device, collector_row.inode)
+               for row in target_rows):
+            return 'current_pairs_differ'
+        rounded = ((file_size + page_size - 1) // page_size) * page_size
+        if not target_rows or any(row.offset % page_size or row.offset >= file_size
+                                 or row.offset + row.end - row.start > rounded
+                                 or row.start % page_size or row.end % page_size
+                                 for row in target_rows):
+            return 'current_offsets_incompatible'
+        return 'current_pair_and_offsets_match'
+
+
+    def _scientific_secondary(facts: dict[str, Any], owner: str, error: BaseException) -> None:
+        errors = facts.setdefault('owner_failures', [])
+        try:
+            reason = str(error)
+        except BaseException:
+            reason = 'exception text unavailable'
+        if len(errors) < 4:
+            errors.append(dict(owner=owner[:48], type=type(error).__name__[:48],
+                               reason=reason[:96], truncated=len(reason) > 96))
+        else:
+            facts['owner_failures_truncated'] = True
+
+
+    class _ScientificMismatch:
+        @classmethod
+        def after_stopped_capture(cls, *, plan: RunPlan, target: ObservedProcess,
+                                  observer: ObservedProcess, selected: Mapping[str, Any],
+                                  trace: Path, trace_key: tuple[int, int], raw: Path,
+                                  selected_started: float) -> _ScientificMismatch:
+            scope = cls()
+            scope.plan, scope.target, scope.observer = plan, target, observer
+            scope.selected, scope.trace, scope.trace_key = dict(selected), trace, trace_key
+            scope.raw, scope.selected_started = raw, selected_started
+            scope.primary = None
+            scope.deadline = float('inf')
+            scope.cancelled = None
+            scope.phase = 'observation'
+            scope.io_closes = 0
+            scope.io_acquisition = None
+            scope.outcome = dict(measurement=dict(kind='not_mapped', reason='not entered'),
+                                evidence='unavailable', external_refs={}, brackets={},
+                                members={name: dict(missing='not reached') for name in _SCIENTIFIC_MEMBERS},
+                                cleanup=dict(state='not_needed', acquired=[], returned_closes=[],
+                                             post_unmap_absence='not_observed'),
+                                persistence=dict(missing='terminal not saved'), owner_failures=[],
+                                scientific_disposition='refused', decode_permitted=False,
+                                **_SCIENTIFIC_FLAGS)
+            return scope
+
+        def checkpoint(self) -> None:
+            if (time.monotonic() >= self.deadline
+                    or (self.phase == 'observation' and self.cancelled is not None)):
+                raise Refusal('scientific ' + self.phase + ' deadline or cancellation')
+
+        def record_owner_failure(self, owner: str, error: BaseException) -> None:
+            _scientific_secondary(self.outcome, owner, error)
+
+        def close_io(self, fd: int) -> None:
+            try:
+                os.close(fd)
+                self.io_closes += 1
+            except BaseException as error:
+                self.outcome['cleanup']['state'] = 'unconfirmed'
+                self.record_owner_failure('transient descriptor', error)
+                raise
+
+        def _encode(self, value: Any, cap: int) -> bytes:
+            self.checkpoint()
+            data = json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+            self.checkpoint()
+            if len(data) > cap:
+                raise Refusal('scientific encoded byte limit')
+            return data
+
+        def _read(self, path: str | Path, cap: int) -> bytes:
+            self.checkpoint()
+            data = read_bytes(path, cap)
+            self.checkpoint()
+            return data
+
+        def _link(self, path: str) -> str:
+            self.checkpoint()
+            link = os.readlink(path)
+            if len(os.fsencode(link)) > 4096:
+                raise Refusal('scientific link limit')
+            self.checkpoint()
+            return link
+
+        def _save(self, name: str, data: bytes) -> dict[str, Any]:
+            self.checkpoint()
+            receipt = dict(name=name, writer_close='not_opened', reader_close='not_opened')
+            if name == 'scientific-descriptor-probe.json':
+                self.outcome['persistence'] = receipt
+            if len(data) > POLICY['text'] or retained_size(self.plan.retained) + len(data) > POLICY['total']:
+                raise Refusal('scientific retained output limit')
+            self.checkpoint()
+            fd = None
+            receipt['writer_close'] = 'unconfirmed'
+            try:
+                fd = os.open(self.plan.retained / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                self.checkpoint()
+                offset = 0
+                while offset < len(data):
+                    self.checkpoint()
+                    written = os.write(fd, data[offset:offset + 65536])
+                    if written <= 0:
+                        raise Refusal('scientific short write')
+                    offset += written
+            finally:
+                if fd is not None:
+                    try:
+                        self.close_io(fd)
+                        receipt['writer_close'] = 'returned'
+                    except BaseException:
+                        receipt['writer_close'] = 'failed'
+                        raise
+            self.checkpoint()
+            receipt['reader_close'] = 'unconfirmed'
+            received = self._read(self.plan.retained / name, len(data))
+            receipt['reader_close'] = 'returned'
+            if received != data:
+                raise Refusal('scientific saved readback differs')
+            receipt['file'] = asdict(_Blob(name, len(received), hashlib.sha256(received).hexdigest()))
+            return receipt
+
+        def _reference(self, name: str, cap: int = POLICY['text']) -> bytes:
+            data = self._read(self.plan.retained / name, cap)
+            self.outcome['external_refs'][name] = asdict(_Blob(name, len(data), hashlib.sha256(data).hexdigest()))
+            return data
+
+        def _bindings(self) -> None:
+            import yaml
+            launch_raw = self._reference('launch.json', POLICY['metadata'])
+            launch = json.loads(launch_raw)
+            stage = json.loads(self._reference('inert-stage.json', POLICY['metadata']))
+            origin = stage['origin']
+            scripts = [Path(arg) for arg in launch['argv'] if arg.endswith('/builder/run_tests.py')]
+            if len(scripts) != 1 or not scripts[0].is_absolute():
+                raise Refusal('scientific source runner path')
+            source = self._read(scripts[0].parent.parent / 'recipes/pydeface/fulltest.yaml', POLICY['metadata'])
+            staged = self._read(launch['suite'], POLICY['metadata'])
+            mapping = yaml.safe_load(source)
+            helper = mapping['setup']['host_script'].encode()
+            program = self._read(self.plan.work / '.pydeface-inert-r46/program.py', POLICY['metadata'])
+            self.checkpoint()
+            if (yaml.safe_load(staged) != mapping or helper.count(program) != 1
+                    or stage['status'] != 'staged'
+                    or origin['launch_receipt'] != asdict(_Blob('launch.json', len(launch_raw), hashlib.sha256(launch_raw).hexdigest()))
+                    or origin['source_suite_sha256'] != launch['source_sha256']
+                    or origin['staged_suite_sha256'] != launch['staged_sha256']
+                    or origin['host_script_sha256'] != launch['helper_sha256']
+                    or origin['program_sha256'] != hashlib.sha256(program).hexdigest()
+                    or launch['source_sha256'] != hashlib.sha256(source).hexdigest()
+                    or launch['staged_sha256'] != hashlib.sha256(staged).hexdigest()
+                    or launch['helper_sha256'] != hashlib.sha256(helper).hexdigest()
+                    or launch['work'] != str(self.plan.work) or launch['boot_id'] != self.plan.boot
+                    or (launch['owner']['pid'], launch['owner']['ticks']) != (self.plan.owner.pid, self.plan.owner.ticks)):
+                raise Refusal('scientific source binding changed')
+            for relative, digest in launch['sources'].items():
+                if hashlib.sha256(self._read(scripts[0].parent.parent / relative, POLICY['metadata'])).hexdigest() != digest:
+                    raise Refusal('scientific protected source changed')
+            self.outcome['source_bindings'] = dict(program_sha256=origin['program_sha256'],
+                source_sha256=launch['source_sha256'], staged_sha256=launch['staged_sha256'],
+                host_script_sha256=launch['helper_sha256'], sources=launch['sources'])
+            selected_raw = self._reference('selected-trace.jsonl')
+            rows, current, key = trace_records(self.trace, self.plan)
+            before = json.loads(self._reference('before.json'))
+            after = json.loads(self._reference('after.json'))
+            timing = json.loads(self._reference('flirt.timing.json'))
+            times = timing['times']
+            if (key != self.trace_key or not current.startswith(selected_raw)
+                    or parse_registration(rows, self.plan, self.trace.name) != self.selected
+                    or before['selected'] != self.selected
+                    or timing['stop']['outcome'] != 'requested' or timing['stop']['pre_stop'] is not None
+                    or timing['stop']['terminal'] is None or timing['returncode'] not in (0, -signal.SIGINT)
+                    or self.raw != self.plan.retained / 'flirt.data'
+                    or timing['argv'][timing['argv'].index('-o') + 1] != str(self.raw)
+                    or timing['argv'][timing['argv'].index('-p') + 1] != str(self.target.pid)
+                    or not self.selected_started <= times['pre_spawn'] <= times['terminal_observed'] <= times['ended'] <= self.window.entered):
+                raise Refusal('scientific stopped capture binding')
+            raw_stat = self.raw.stat()
+            if not stat.S_ISREG(raw_stat.st_mode) or not 0 < raw_stat.st_size <= POLICY['raw']:
+                raise Refusal('scientific raw capture unavailable')
+            for capture in (before, after):
+                for role, owner in (('target', self.target), ('observer', self.observer), ('owner', self.plan.owner)):
+                    fields = capture[role]['stat'].rsplit(')', 1)[1].split()
+                    if int(fields[19]) != owner.ticks:
+                        raise Refusal('scientific snapshot owner changed')
+            self.outcome['stopped_capture'] = dict(raw=str(self.raw), stat=list(raw_stat)[:10],
+                                                  selected=self.selected, trace_key=self.trace_key)
+
+        def _fds(self) -> set[int]:
+            names = os.listdir('/proc/self/fd')
+            if len(names) > 128:
+                raise Refusal('scientific FD inventory limit')
+            present = set()
+            for name in names:
+                try:
+                    os.fstat(int(name))
+                    present.add(int(name))
+                except OSError as error:
+                    if error.errno != errno.EBADF:
+                        raise
+            return present
+
+        def _support(self) -> ModuleType:
+            import mmap
+            import threading
+            if (sys.implementation.name != 'cpython' or sys.version_info[:3] != (3, 10, 12)
+                    or sys.platform != 'linux' or platform.machine() != 'x86_64'
+                    or threading.current_thread() is not threading.main_thread()
+                    or len(os.listdir('/proc/self/task')) != 1
+                    or sys.gettrace() is not None or sys.getprofile() is not None):
+                raise Refusal('scientific host implementation or thread unsupported')
+            binaries = {'/proc/self/exe': 'a2f33a6e006989270f4340528eb61f8f97366e00a5d1b602ac8672ea44fc56ae',
+                        mmap.__file__: '1d85a9fccb48eae9173b5fc8437daa05a62d221bf4b0066c0af332e1fb003c29'}
+            for path, digest in binaries.items():
+                if hashlib.sha256(self._read(path, POLICY['text'])).hexdigest() != digest:
+                    raise Refusal('scientific interpreter or mmap implementation unsupported')
+            page = os.sysconf('SC_PAGE_SIZE')
+            if not 0 < page <= 65536 or page & (page - 1) or 1048576 % page or page != mmap.PAGESIZE:
+                raise Refusal('scientific page size unsupported')
+            self.outcome['support'] = dict(interpreter=sys.version, binaries=binaries, page_size=page,
+                primary_url='https://raw.githubusercontent.com/python/cpython/v3.10.12/Modules/mmapmodule.c',
+                primary_sha256='97c49eef8a717fc072224380d5a8d46a4ca05452c9e6d2478766b4db11bcf8fd',
+                maximum_mmap_duplicates=1, kernel_close_returns='not exposed by mmap.close')
+            return mmap
+
+        def _member(self, name: str, path: str, owner: _Process) -> bytes:
+            import base64
+            start = time.monotonic()
+            try:
+                data = self._read(path, _SCIENTIFIC_MEMBERS[name])
+                self.outcome['members'][name] = dict(owner=asdict(owner), started=start,
+                    finished=time.monotonic(), size=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                    base64=base64.b64encode(data).decode('ascii'))
+                return data
+            except BaseException as error:
+                self.outcome['members'][name] = dict(missing=type(error).__name__ + ': ' + str(error)[:128],
+                                                    errno=getattr(error, 'errno', None))
+                raise
+
+        @staticmethod
+        def _stat(value: os.stat_result) -> dict[str, int]:
+            return asdict(_Stat(value.st_dev, value.st_ino, value.st_mode, value.st_size,
+                                value.st_mtime_ns, value.st_ctime_ns))
+
+        def _bracket(self, phase: str, borrowed: _BorrowedMismatch, collector: ObservedProcess) -> tuple[_Mapping, ...]:
+            start = time.monotonic()
+            root_before = self._stat(os.stat(f'/proc/{self.target.pid}/root'))
+            verify_target(self.selected, self.plan, self.target, self.observer, self.trace, self.trace_key)
+            self.checkpoint()
+            bracket = dict(validation_interval=[start, time.monotonic()], owners={}, descriptors={})
+            self.outcome['brackets'][phase] = bracket
+            boot = self._read('/proc/sys/kernel/random/boot_id', 128).decode().strip()
+            if boot != self.plan.boot or len(os.listdir('/proc/self/task')) != 1:
+                raise Refusal('scientific boot or collector threads changed')
+            for role, owner in (('collector', collector), ('target', self.target),
+                                ('observer', self.observer), ('runner', self.plan.owner)):
+                owner.check()
+                process = _Process(owner.pid, owner.ticks, boot,
+                    *(self._link(f'/proc/{owner.pid}/ns/{ns}') for ns in ('pid', 'mnt', 'user')))
+                pidfd_info = self._read(f'/proc/self/fdinfo/{owner.pidfd}', 8192)
+                if (self._link(f'/proc/self/fd/{owner.pidfd}') != 'anon_inode:[pidfd]'
+                        or not re.search(rb'^Pid:\s+' + str(owner.pid).encode() + rb'\s*$', pidfd_info, re.M)):
+                    raise Refusal('scientific pidfd owner mismatch')
+                self._member(f'{role}.stat.{phase}', f'/proc/{owner.pid}/stat', process)
+                bracket['owners'][role] = dict(identity=asdict(process), pidfd=owner.pidfd,
+                                               pidfd_live=not readable(owner.pidfd))
+                if role in ('collector', 'target'):
+                    data = self._member(f'{role}.maps.{phase}', f'/proc/{owner.pid}/maps', process)
+                    if role == 'target':
+                        if data != borrowed.original_record['maps'].encode():
+                            raise Refusal('scientific target maps changed')
+                        target_maps = _parse_busy_maps(data)
+                        bracket['target_rows'] = [asdict(row) for row in target_maps
+                                                 if row.name == EXE and 'x' in row.permissions]
+                        inodes = {row['inode'] for row in bracket['target_rows']}
+                        if any((row.name.startswith(EXE + ' ') or row.inode in inodes) and row.name != EXE
+                               for row in target_maps):
+                            raise Refusal('scientific target source alias or deleted path')
+                    else:
+                        collector_rows = _parse_busy_maps(data)
+                    if phase != 'live':
+                        try:
+                            self._member(f'{role}.mountinfo.{phase}', f'/proc/{owner.pid}/mountinfo', process)
+                        except OSError:
+                            pass
+                if process != _Process(owner.pid, owner.ticks, boot,
+                        *(self._link(f'/proc/{owner.pid}/ns/{ns}') for ns in ('pid', 'mnt', 'user'))):
+                    raise Refusal('scientific namespace changed within bracket')
+                owner.check()
+            collector_identity = _Process(**bracket['owners']['collector']['identity'])
+            for role, fd in (('file', borrowed.file_fd), ('root', borrowed.root_fd)):
+                data = self._member(f'{role}.fdinfo.{phase}', f'/proc/{collector.pid}/fdinfo/{fd}', collector_identity)
+                values = dict(line.split(':', 1) for line in data.decode().splitlines())
+                receipt = dict(number=fd, owner=asdict(collector_identity), stat=self._stat(os.fstat(fd)),
+                    link=self._link(f'/proc/{collector.pid}/fd/{fd}'),
+                    fdinfo={key: values[key].strip() for key in ('pos', 'flags', 'mnt_id', 'ino')})
+                bracket['descriptors'][role] = receipt
+            root = bracket['descriptors']['root']
+            current_root = self._stat(os.stat(f'/proc/{self.target.pid}/root'))
+            bracket['target_root'] = dict(stat=current_root, link=self._link(f'/proc/{self.target.pid}/root'))
+            if (current_root != root_before or current_root != root['stat']
+                    or bracket['target_root']['link'] != root['link'] or not stat.S_ISDIR(current_root['mode'])
+                    or bracket['descriptors']['file']['stat'] != self._stat(borrowed.source_stat)
+                    or bracket['descriptors']['file']['link'] != EXE):
+                raise Refusal('scientific borrowed source or target root changed')
+            if phase != 'before':
+                previous = self.outcome['brackets']['before']
+                if any(bracket[key] != previous[key] for key in ('owners', 'descriptors', 'target_root', 'target_rows')):
+                    raise Refusal('scientific owner, descriptor, root or namespace changed')
+            self.checkpoint()
+            return collector_rows
+
+        def _mounts(self) -> None:
+            import base64
+            associations = []
+            for phase in ('before', 'final_held'):
+                bracket = self.outcome['brackets'][phase]
+                for role in ('file', 'root'):
+                    mount = bracket['descriptors'][role]['fdinfo']['mnt_id']
+                    candidates = {}
+                    for owner in ('collector', 'target'):
+                        member = self.outcome['members'][f'{owner}.mountinfo.{phase}']
+                        candidates[owner] = ([line for line in base64.b64decode(member['base64']).decode().splitlines()
+                                              if line.split(' ', 1)[0] == mount] if 'base64' in member else None)
+                    own = candidates['collector']
+                    associations.append(dict(phase=phase, descriptor=role, mnt_id=mount,
+                        collector_rows=own, target_candidates=candidates['target'],
+                        kind='collector_namespace_row' if own is not None and len(own) == 1 else 'ambiguous_or_unavailable',
+                        target_context='separate owner; root and namespace provenance in bracket', backing_identity=False))
+            self.outcome['mount_associations'] = associations
+
+        def refuse(self, borrowed: _BorrowedMismatch, primary: Refusal) -> NoReturn:
+            global _scientific_active
+            entered = time.monotonic()
+            if self.primary is not None:
+                raise self.primary
+            self.primary = primary
+            mapping = None
+            self_pidfd = None
+            acquisition = None
+            handlers = {}
+            activated = False
+            pending = False
+            cleanup = self.outcome['cleanup']
+            try:
+                self.window = _reserve_probe_window(selected_started=self.selected_started,
+                    lifetime_started=self.plan.started, now=entered)
+                self.outcome['window'] = dict(asdict(self.window), selected_started=self.selected_started,
+                                              lifetime_started=self.plan.started)
+                self.deadline = self.window.observe_by
+                if (borrowed.target is not self.target or borrowed.original_record['path'] != EXE
+                        or borrowed.original_record['mirror'] is None
+                        or (self.target.pid, self.target.ticks) != (self.selected['pid'], self.selected['ticks'])
+                        or (self.observer.pid, self.observer.ticks) != (self.selected['observer_pid'], self.selected['observer_ticks'])
+                        or len({os.getpid(), self.target.pid, self.observer.pid, self.plan.owner.pid}) != 4
+                        or _scientific_active is not None):
+                    raise Refusal('scientific scope owner mismatch')
+                import threading
+                if threading.current_thread() is not threading.main_thread() or len(os.listdir('/proc/self/task')) != 1:
+                    raise Refusal('scientific main single thread required')
+                watched = (signal.SIGALRM, signal.SIGINT, signal.SIGTERM)
+                timers = [signal.getitimer(timer) for timer in
+                          (signal.ITIMER_REAL, signal.ITIMER_VIRTUAL, signal.ITIMER_PROF)]
+                blocked = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+                pending_signals = signal.sigpending()
+                self.outcome['runtime_preconditions'] = dict(timers=timers, blocked_signals=sorted(blocked),
+                    pending_signals=sorted(pending_signals), task_ids=os.listdir('/proc/self/task'),
+                    main_thread=True, trace_absent=sys.gettrace() is None, profile_absent=sys.getprofile() is None)
+                if (any(timer != (0.0, 0.0) for timer in timers)
+                        or set(watched) & (pending_signals | blocked)
+                        or any(callable(signal.getsignal(sig)) and sig not in watched
+                               for sig in signal.valid_signals())
+                        or signal.getsignal(signal.SIGINT) not in (signal.SIG_DFL, signal.SIG_IGN, signal.default_int_handler)
+                        or signal.getsignal(signal.SIGTERM) not in (signal.SIG_DFL, signal.SIG_IGN)):
+                    raise Refusal('scientific inherited signal or timer unsupported')
+                def cancelled(signum: int, frame: FrameType | None) -> None:
+                    self.cancelled = signum
+                for sig in watched:
+                    handlers[sig] = signal.getsignal(sig)
+                    signal.signal(sig, cancelled)
+                _scientific_active = self
+                activated = True
+                signal.setitimer(signal.ITIMER_REAL, max(.000001, self.deadline - time.monotonic()))
+                original = self._encode(borrowed.original_record, POLICY['text'])
+                names = ('mapped-object-refusal.json', 'scientific-descriptor-probe-start.json', 'scientific-descriptor-probe.json')
+                if any(os.path.lexists(self.plan.retained / name) for name in names):
+                    raise Refusal('scientific evidence already exists')
+                full_reservation = retained_size(self.plan.retained) + len(original) + 4096 + 4 * 1024**2 <= POLICY['total']
+                self.outcome['original_refusal'] = self._save(names[0], original)
+                if not full_reservation:
+                    raise Refusal('scientific evidence reservation unavailable')
+                self._bindings()
+                mapper = self._support()
+                page = self.outcome['support']['page_size']
+                info = os.fstat(borrowed.file_fd)
+                rounded = ((info.st_size + page - 1) // page) * page
+                if (self._stat(info) != self._stat(borrowed.source_stat) or not stat.S_ISREG(info.st_mode)
+                        or not 0 < info.st_size <= rounded <= 1048576):
+                    raise Refusal('scientific mapping source size or identity')
+                baseline_fds = self._fds()
+                soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+                if soft != resource.RLIM_INFINITY and len(baseline_fds) + 4 > soft:
+                    raise Refusal('scientific descriptor headroom')
+                self.outcome['baseline_fds'] = sorted(baseline_fds)
+                start_record = dict(state='terminal_pending', progress='unconfirmed_without_terminal',
+                    direct_cleanup='unconfirmed_without_terminal', window=self.outcome['window'],
+                    collector_pid=os.getpid(), target_pid=self.target.pid, target_ticks=self.target.ticks,
+                    file_fd=borrowed.file_fd, root_fd=borrowed.root_fd,
+                    original_refusal=self.outcome['original_refusal']['file'],
+                    source_bindings=self.outcome['source_bindings'], **_SCIENTIFIC_FLAGS)
+                self.outcome['pending'] = self._save(names[1], self._encode(start_record, 4096))
+                pending = True
+                self.checkpoint()
+                acquisition = 'collector pidfd'
+                self_pidfd = os.pidfd_open(os.getpid())
+                acquisition = None
+                cleanup['acquired'].append('collector pidfd')
+                collector = ObservedProcess(os.getpid(), process_stat(os.getpid())['ticks'], self_pidfd)
+                before = self._bracket('before', borrowed, collector)
+                target_rows = tuple(_Mapping(**dict(row, device=tuple(row['device'])))
+                    for row in self.outcome['brackets']['before']['target_rows'])
+                if not target_rows or len({(r.device, r.inode) for r in target_rows}) != 1:
+                    raise Refusal('scientific target segments ambiguous')
+                def focused(row: _Mapping) -> bool:
+                    return (row.name == EXE or row.name.startswith(EXE + ' ')
+                            or row.inode in {info.st_ino, target_rows[0].inode})
+                if any(focused(row) for row in before):
+                    raise Refusal('scientific collector already maps source or alias')
+                call = dict(file_fd=borrowed.file_fd, root_fd=borrowed.root_fd, collector_pid=os.getpid(),
+                            requested_length=info.st_size, rounded_length=rounded, page_size=page,
+                            offset=0, flags='MAP_PRIVATE', protection='PROT_READ|PROT_EXEC', started=time.monotonic())
+                self.outcome['measurement'] = dict(kind='partial', call=call)
+                acquisition = 'mapping and implementation duplicate'
+                mapping = mapper.mmap(borrowed.file_fd, info.st_size, flags=mapper.MAP_PRIVATE,
+                                      prot=mapper.PROT_READ | mapper.PROT_EXEC, offset=0)
+                acquisition = None
+                cleanup['acquired'].append('mapping and implementation duplicate')
+                call['finished'] = time.monotonic()
+                self.checkpoint()
+                added = self._fds() - baseline_fds - {self_pidfd}
+                if len(added) != 1 or self._stat(os.fstat(next(iter(added)))) != self._stat(info):
+                    raise Refusal('scientific mmap duplicate count or identity')
+                call['implementation_duplicate'] = next(iter(added))
+                live = self._bracket('live', borrowed, collector)
+                candidates = [row for row in live if focused(row)]
+                if (len(candidates) != 1 or candidates[0].name != EXE
+                        or candidates[0].permissions != 'r-xp' or candidates[0].offset != 0
+                        or candidates[0].end - candidates[0].start != rounded
+                        or candidates[0].start % page
+                        or any(row.start < candidates[0].end and row.end > candidates[0].start for row in before)):
+                    raise Refusal('scientific new mapping is ambiguous, split or coalesced')
+                focused_row = candidates[0]
+                final = self._bracket('final_held', borrowed, collector)
+                if [row for row in final if focused(row)] != candidates:
+                    raise Refusal('scientific final-held mapping changed')
+                self.outcome['measurement'].update(kind='compared_current_mappings',
+                    collector_row=asdict(focused_row), descriptor_pair=[[os.major(info.st_dev), os.minor(info.st_dev)], info.st_ino],
+                    target_pair=[target_rows[0].device, target_rows[0].inode],
+                    collector_pair=[focused_row.device, focused_row.inode],
+                    relation=_compare_current_segments(target_rows=target_rows, collector_row=focused_row,
+                                                        file_size=info.st_size, page_size=page),
+                    page_tail='coverage only', historical_identity=False, mapped_byte_equality=False)
+                self._mounts()
+                self.outcome['evidence'] = 'complete' if all('base64' in row for row in self.outcome['members'].values()) else 'partial'
+            except BaseException as error:
+                self.outcome['measurement']['reason'] = type(error).__name__ + ': ' + str(error)[:192]
+                self.record_owner_failure('observation', error)
+            finally:
+                if acquisition is not None or self.io_acquisition is not None:
+                    cleanup.update(state='unconfirmed', uncertain_acquisition=acquisition or self.io_acquisition)
+                if activated:
+                    self.phase = 'cleanup'
+                    self.deadline = self.window.cleanup_by
+                    try:
+                        signal.setitimer(signal.ITIMER_REAL, max(.000001, self.deadline - time.monotonic()))
+                    except BaseException as error:
+                        cleanup['state'] = 'unconfirmed'
+                        self.record_owner_failure('cleanup timer', error)
+                cleanup['started'] = time.monotonic()
+                for label, resource_value in (('mapping', mapping), ('collector pidfd', self_pidfd)):
+                    if resource_value is None:
+                        continue
+                    try:
+                        self.checkpoint()
+                        if label == 'mapping':
+                            resource_value.close()
+                            cleanup['mapping_api_closed'] = resource_value.closed
+                            # CPython discards the underlying close and munmap return codes.
+                            cleanup['state'] = 'unconfirmed'
+                            cleanup['kernel_close_returns'] = 'not exposed by mmap.close'
+                        else:
+                            os.close(resource_value)
+                        cleanup['returned_closes'].append(label)
+                        self.checkpoint()
+                    except BaseException as error:
+                        cleanup['state'] = 'unconfirmed'
+                        self.record_owner_failure(label, error)
+                cleanup.update(finished=time.monotonic(), transient_close_returns=self.io_closes)
+                if cleanup['state'] == 'not_needed' and cleanup['acquired']:
+                    cleanup['state'] = 'direct_complete'
+                if activated:
+                    self.phase = 'evidence'
+                    self.deadline = self.window.finish_by
+                    try:
+                        signal.setitimer(signal.ITIMER_REAL, max(.000001, self.deadline - time.monotonic()))
+                        if pending:
+                            terminal = {key: value for key, value in self.outcome.items() if key != 'persistence'}
+                            metadata = dict(terminal, members={name: dict(row, base64='') if 'base64' in row else row
+                                for name, row in terminal['members'].items()})
+                            self._encode(metadata, 262144)
+                            maximum = sum(4 * ((cap + 2) // 3) for cap in _SCIENTIFIC_MEMBERS.values()) + 262144
+                            self._save('scientific-descriptor-probe.json', self._encode(terminal, maximum))
+                    except BaseException as error:
+                        self.record_owner_failure('terminal persistence', error)
+                    finally:
+                        _scientific_active = None
+                for sig, handler in handlers.items():
+                    try:
+                        if sig == signal.SIGALRM:
+                            signal.setitimer(signal.ITIMER_REAL, 0)
+                        signal.signal(sig, handler)
+                    except BaseException as error:
+                        self.record_owner_failure('signal restoration', error)
+                raise self.primary
+
+        def terminal_facts(self) -> Mapping[str, Any]:
+            result = dict(measurement=self.outcome['measurement']['kind'],
+                relation=self.outcome['measurement'].get('relation'), evidence=self.outcome['evidence'],
+                cleanup=self.outcome['cleanup']['state'], persistence=self.outcome['persistence'],
+                original_refusal=self.outcome.get('original_refusal', {}).get('file', {'missing': 'not saved'}),
+                pending=self.outcome.get('pending', {}).get('file', {'missing': 'not saved'}),
+                owner_failures=self.outcome['owner_failures'],
+                owner_failures_truncated=self.outcome.get('owner_failures_truncated', False),
+                scientific_disposition='refused', decode_permitted=False, **_SCIENTIFIC_FLAGS)
+            if len(json.dumps(result).encode()) > 2048:
+                result['owner_failures'] = [dict(owner=item['owner'], type=item['type']) for item in result['owner_failures']]
+                result['owner_failures_truncated'] = True
+            if len(json.dumps(result).encode()) > 2048:
+                raise Refusal('scientific summary byte limit')
+            return result
 
 
     def _stage_inert_mmap(plan: RunPlan) -> None:
