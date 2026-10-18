@@ -3650,7 +3650,7 @@ setup:
     PYTHON
     case "$(uname -m)" in
       aarch64|arm64)
-        if python3 - <<'INERT_MMAP_SETUP_PY'
+        if /usr/bin/python3 - <<'INERT_MMAP_SETUP_PY'
     import time
     entry_deadline = time.monotonic() + 15
     import signal
