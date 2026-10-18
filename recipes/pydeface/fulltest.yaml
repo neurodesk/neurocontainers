@@ -2872,21 +2872,28 @@ setup:
         def failure(error: Exception, operation: str, deadline: float) -> dict[str, Any]:
             check(deadline)
             if isinstance(error, (InterruptedError, TimeoutError)) or (
-                    isinstance(error, OSError) and error.errno in (errno.EINTR, errno.ETIMEDOUT)):
+                    isinstance(error, OSError)
+                    and error.errno in (errno.EINTR, errno.ETIMEDOUT)):
                 raise error
             error_type = type(error).__name__
-            if len(error_type) > 1024 or len(error_type.encode('utf-8', 'surrogatepass')) > 1024:
+            if (len(error_type) > 1024
+                    or len(error_type.encode('utf-8', 'surrogatepass')) > 1024):
                 raise ValueError('prerequisite exception type cap')
             number = error.errno if isinstance(error, OSError) else None
-            detail = os.strerror(number) if type(number) is int else 'metadata acquisition failed'
+            detail = (os.strerror(number) if type(number) is int
+                      else 'metadata acquisition failed')
             raw = detail[:128].encode('utf-8', 'surrogatepass')
             truncated = len(detail) > 128 or len(raw) > 128
             detail = raw[:128].decode('utf-8', 'ignore')
             check(deadline)
-            return dict(state='error', operation=operation, error_type=error_type, errno=number,
+            return dict(state='error', operation=operation, error_type=error_type,
+                        errno=number,
                         detail=detail, detail_truncated=truncated)
 
         def malformed(operation: str, detail: str) -> dict[str, Any]:
+            if (len(detail) > 1024
+                    or len(detail.encode('utf-8', 'surrogatepass')) > 1024):
+                raise ValueError('prerequisite malformed detail cap')
             return dict(state='malformed', operation=operation, detail=detail)
 
         def over_cap(operation: str, limit: int, size: int, lower: bool) -> dict[str, Any]:
@@ -2908,7 +2915,8 @@ setup:
                     return over_cap(operation, cap, len(raw), False)
                 if form == 'filesystem':
                     value = dict(encoding='filesystem-bytes-base64',
-                                 base64=base64.b64encode(os.fsencode(value)).decode('ascii'))
+                                 base64=base64.b64encode(
+                                     os.fsencode(value)).decode('ascii'))
             elif form == 'integer':
                 if type(value) is not int or not 0 <= value < 2 ** 64:
                     return malformed(operation, 'expected nonnegative bounded integer')
@@ -2917,7 +2925,8 @@ setup:
                     return malformed(operation, 'expected boolean')
             elif form == 'version':
                 if (not isinstance(value, tuple) or len(value) != 5
-                        or any(type(value[i]) is not int or not 0 <= value[i] < 2 ** 31 for i in (0, 1, 2, 4))
+                        or any(type(value[i]) is not int or not 0 <= value[i] < 2 ** 31
+                               for i in (0, 1, 2, 4))
                         or not isinstance(value[3], str)):
                     return malformed(operation, 'expected implementation version tuple')
                 level = value_record(value[3], operation, 'text', 1024, False)
@@ -2926,8 +2935,10 @@ setup:
                 value = list(value)
             elif form == 'stat':
                 value = dict(device=value.st_dev, inode=value.st_ino, mode=value.st_mode,
-                             size=value.st_size, mtime_ns=value.st_mtime_ns, ctime_ns=value.st_ctime_ns)
-                if any(type(item) is not int or not -(2 ** 63) <= item < 2 ** 64 for item in value.values()):
+                             size=value.st_size, mtime_ns=value.st_mtime_ns,
+                             ctime_ns=value.st_ctime_ns)
+                if any(type(item) is not int or not -(2 ** 63) <= item < 2 ** 64
+                       for item in value.values()):
                     return malformed(operation, 'expected bounded stat integers')
             elif form == 'export':
                 return dict(state='present', callable=callable(value))
@@ -2944,7 +2955,8 @@ setup:
                 result = dict(state='absent', operation=operation)
             except KeyError as error:
                 check()
-                result = (dict(state='absent', operation=operation) if operation.startswith('environment_')
+                result = (dict(state='absent', operation=operation)
+                          if operation.startswith('environment_')
                           else failure(error, operation, observation_deadline))
             except OSError as error:
                 result = failure(error, operation, observation_deadline)
@@ -2968,7 +2980,8 @@ setup:
             try:
                 try:
                     check(deadline)
-                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK
+                                 | os.O_NOFOLLOW | os.O_CLOEXEC)
                     check(deadline)
                     raw = bytearray()
                     while len(raw) <= cap:
@@ -2985,12 +2998,14 @@ setup:
                         fields = fields.split()
                         pid = int(prefix.split(b' (', 1)[0])
                         ticks = int(fields[19])
-                        if pid != os.getpid() or ticks < 0 or ticks >= 2 ** 64 or len(fields[0]) != 1:
+                        if (pid != os.getpid() or ticks < 0 or ticks >= 2 ** 64
+                                or len(fields[0]) != 1):
                             raise ValueError('malformed self stat')
                         result = dict(state='value', value=ticks)
                     else:
                         boot = bytes(raw).decode('ascii').strip()
-                        if not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', boot):
+                        if not re.fullmatch(
+                                r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', boot):
                             raise ValueError('malformed boot id')
                         result = dict(state='value', value=boot)
                     check(deadline)
@@ -3015,20 +3030,25 @@ setup:
                 export = failure(error, 'module_lookup', observation_deadline)
                 finished = check()
                 export.update(started=started, finished=finished)
-                return (dict(loaded=False, **{key: dict(state='absent', operation='module_lookup',
-                                                      started=started, finished=finished) for key in keys}), export)
+                return (dict(loaded=False, **{
+                    key: dict(state='absent', operation='module_lookup',
+                              started=started, finished=finished)
+                    for key in keys}), export)
             check()
             if not isinstance(module, ModuleType):
                 kind = type(module)
-                detail = 'observed non-module type ' + kind.__module__[:40] + '.' + kind.__qualname__[:40]
+                detail = ('observed non-module type ' + kind.__module__[:40]
+                          + '.' + kind.__qualname__[:40])
                 truncated = len(kind.__module__) > 40 or len(kind.__qualname__) > 40
                 while len(detail.encode('utf-8', 'surrogatepass')) > 128:
                     detail = detail[:-1]
                     truncated = True
                 finished = check()
-                fields = {key: dict(state='malformed', operation='module_lookup', detail=detail,
+                fields = {key: dict(state='malformed', operation='module_lookup',
+                                    detail=detail,
                                     started=started, finished=finished) for key in keys}
-                export = dict(state='error', operation='module_lookup', error_type=None, errno=None,
+                export = dict(state='error', operation='module_lookup',
+                              error_type=None, errno=None,
                               detail=detail, detail_truncated=truncated,
                               started=started, finished=finished)
                 return dict(loaded=False, **fields), export
@@ -3037,19 +3057,27 @@ setup:
                 loader = module.__spec__.loader
                 if loader is None:
                     return None
-                return getattr(loader if isinstance(loader, type) else type(loader), attribute)
+                return getattr(
+                    loader if isinstance(loader, type) else type(loader), attribute)
 
             provenance = dict(
                 loaded=True,
                 name=observe('module_name', lambda: module.__name__),
                 file=observe('module_file', lambda: module.__file__, cap=2048),
-                spec_origin=observe('module_spec_origin', lambda: module.__spec__.origin, cap=2048, nullable=True),
-                spec_has_location=observe('module_spec_has_location', lambda: module.__spec__.has_location, 'boolean'),
-                loader_module=observe('module_loader_module', lambda: loader_identity('__module__'), nullable=True),
-                loader_qualname=observe('module_loader_qualname', lambda: loader_identity('__qualname__'), nullable=True),
+                spec_origin=observe('module_spec_origin', lambda: module.__spec__.origin,
+                                    cap=2048, nullable=True),
+                spec_has_location=observe('module_spec_has_location',
+                                          lambda: module.__spec__.has_location, 'boolean'),
+                loader_module=observe('module_loader_module',
+                                      lambda: loader_identity('__module__'), nullable=True),
+                loader_qualname=observe('module_loader_qualname',
+                                        lambda: loader_identity('__qualname__'),
+                                        nullable=True),
                 name_listed_in_sys_builtin_module_names=observe(
-                    'builtin_module_names', lambda: name in sys.builtin_module_names, 'boolean'))
-            export = observe('pidfd_open_lookup', lambda: getattr(module, 'pidfd_open'), 'export')
+                    'builtin_module_names',
+                    lambda: name in sys.builtin_module_names, 'boolean'))
+            export = observe('pidfd_open_lookup',
+                             lambda: getattr(module, 'pidfd_open'), 'export')
             return provenance, export
 
         started = check()
@@ -3061,24 +3089,34 @@ setup:
                        setup_script_sha256=origin.setup_script_sha256)
         for key, value in binding.items():
             length = 32 if key == 'capsule_id' else 64
-            if not isinstance(value, str) or len(value) != length or not re.fullmatch(r'[0-9a-f]+', value):
+            if (not isinstance(value, str) or len(value) != length
+                    or not re.fullmatch(r'[0-9a-f]+', value)):
                 raise ValueError('invalid prerequisite origin binding')
         launch = origin.launch_receipt
-        if (launch.name != 'launch.json' or type(launch.size) is not int or not 0 < launch.size <= POLICY['metadata']
+        if (launch.name != 'launch.json' or type(launch.size) is not int
+                or not 0 < launch.size <= POLICY['metadata']
                 or not isinstance(launch.sha256, str) or len(launch.sha256) != 64
                 or not re.fullmatch(r'[0-9a-f]+', launch.sha256)):
             raise ValueError('invalid prerequisite launch binding')
-        binding['launch_receipt'] = dict(name=launch.name, size=launch.size, sha256=launch.sha256)
+        binding['launch_receipt'] = dict(name=launch.name, size=launch.size,
+                                         sha256=launch.sha256)
         check()
         python = dict(
             executable=observe('sys_executable', lambda: sys.executable, cap=4096),
             version=observe('sys_version', lambda: sys.version, cap=4096),
-            implementation_name=observe('implementation_name', lambda: sys.implementation.name),
-            implementation_version=observe('implementation_version', lambda: sys.implementation.version, 'version'),
-            implementation_cache_tag=observe('implementation_cache_tag', lambda: sys.implementation.cache_tag, nullable=True))
+            implementation_name=observe('implementation_name',
+                                        lambda: sys.implementation.name),
+            implementation_version=observe('implementation_version',
+                                           lambda: sys.implementation.version, 'version'),
+            implementation_cache_tag=observe('implementation_cache_tag',
+                                             lambda: sys.implementation.cache_tag,
+                                             nullable=True))
         executable = dict(
-            proc_self_exe_readlink=observe('proc_self_exe_readlink', lambda: os.readlink('/proc/self/exe'), 'filesystem', 4096),
-            proc_self_exe_stat=observe('proc_self_exe_stat', lambda: os.stat('/proc/self/exe'), 'stat'))
+            proc_self_exe_readlink=observe('proc_self_exe_readlink',
+                                          lambda: os.readlink('/proc/self/exe'),
+                                          'filesystem', 4096),
+            proc_self_exe_stat=observe('proc_self_exe_stat',
+                                      lambda: os.stat('/proc/self/exe'), 'stat'))
         os_provenance, os_export = module_metadata('os')
         posix_provenance, posix_export = module_metadata('posix')
         self_metadata = dict(
@@ -3086,44 +3124,61 @@ setup:
             pid=observe('self_pid', os.getpid, 'integer'),
             start_ticks=read_proc('/proc/self/stat', 8192, 'self_start_ticks'),
             boot_id=read_proc('/proc/sys/kernel/random/boot_id', 128, 'boot_id'),
-            pid_namespace=observe('pid_namespace', lambda: os.readlink('/proc/self/ns/pid'), 'filesystem', 256),
-            mount_namespace=observe('mount_namespace', lambda: os.readlink('/proc/self/ns/mnt'), 'filesystem', 256),
-            user_namespace=observe('user_namespace', lambda: os.readlink('/proc/self/ns/user'), 'filesystem', 256))
+            pid_namespace=observe('pid_namespace',
+                                  lambda: os.readlink('/proc/self/ns/pid'),
+                                  'filesystem', 256),
+            mount_namespace=observe('mount_namespace',
+                                    lambda: os.readlink('/proc/self/ns/mnt'),
+                                    'filesystem', 256),
+            user_namespace=observe('user_namespace',
+                                   lambda: os.readlink('/proc/self/ns/user'),
+                                   'filesystem', 256))
         kernel_release = observe('kernel_release', lambda: os.uname().release, cap=512)
-        environment = {name: observe('environment_' + name, lambda: os.environ[name], 'filesystem')
-                       for name in ('PATH', 'PYTHONHOME', 'PYTHONPATH', 'PYTHONNOUSERSITE', 'PYTHONSAFEPATH')}
+        environment = {name: observe('environment_' + name,
+                                     lambda: os.environ[name], 'filesystem')
+                       for name in ('PATH', 'PYTHONHOME', 'PYTHONPATH',
+                                    'PYTHONNOUSERSITE', 'PYTHONSAFEPATH')}
         flags = {name: observe('flag_' + name, lambda: getattr(sys.flags, name),
                               'boolean' if name == 'safe_path' else 'integer')
-                 for name in ('isolated', 'ignore_environment', 'no_site', 'no_user_site', 'safe_path')}
-        receipt = dict(schema='pydeface.inert-prerequisite.v1', phase='before_self_process_open',
+                 for name in ('isolated', 'ignore_environment', 'no_site',
+                              'no_user_site', 'safe_path')}
+        receipt = dict(schema='pydeface.inert-prerequisite.v1',
+                       phase='before_self_process_open',
                        claim='interpreter_prerequisite_metadata_only', binding=binding,
                        started_monotonic=started, finished_monotonic=check(),
                        started_wall_ns=started_wall, finished_wall_ns=time.time_ns(),
-                       observation_deadline=observation_deadline, python=python, executable=executable,
+                       observation_deadline=observation_deadline,
+                       python=python, executable=executable,
                        modules=dict(os=os_provenance, posix=posix_provenance),
-                       pidfd_exports=dict(os=os_export, posix=posix_export), self_metadata=self_metadata,
-                       kernel_release=kernel_release, startup=dict(environment=environment, flags=flags))
+                       pidfd_exports=dict(os=os_export, posix=posix_export),
+                       self_metadata=self_metadata,
+                       kernel_release=kernel_release,
+                       startup=dict(environment=environment, flags=flags))
         check()
         raw = json.dumps(receipt, sort_keys=True, allow_nan=False).encode('utf-8')
         check()
         if len(raw) > 65536:
             raise ValueError('inert prerequisite byte cap')
-        directory_fd = os.open(evidence, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        directory_fd = os.open(evidence, os.O_RDONLY | os.O_DIRECTORY
+                               | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
             check()
             directory = os.fstat(directory_fd)
             check()
-            if (not stat.S_ISDIR(directory.st_mode) or stat.S_IMODE(directory.st_mode) != 0o700
+            if (not stat.S_ISDIR(directory.st_mode)
+                    or stat.S_IMODE(directory.st_mode) != 0o700
                     or directory.st_uid != os.geteuid()):
                 raise ValueError('inert prerequisite directory ownership or mode')
             check()
-            fd = os.open('prerequisite.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+            fd = os.open('prerequisite.json',
+                         os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
                          | os.O_NONBLOCK | os.O_CLOEXEC, 0o600, dir_fd=directory_fd)
             try:
                 check()
                 output = os.fstat(fd)
                 check()
-                if (not stat.S_ISREG(output.st_mode) or stat.S_IMODE(output.st_mode) != 0o600
+                if (not stat.S_ISREG(output.st_mode)
+                        or stat.S_IMODE(output.st_mode) != 0o600
                         or output.st_uid != os.geteuid()):
                     raise ValueError('inert prerequisite output ownership or mode')
                 check()
