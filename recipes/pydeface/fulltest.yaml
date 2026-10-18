@@ -2695,7 +2695,9 @@ setup:
             receipt['reader_close'] = 'returned'
             if received != data:
                 raise Refusal('scientific saved readback differs')
-            receipt['file'] = asdict(_Blob(name, len(received), hashlib.sha256(received).hexdigest()))
+            received_file = asdict(_Blob(name, len(received), hashlib.sha256(received).hexdigest()))
+            self.checkpoint()
+            receipt['file'] = received_file
             return receipt
 
         def _reference(self, name: str, cap: int = POLICY['text']) -> bytes:
@@ -3039,6 +3041,7 @@ setup:
                                                         file_size=info.st_size, page_size=page),
                     page_tail='coverage only', historical_identity=False, mapped_byte_equality=False)
                 self._mounts()
+                self.checkpoint()
                 self.outcome['evidence'] = 'complete' if all('base64' in row for row in self.outcome['members'].values()) else 'partial'
             except BaseException as error:
                 self.outcome['measurement']['reason'] = type(error).__name__ + ': ' + str(error)[:192]
