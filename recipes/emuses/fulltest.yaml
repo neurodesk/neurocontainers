@@ -1,5 +1,6 @@
 name: emuses
 version: 1.3.0
+distribution_version: 0.7.0
 
 test_data:
   output_dir: test_output/emuses
@@ -29,7 +30,7 @@ setup:
     x = centers[labels] + rng.normal(scale=0.1,size=(72,4))
     original = x.copy()
     config = {'param':{'umap':{'n_neighbors':{'value':8},'min_dist':{'value':0.1},'n_components':{'value':2},'metric':{'value':'euclidean'}},
-                       'hdbscan':{'min_cluster_size':{'value':8},'min_samples':{'value':4}}},
+                       'hdbscan':{'min_cluster_size':8,'min_samples':4}},
               'metrics':{'umap':{'spread':{'weight':1.}},'hdbscan':{'cluster_persistence':{'weight':1.}}}}
     with tempfile.TemporaryDirectory(prefix='emuses-functional-') as scratch:
         folder = Path(scratch)
@@ -79,7 +80,7 @@ tests:
       python - <<'PYPACKAGE'
       from importlib.metadata import version
       import torch
-      assert version('emuses') == '${version}'
+      assert version('emuses') == '${distribution_version}'
       assert version('torch') == '2.7.1'
       assert torch.ones(2, device='cpu').sum().item() == 2
       print('EMUSES runtime dependencies verified')

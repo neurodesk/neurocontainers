@@ -50,6 +50,8 @@ build:
           /tmp/emuses-src/requirements-prod.txt;
           fi
         - pip-sync /tmp/emuses-src/requirements-prod.txt
+        # setup.py also requires these packages, pinned in the released dev lock.
+        - python -m pip install --no-cache-dir pytest==8.4.1 pytest-asyncio==1.1.0
         - python -m pip install --no-cache-dir --no-deps /tmp/emuses-src
         - cp -a /tmp/emuses-src/README.md "{{ context.install_path }}/README.md"
         - rm -rf /tmp/emuses-src /root/.cache/pip /tmp/cache-emuses /tmp/matplotlib-emuses /tmp/numba-emuses /tmp/torch-emuses
