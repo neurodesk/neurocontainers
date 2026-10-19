@@ -9,7 +9,7 @@
 # These tests focus on non-interactive functionality and help/version commands.
 
 name: vmtk
-version: 1.5.0
+version: 1.5.2
 
 test_data:
   output_dir: test_output
@@ -844,6 +844,294 @@ tests:
     description: Display vmtkpointsplitextractor options
     command: vmtkpointsplitextractor --help 2>&1
     expected_output_contains: "Centerlines"
+
+  - name: Native TetGen volume meshing
+    description: Exercise the compiled wrapper and both installed meshing commands on a closed triangular surface.
+    command: |
+      python - <<'PY'
+      import json
+      import math
+      from pathlib import Path
+      import shutil
+      import subprocess
+
+      import vtk
+      from vmtk import vtkvmtk
+
+      provenance = json.loads(Path("/opt/miniforge3/share/vmtk/source.json").read_text())
+      assert provenance["version"] == "${version}", provenance
+      help_result = subprocess.run(
+          ["/opt/miniforge3/bin/vmtk", "--help"],
+          capture_output=True, text=True, check=True, timeout=30,
+      )
+      assert "Usage:" in help_result.stdout, help_result.stdout
+      assert "Traceback" not in help_result.stdout + help_result.stderr
+      output = Path("test_output/native_tetgen")
+      output.mkdir(parents=True, exist_ok=True)
+      points = vtk.vtkPoints()
+      for point in ((0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)):
+          points.InsertNextPoint(*point)
+      triangles = vtk.vtkCellArray()
+      for face in ((0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)):
+          triangles.InsertNextCell(3, face)
+      surface = vtk.vtkPolyData()
+      surface.SetPoints(points)
+      surface.SetPolys(triangles)
+      edges = vtk.vtkFeatureEdges()
+      edges.SetInputData(surface)
+      edges.BoundaryEdgesOn()
+      edges.NonManifoldEdgesOn()
+      edges.FeatureEdgesOff()
+      edges.ManifoldEdgesOff()
+      edges.Update()
+      assert edges.GetOutput().GetNumberOfCells() == 0, "fixture must be closed"
+      append = vtk.vtkAppendFilter()
+      append.AddInputData(surface)
+      append.Update()
+      surface_grid = append.GetOutput()
+
+      def check_volume(mesh: vtk.vtkUnstructuredGrid, name: str) -> None:
+          tetrahedra = [
+              i for i in range(mesh.GetNumberOfCells())
+              if mesh.GetCellType(i) == vtk.VTK_TETRA
+          ]
+          assert tetrahedra, f"{name}: no tetrahedral volume cells"
+          sizes = vtk.vtkCellSizeFilter()
+          sizes.SetInputData(mesh)
+          sizes.ComputeVolumeOn()
+          sizes.Update()
+          volumes = sizes.GetOutput().GetCellData().GetArray("Volume")
+          values = [volumes.GetValue(i) for i in tetrahedra]
+          assert all(math.isfinite(v) and v > 0 for v in values), values
+          assert all(
+              math.isfinite(v)
+              for i in range(mesh.GetNumberOfPoints())
+              for v in mesh.GetPoint(i)
+          ), f"{name}: non-finite coordinates"
+          print(json.dumps({"command": name, "tetrahedra": len(values),
+                            "minimum_volume": min(values), "volume": sum(values)}))
+
+      wrapper = vtkvmtk.vtkvmtkTetGenWrapper()
+      assert wrapper.IsA("vtkUnstructuredGridAlgorithm")
+      wrapper.SetInputData(surface_grid)
+      wrapper.SetPLC(1)
+      wrapper.SetOutputVolumeElements(1)
+      wrapper.Update()
+      check_volume(wrapper.GetOutput(), "vtkvmtkTetGenWrapper")
+
+      for filename, data, writer_type in (
+          ("surface.vtp", surface, vtk.vtkXMLPolyDataWriter),
+          ("surface.vtu", surface_grid, vtk.vtkXMLUnstructuredGridWriter),
+      ):
+          writer = writer_type()
+          writer.SetFileName(str(output / filename))
+          writer.SetInputData(data)
+          assert writer.Write() == 1
+
+      commands = (
+          ("vmtktetgen", "surface.vtu", ["-plc", "1"]),
+          ("vmtkmeshgenerator", "surface.vtp", ["-skipremeshing", "1"]),
+      )
+      for command, fixture, options in commands:
+          executable = shutil.which(command)
+          assert executable == f"/opt/miniforge3/bin/{command}", executable
+          result_path = output / f"{command}.vtu"
+          result_path.unlink(missing_ok=True)
+          args = [executable, "-ifile", str(output / fixture),
+                  *options, "-ofile", str(result_path)]
+          result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+          text = result.stdout + result.stderr
+          print(text)
+          assert result.returncode == 0, (args, result.returncode, text)
+          assert "Traceback" not in text, text
+          assert result_path.is_file(), f"{command}: missing output"
+          reader = vtk.vtkXMLUnstructuredGridReader()
+          reader.SetFileName(str(result_path))
+          reader.Update()
+          check_volume(reader.GetOutput(), command)
+      print("Native TetGen meshing passed")
+      PY
+    expected_output_contains: "Native TetGen meshing passed"
+
+  - name: Meshing failures preserve outputs
+    description: Reject invalid sizing and open surfaces through individual and main commands without publishing mesh or remeshed-surface files.
+    timeout: 120
+    command: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+      import shutil
+      import subprocess
+      import time
+
+      import vtk
+
+      output = Path('test_output/meshing_failure')
+      output.mkdir(parents=True, exist_ok=True)
+      points = vtk.vtkPoints()
+      points.SetDataTypeToDouble()
+      for point in ((0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)):
+          points.InsertNextPoint(*point)
+      faces = ((0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3))
+      grid = vtk.vtkUnstructuredGrid()
+      grid.SetPoints(points)
+      for face in faces:
+          grid.InsertNextCell(vtk.VTK_TRIANGLE, 3, face)
+      lengths = vtk.vtkDoubleArray()
+      lengths.SetName('InvalidLength')
+      for length in (0.1, 0.1, 0.0, 0.1):
+          lengths.InsertNextValue(length)
+      grid.GetPointData().AddArray(lengths)
+      writer = vtk.vtkXMLUnstructuredGridWriter()
+      writer.SetInputData(grid)
+      writer.SetFileName(str(output / 'invalid-length.vtu'))
+      assert writer.Write() == 1
+
+      triangles = vtk.vtkCellArray()
+      for face in faces[:-1]:
+          triangles.InsertNextCell(3, face)
+      surface = vtk.vtkPolyData()
+      surface.SetPoints(points)
+      surface.SetPolys(triangles)
+      writer = vtk.vtkXMLPolyDataWriter()
+      writer.SetInputData(surface)
+      writer.SetFileName(str(output / 'open-surface.vtp'))
+      assert writer.Write() == 1
+
+      requests = (
+          ('vmtktetgen', 'invalid-length.vtu',
+           ['-usesizingfunction', '1', '-sizingfunctionarray', 'InvalidLength']),
+          ('vmtkmeshgenerator', 'open-surface.vtp',
+           ['-skipcapping', '1', '-skipremeshing', '1']),
+      )
+      records = []
+      for tool, fixture, options in requests:
+          for route in ('individual', 'main'):
+              executable = shutil.which(tool if route == 'individual' else 'vmtk')
+              assert executable, (tool, route, 'executable missing')
+              for preexisting in (False, True):
+                  stem = f'{tool}-{route}-{preexisting}'
+                  mesh = output / (stem + '.vtu')
+                  targets = [mesh]
+                  args = [executable] + ([tool] if route == 'main' else [])
+                  args += ['-ifile', str(output / fixture), *options, '-ofile', str(mesh)]
+                  if tool == 'vmtkmeshgenerator':
+                      remeshed = output / (stem + '-surface.vtp')
+                      targets.append(remeshed)
+                      args += ['-remeshedsurfacefile', str(remeshed)]
+                  sentinels = {path: (path.name + '\nunchanged output\n').encode() for path in targets}
+                  for path in targets:
+                      path.unlink(missing_ok=True)
+                      if preexisting:
+                          path.write_bytes(sentinels[path])
+                  started = time.monotonic()
+                  result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+                  text = result.stdout + result.stderr
+                  intact = all(path.read_bytes() == sentinels[path] if preexisting and path.exists()
+                               else not preexisting and not path.exists() for path in targets)
+                  record = dict(command=args, timeout=10, exit_code=result.returncode,
+                                duration_seconds=time.monotonic() - started,
+                                python_failure='RuntimeError: TetGen failed; no mesh was generated.' in text,
+                                outputs_intact=intact, preexisting=preexisting,
+                                stdout=result.stdout, stderr=result.stderr)
+                  records.append(record)
+                  print(json.dumps(record), flush=True)
+      (output / 'results.json').write_text(json.dumps(records, indent=2) + '\n')
+      failures = [r for r in records if r['exit_code'] == 0 or not r['python_failure'] or not r['outputs_intact']]
+      assert not failures, [(r['command'], r['exit_code'], r['python_failure'], r['outputs_intact']) for r in failures]
+      print('Meshing failures return nonzero and preserve output files')
+      PY
+    expected_output_contains: "Meshing failures return nonzero and preserve output files"
+
+  - name: Native wedge conversion preserves geometry
+    description: Convert native wedge cells with conforming shared faces and preserved coordinates and markers.
+    timeout: 30
+    command: |
+      python - <<'PY'
+      from collections import Counter, defaultdict
+
+      import vtk
+      from vmtk import vtkvmtk
+
+
+      def grid(points, connectivity):
+          mesh = vtk.vtkUnstructuredGrid()
+          storage = vtk.vtkPoints()
+          storage.SetDataTypeToDouble()
+          for point in points:
+              storage.InsertNextPoint(point)
+          mesh.SetPoints(storage)
+          markers = vtk.vtkIntArray()
+          markers.SetName('CellEntityIds')
+          origins = vtk.vtkIntArray()
+          origins.SetName('OriginalCell')
+          for index, (kind, ids, marker) in enumerate(connectivity):
+              mesh.InsertNextCell(kind, len(ids), ids)
+              markers.InsertNextValue(marker)
+              origins.InsertNextValue(index)
+          mesh.GetCellData().AddArray(markers)
+          mesh.GetCellData().AddArray(origins)
+          return mesh
+
+
+      def convert(mesh):
+          operation = vtkvmtk.vtkvmtkUnstructuredGridTetraFilter()
+          operation.SetInputData(mesh)
+          operation.Update()
+          result = operation.GetOutput()
+          assert result.GetPoints().GetDataType() == mesh.GetPoints().GetDataType()
+          assert [result.GetPoint(i) for i in range(result.GetNumberOfPoints())] == [
+              mesh.GetPoint(i) for i in range(mesh.GetNumberOfPoints())]
+          return result
+
+
+      def check(mesh, inverted=False):
+          before = [mesh.GetPoint(i) for i in range(mesh.GetNumberOfPoints())]
+          result = convert(mesh)
+          faces = defaultdict(list)
+          volumes = []
+          counts = Counter()
+          for index in range(result.GetNumberOfCells()):
+              cell = result.GetCell(index)
+              origin = int(result.GetCellData().GetArray('OriginalCell').GetValue(index))
+              marker = result.GetCellData().GetArray('CellEntityIds').GetValue(index)
+              assert marker == mesh.GetCellData().GetArray('CellEntityIds').GetValue(origin)
+              counts[origin] += 1
+              if cell.GetCellType() != vtk.VTK_TETRA:
+                  continue
+              ids = [cell.GetPointId(j) for j in range(4)]
+              volume = vtk.vtkTetra.ComputeVolume(*[result.GetPoint(i) for i in ids])
+              volumes.append(volume)
+              for face in [(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)]:
+                  faces[tuple(sorted(ids[j] for j in face))].append(origin)
+          assert before == [mesh.GetPoint(i) for i in range(mesh.GetNumberOfPoints())]
+          for index in range(mesh.GetNumberOfCells()):
+              assert counts[index] == (3 if mesh.GetCellType(index) == vtk.VTK_WEDGE else 1)
+          assert all(v < 0 if inverted else v > 0 for v in volumes), volumes
+          return volumes, faces
+
+
+      points = [(0, 0, 0), (0, 1, 0), (1, 0, 0),
+                (0, 0, 1), (0, 1, 1), (1, 0, 1)]
+      positive, _ = check(grid(points, [(vtk.VTK_WEDGE, list(range(6)), 7)]))
+      negative, _ = check(grid([(y, x, z) for x, y, z in points], [
+          (vtk.VTK_WEDGE, list(range(6)), 8)]), inverted=True)
+      mixed_points = points + [(2, 0, 0), (3, 0, 0), (2, 1, 0), (2, 0, 1)]
+      mixed, _ = check(grid(mixed_points, [
+          (vtk.VTK_TETRA, [6, 7, 8, 9], 9),
+          (vtk.VTK_WEDGE, list(range(6)), 10),
+          (vtk.VTK_TRIANGLE, [0, 2, 1], 11)]))
+      adjacent_points = points + [(1, 1, 0), (1, 1, 1)]
+      adjacent, faces = check(grid(adjacent_points, [
+          (vtk.VTK_WEDGE, [0, 1, 2, 3, 4, 5], 12),
+          (vtk.VTK_WEDGE, [1, 6, 2, 4, 7, 5], 13)]))
+      shared = {1, 2, 4, 5}
+      interface = {face: owners for face, owners in faces.items() if set(face) <= shared}
+      assert len(interface) == 2 and all(sorted(owners) == [0, 1] for owners in interface.values()), interface
+      assert len(set.intersection(*(set(face) for face in interface))) == 2
+      print('Native wedge conversion preserves orientation, interfaces, markers and coordinates.')
+      PY
+    expected_output_contains: 'Native wedge conversion preserves orientation, interfaces, markers and coordinates.'
 
 cleanup:
   script: |
