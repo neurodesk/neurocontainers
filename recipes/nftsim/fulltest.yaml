@@ -513,13 +513,13 @@ tests:
     description: Test behavior with non-existent config file
     command: nftsim -i /nonexistent/config.conf -o test_output/error.output 2>&1
     expected_exit_code: 1
-    expected_output_contains: "Error"
+    expected_output_contains: "Unable to open configuration file."
 
   - name: Missing input flag value
     description: Test behavior with missing input file argument
     command: nftsim -i 2>&1
     expected_exit_code: 1
-    expected_output_contains: Error
+    expected_output_contains: "Unable to open configuration file."
 
   # ==========================================================================
   # MULTIPLE SIMULATION RUNS
