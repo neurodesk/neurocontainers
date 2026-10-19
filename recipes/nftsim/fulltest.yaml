@@ -55,6 +55,24 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+    cat > test_output/assert-finite-output.awk <<'AWK'
+    /^=+$/ { data_started = 1; next }
+    data_started && $1 == "Time" { header_rows = 2; next }
+    header_rows == 2 && NF > 0 { header_rows = 1; next }
+    data_started && header_rows == 1 && NF > 0 {
+      if (sample_rows == 0) { output_width = NF; first_time = $1 + 0 }
+      if (NF < 2 || NF != output_width || (sample_rows > 0 && $1 + 0 <= last_time)) { bad = 1; exit 1 }
+      for (column_idx = 1; column_idx <= NF; column_idx++) {
+        if ($column_idx !~ /^[-+]?[0-9]+[.][0-9]+[eE][-+]?[0-9]+$/) { bad = 1; exit 1 }
+      }
+      last_time = $1 + 0
+      sample_rows++
+    }
+    END {
+      if (bad || sample_rows < 1000 || last_time <= first_time + minimum_duration) exit 1
+      print "Finite simulation output verified"
+    }
+    AWK
 
 tests:
   # ==========================================================================
@@ -193,9 +211,17 @@ tests:
       - output_exists: ${output_dir}/test-coupling-map.output
 
   - name: Coupling ramp test
-    description: Test coupling ramp configuration (crashes with SIGABRT - container bug)
-    command: nftsim -i ${test_coupling_ramp} -o test_output/test-coupling-ramp.output 2>&1 || true
-    ignore_exit_code: true
+    description: Run the corrected bundled ramp example unchanged in a writable directory and require a complete finite time series.
+    command: |
+      set -euo pipefail
+      test "$(grep -c 'Ramp - nu:' ${test_coupling_ramp})" -eq 1
+      cp ${test_coupling_ramp} test_output/test-coupling-ramp.conf
+      rm -f test_output/test-coupling-ramp.output
+      nftsim -i test_output/test-coupling-ramp.conf -o test_output/test-coupling-ramp.output
+      test -s test_output/test-coupling-ramp.output
+      awk -v minimum_duration=0.14 -f test_output/assert-finite-output.awk test_output/test-coupling-ramp.output
+      cmp ${test_coupling_ramp} test_output/test-coupling-ramp.conf
+    expected_output_contains: Finite simulation output verified
 
   # ==========================================================================
   # TIME VALIDATION
@@ -310,9 +336,20 @@ tests:
   # TIMESTAMP OUTPUT
   # ==========================================================================
   - name: Timestamped output
-    description: Run simulation with timestamped output filename
-    command: nftsim -i ${stimuli_only} -t && ls test_output/*.output 2>/dev/null || ls *.output 2>/dev/null | head -1
+    description: Run the unchanged stimuli configuration in a fresh writable directory and require a newly timestamp-named finite simulation output.
+    command: |
+      set -euo pipefail
+      timestamp_scratch=$(mktemp -d test_output/timestamp.XXXXXX)
+      cp ${stimuli_only} "$timestamp_scratch/stimuli-only.conf"
+      nftsim -i "$timestamp_scratch/stimuli-only.conf" -t
+      shopt -s nullglob
+      timestamp_products=("$timestamp_scratch"/stimuli-only_????-??-??T??????.output)
+      test "${#timestamp_products[@]}" -eq 1
+      test -s "${timestamp_products[0]}"
+      awk -v minimum_duration=11 -f test_output/assert-finite-output.awk "${timestamp_products[0]}"
+      cmp ${stimuli_only} "$timestamp_scratch/stimuli-only.conf"
     expected_exit_code: 0
+    expected_output_contains: Finite simulation output verified
 
   # ==========================================================================
   # OUTPUT VERIFICATION TESTS
@@ -475,13 +512,15 @@ tests:
   # ==========================================================================
   - name: Invalid config file handling
     description: Test behavior with non-existent config file
-    command: nftsim -i /nonexistent/config.conf -o test_output/error.output 2>&1 || echo "Error handled"
-    expected_output_contains: "Error"
+    command: nftsim -i /nonexistent/config.conf -o test_output/error.output 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "Unable to open configuration file."
 
   - name: Missing input flag value
     description: Test behavior with missing input file argument
-    command: nftsim -i 2>&1 || echo "Error handled"
-    expected_exit_code: 0
+    command: nftsim -i 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "Unable to open configuration file."
 
   # ==========================================================================
   # MULTIPLE SIMULATION RUNS
