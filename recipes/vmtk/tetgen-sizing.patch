@@ -1,0 +1,1534 @@
+--- a/vtkVmtk/Utilities/tetgen1.4.3/tetgen.cxx
++++ b/vtkVmtk/Utilities/tetgen1.4.3/tetgen.cxx
+@@ -29,6 +29,9 @@
+ ///////////////////////////////////////////////////////////////////////////////
+ 
+ #include "tetgen.h"
++#include <cmath>
++#include <memory>
++#include <set>
+ 
+ //// io_cxx ///////////////////////////////////////////////////////////////////
+ ////                                                                       ////
+@@ -14475,6 +14478,8 @@
+     }
+   }
+ 
++  refreshpointsize(bp);
++
+   // Create new tets to fill B(p).
+   for (k = 0; k < n; k++) {
+     // Create new tets from each B_i(p).
+@@ -14881,7 +14886,7 @@
+   }
+ 
+   // check for bad quality tets if the flags is set.
+-  if (chkbadtet) {
++  if (chkbadtet && scalarbackgroundstate != ScalarFailed) {
+     for (k = 0; k < n; k++) {
+       ceillist = ceillists[k];
+       for (i = 0; i < ceillist->len(); i++) {
+@@ -15892,7 +15897,9 @@
+     // Randomize the point order.
+     for (i = 0; i < arraysize; i++) {
+       j = (int) randomnation(i + 1); // 0 <= j <= i;
+-      insertarray[i] = insertarray[j];
++      if (j != i) {
++        insertarray[i] = insertarray[j];
++      }
+       insertarray[j] = pointtraverse();
+     }
+   }
+@@ -23284,6 +23291,8 @@
+         }
+       }
+     }
++    // The face traversal has ended with loc == 4.
++    newtet.loc = 0;
+     // Let the corners of t2 point to it for fast searching.
+     pointptr = org(newtet);
+     setpoint2tet(pointptr, encode(newtet));
+@@ -26843,7 +26852,26 @@
+   } else {
+     setpoint2bgmtet(pt, (tetrahedron) NULL);  // in m
+   }
++  if (scalarbackgroundstate != ScalarNotRequired &&
++      (loc == OUTSIDE || !std::isfinite(pt[pointmtrindex]) ||
++       pt[pointmtrindex] <= 0.0)) {
++    if (scalarbackgroundstate != ScalarFailed) {
++      fprintf(stderr, "Explicit scalar background failed at (%g, %g, %g): %s.\n",
++              pt[0], pt[1], pt[2], loc == OUTSIDE ? "outside" : "invalid length");
++    }
++    scalarbackgroundstate = ScalarFailed;
++    return false;
++  }
+   return loc != OUTSIDE;
++}
++
++void tetgenmesh::refreshpointsize(point pt)
++{
++  if (scalarbackgroundstate != ScalarValid) return;
++  triface bgmtet;
++  decode(point2bgmtet(pt), bgmtet);
++  if (bgm->isdead(&bgmtet)) bgmtet = bgm->recenttet;
++  if (p1interpolatebgm(pt, &bgmtet, NULL)) bgm->recenttet = bgmtet;
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+@@ -26861,6 +26889,20 @@
+ 
+ void tetgenmesh::interpolatesizemap()
+ {
++  if (scalarbackgroundstate != ScalarNotRequired) {
++    // Point marks can have gaps after removal. Visit only incident vertices.
++    std::set<point> visited;
++    tetrahedrons->traversalinit();
++    tetrahedron* tet;
++    while ((tet = tetrahedrontraverse()) != NULL) {
++      for (int corner = 0; corner < 4; ++corner) {
++        point pt = (point) tet[4 + corner];
++        if (visited.insert(pt).second) refreshpointsize(pt);
++        if (scalarbackgroundstate == ScalarFailed) return;
++      }
++    }
++    return;
++  }
+   list *adjtetlist;
+   triface tetloop, neightet, bgmtet;
+   point searchpt;
+@@ -28493,6 +28535,10 @@
+ 
+ void tetgenmesh::setnewpointsize(point newpt, point e1, point e2)
+ {
++  if (scalarbackgroundstate != ScalarNotRequired) {
++    refreshpointsize(newpt);
++    return;
++  }
+   if (b->metric) {
+     // Interpolate the point size in a background mesh.
+     triface bgmtet;
+@@ -28533,6 +28579,8 @@
+   face startsh, spinsh, checksh;
+   int i;
+ 
++  refreshpointsize(newpt);
++
+   if (optflag) {
+     mytetlist = new list(sizeof(triface), NULL, 1024);
+     myflipque = new queue(sizeof(badface));
+@@ -28604,7 +28652,7 @@
+       // Check if p encroaches adjacent subfaces.
+       tallencsubs(newpt, 1, &tetlist);
+     }
+-    if (chkbadtet) {
++    if (chkbadtet && scalarbackgroundstate != ScalarFailed) {
+       // Check if there are new bad quality tets at p.
+       for (i = 0; i < tetlist->len(); i++) {
+         starttet = * (triface *)(* tetlist)[i];
+@@ -28813,10 +28861,12 @@
+ 
+   // Loop until the pool 'badsubsegs' is empty. Note that steinerleft == -1
+   //   if an unlimited number of Steiner points is allowed.
+-  while ((badsubsegs->items > 0) && (steinerleft != 0)) {
++  while ((badsubsegs->items > 0) && (steinerleft != 0) &&
++         scalarbackgroundstate != ScalarFailed) {
+     badsubsegs->traversalinit();
+     encloop = badfacetraverse(badsubsegs);
+-    while ((encloop != (badface *) NULL) && (steinerleft != 0)) {
++    while ((encloop != (badface *) NULL) && (steinerleft != 0) &&
++         scalarbackgroundstate != ScalarFailed) {
+       // Get an encroached subsegment s.
+       splitseg = encloop->ss;
+       // Clear the in-queue flag in s.
+@@ -28937,7 +28987,8 @@
+ 
+   // Loop until the pool 'badsubfaces' is empty. Note that steinerleft == -1
+   //   if an unlimited number of Steiner points is allowed.
+-  while ((badsubfaces->items > 0) && (steinerleft != 0)) {
++  while ((badsubfaces->items > 0) && (steinerleft != 0) &&
++         scalarbackgroundstate != ScalarFailed) {
+     // Get an encroached subface f.
+     encloop = dequeueencsub(&quenumber);
+     splitsub = encloop->ss;
+@@ -29124,7 +29175,8 @@
+ 
+   // Loop until pool 'badtetrahedrons' is empty. Note that steinerleft == -1
+   //   if an unlimited number of Steiner points is allowed.
+-  while ((badtetrahedrons->items > 0) && (steinerleft != 0)) {
++  while ((badtetrahedrons->items > 0) && (steinerleft != 0) &&
++         scalarbackgroundstate != ScalarFailed) {
+     // Get a bad-quality tet t.
+     badtet = topbadtetra();
+     // Make sure that the tet is still the same one when it was tested.
+@@ -29211,7 +29263,7 @@
+           if (badsubfaces->items > 0) {
+             repairencsubs(true);
+           }
+-          if (points->items > oldptnum) {
++          if (scalarbackgroundstate != ScalarFailed && points->items > oldptnum) {
+             // Some encroaching subsegments/subfaces got split. Re-queue the
+             //   tet if it is still alive.
+             starttet = badtet->tt;
+@@ -29298,6 +29350,11 @@
+   vertcount = points->items;
+   // Fix encroached segments without noting any enc subfaces.
+   repairencsegs(false, false);
++  if (scalarbackgroundstate == ScalarFailed) {
++    delete badsubsegs;
++    badsubsegs = NULL;
++    return;
++  }
+   if (b->verbose > 0) {
+     printf("  %ld split points.\n", points->items - vertcount);
+   }
+@@ -29316,6 +29373,12 @@
+   vertcount = points->items;
+   // Fix encroached subfaces without noting bad tetrahedra.
+   repairencsubs(false);
++  if (scalarbackgroundstate == ScalarFailed) {
++    delete badsubfaces;
++    delete badsubsegs;
++    badsubfaces = badsubsegs = NULL;
++    return;
++  }
+   if (b->verbose > 0) {
+     printf("  %ld split points.\n", points->items - vertcount);
+   }
+@@ -29345,6 +29408,7 @@
+     }
+     total += points->items - vertcount;
+     delete badtetrahedrons;
++    badtetrahedrons = NULL;
+   }
+ 
+   if (b->verbose > 0) {
+@@ -29353,6 +29417,7 @@
+ 
+   delete badsubfaces;
+   delete badsubsegs;
++  badsubsegs = badsubfaces = NULL;
+ }
+ 
+ ////                                                                       ////
+@@ -29950,6 +30015,8 @@
+   if (iter > 0) {
+     if (segflag) smoothsegverts++;
+     for (i = 0; i < 3; i++) smthpt[i] = startpt[i];
++    refreshpointsize(smthpt);
++    if (scalarbackgroundstate == ScalarFailed) return false;
+     if (b->verbose > 1) {
+       printf("    Move to new location (%g, %g, %g).\n", smthpt[0], smthpt[1],
+              smthpt[2]);
+@@ -29985,7 +30052,7 @@
+ 
+   // Find a Steiner volume point and smooth it.
+   smthed = false;
+-  for (i = 0; i < 4 && !smthed; i++) {
++  for (i = 0; i < 4 && !smthed && scalarbackgroundstate != ScalarFailed; i++) {
+     smthpt = (point) remedge->tt.tet[4 + i];
+     // Is it a volume point?
+     if (pointtype(smthpt) == FREEVOLVERTEX) {
+@@ -30097,9 +30164,10 @@
+       setnewpointsize(newpt, pt[0], NULL);
+       if (steinerleft > 0) steinerleft--;
+       // Smooth p.
+-      smoothpoint(newpt, pt[0], pt[1], ceillist, false, NULL);
++      if (scalarbackgroundstate != ScalarFailed)
++        smoothpoint(newpt, pt[0], pt[1], ceillist, false, NULL);
+       // Queue new slivers.
+-      for (i = 0; i < ceillist->len(); i++) {
++      for (i = 0; i < ceillist->len() && scalarbackgroundstate != ScalarFailed; i++) {
+         starttet = * (triface *)(* ceillist)[i];
+         checktet4opt(&starttet, true);
+       }
+@@ -30138,7 +30206,7 @@
+       setnewpointsize(newpt, pt[0], NULL);
+       if (steinerleft > 0) steinerleft--;
+       // Queue new slivers.
+-      for (i = 0; i < ceillist->len(); i++) {
++      for (i = 0; i < ceillist->len() && scalarbackgroundstate != ScalarFailed; i++) {
+         starttet = * (triface *)(* ceillist)[i];
+         checktet4opt(&starttet, true);
+       }
+@@ -30320,7 +30388,7 @@
+       // Clean the pool of bad tets.
+       badtetrahedrons->restart();
+       slivercount = 0;
+-      for (i = 0; i < splittetlist->len(); i++) {
++      for (i = 0; i < splittetlist->len() && scalarbackgroundstate != ScalarFailed; i++) {
+         remtet = (badface *)(* splittetlist)[i];
+         if (!isdead(&remtet->tt) && org(remtet->tt) == remtet->forg &&
+             dest(remtet->tt) == remtet->fdest && 
+@@ -30360,7 +30428,7 @@
+             newbadtet = (badface *) badtetrahedrons->alloc();
+             *newbadtet = *remtet;
+             // Try to remove this tet.
+-            if (!smoothsliver(remtet, tetlist)) {
++            if (!smoothsliver(remtet, tetlist) && scalarbackgroundstate != ScalarFailed) {
+               splitsliver(remtet, tetlist, ceillist);
+             }
+           }
+@@ -30373,7 +30441,7 @@
+     }
+ 
+     optpasscount++;
+-  } while ((badtetrahedrons->items > 0) && (optpasscount < b->optpasses));
++  } while ((badtetrahedrons->items > 0) && (optpasscount < b->optpasses) && scalarbackgroundstate != ScalarFailed);
+ 
+   if (b->verbose) {
+     if (opt_tet_peels > 0l) {
+@@ -34056,6 +34124,7 @@
+ void tetrahedralize(tetgenbehavior *b, tetgenio *in, tetgenio *out,
+   tetgenio *addin, tetgenio *bgmin)
+ {
++  std::unique_ptr<tetgenmesh> backgroundOwner;
+   tetgenmesh m;
+   // Variables for timing the performance of TetGen (defined in time.h).
+   clock_t tv[17];
+@@ -34067,7 +34136,8 @@
+   m.macheps = exactinit();
+   m.steinerleft = b->steiner;
+   if (b->metric) {
+-    m.bgm = new tetgenmesh();
++    backgroundOwner.reset(new tetgenmesh());
++    m.bgm = backgroundOwner.get();
+     m.bgm->b = b;
+     m.bgm->in = bgmin;
+     m.bgm->macheps = exactinit();
+@@ -34204,7 +34274,11 @@
+   }
+ 
+   if (b->metric) {
++    if (bgmin && bgmin->numberofpointmtrs == 1) {
++      m.scalarbackgroundstate = tetgenmesh::ScalarValid;
++    }
+     m.interpolatesizemap();
++    if (m.scalarbackgroundstate == tetgenmesh::ScalarFailed) terminatetetgen(3);
+   }
+ 
+   tv[9] = clock();
+@@ -34231,6 +34305,7 @@
+ 
+   if (b->quality) {
+     m.enforcequality();
++    if (m.scalarbackgroundstate == tetgenmesh::ScalarFailed) terminatetetgen(3);
+   }
+ 
+   tv[11] = clock();
+@@ -34244,6 +34319,7 @@
+ 
+   if (b->quality && (b->optlevel > 0)) {
+     m.optimizemesh2(true);
++    if (m.scalarbackgroundstate == tetgenmesh::ScalarFailed) terminatetetgen(3);
+   }
+ 
+   tv[12] = clock();
+@@ -34253,6 +34329,11 @@
+       printf("Optimize seconds:  %g\n",
+              (tv[12] - tv[11]) / (REAL) CLOCKS_PER_SEC);
+     }
++  }
++
++  if (m.scalarbackgroundstate == tetgenmesh::ScalarValid) {
++    m.interpolatesizemap();
++    if (m.scalarbackgroundstate == tetgenmesh::ScalarFailed) terminatetetgen(3);
+   }
+ 
+   if (!b->nojettison && ((m.dupverts > 0) || (m.unuverts > 0)
+@@ -34402,9 +34483,6 @@
+     m.statistics();
+   }
+ 
+-  if (b->metric) {
+-    delete m.bgm;
+-  }
+ }
+ 
+ #ifndef TETLIBRARY
+--- a/vtkVmtk/Utilities/tetgen1.4.3/tetgen.h
++++ b/vtkVmtk/Utilities/tetgen1.4.3/tetgen.h
+@@ -2126,9 +2126,14 @@
+ //                                                                           //
+ ///////////////////////////////////////////////////////////////////////////////
+ 
++  enum ScalarBackgroundState { ScalarNotRequired, ScalarValid, ScalarFailed };
++  ScalarBackgroundState scalarbackgroundstate;
++  void refreshpointsize(point pt);
++
+   tetgenmesh()
+   {
+     bgm = (tetgenmesh *) NULL;
++    scalarbackgroundstate = ScalarNotRequired;
+     in = (tetgenio *) NULL;
+     b = (tetgenbehavior *) NULL;
+ 
+@@ -3168,7 +3173,7 @@
+ 
+ inline void tetgenmesh::setpointtype(point pt, enum verttype value) {
+   ((int *) (pt))[pointmarkindex + 1] = 
+-    ((int) value << 1) + (((int *) (pt))[pointmarkindex + 1] & (int) 1);
++    (2 * (int) value) + (((int *) (pt))[pointmarkindex + 1] & (int) 1);
+ }
+ 
+ // pinfect(), puninfect(), pinfected() -- primitives to flag or unflag
+--- a/vtkVmtk/Utilities/tetgen1.4.3/predicates.cxx
++++ b/vtkVmtk/Utilities/tetgen1.4.3/predicates.cxx
+@@ -1051,19 +1051,19 @@
+   eindex = findex = 0;
+   if ((fnow > enow) == (fnow > -enow)) {
+     Q = enow;
+-    enow = e[++eindex];
++    if (++eindex < elen) enow = e[eindex];
+   } else {
+     Q = fnow;
+-    fnow = f[++findex];
++    if (++findex < flen) fnow = f[findex];
+   }
+   hindex = 0;
+   if ((eindex < elen) && (findex < flen)) {
+     if ((fnow > enow) == (fnow > -enow)) {
+       Fast_Two_Sum(enow, Q, Qnew, hh);
+-      enow = e[++eindex];
++      if (++eindex < elen) enow = e[eindex];
+     } else {
+       Fast_Two_Sum(fnow, Q, Qnew, hh);
+-      fnow = f[++findex];
++      if (++findex < flen) fnow = f[findex];
+     }
+     Q = Qnew;
+     if (hh != 0.0) {
+@@ -1072,10 +1072,10 @@
+     while ((eindex < elen) && (findex < flen)) {
+       if ((fnow > enow) == (fnow > -enow)) {
+         Two_Sum(Q, enow, Qnew, hh);
+-        enow = e[++eindex];
++        if (++eindex < elen) enow = e[eindex];
+       } else {
+         Two_Sum(Q, fnow, Qnew, hh);
+-        fnow = f[++findex];
++        if (++findex < flen) fnow = f[findex];
+       }
+       Q = Qnew;
+       if (hh != 0.0) {
+@@ -1085,7 +1085,7 @@
+   }
+   while (eindex < elen) {
+     Two_Sum(Q, enow, Qnew, hh);
+-    enow = e[++eindex];
++    if (++eindex < elen) enow = e[eindex];
+     Q = Qnew;
+     if (hh != 0.0) {
+       h[hindex++] = hh;
+@@ -1093,7 +1093,7 @@
+   }
+   while (findex < flen) {
+     Two_Sum(Q, fnow, Qnew, hh);
+-    fnow = f[++findex];
++    if (++findex < flen) fnow = f[findex];
+     Q = Qnew;
+     if (hh != 0.0) {
+       h[hindex++] = hh;
+--- a/vtkVmtk/Misc/vtkvmtkTetGenWrapper.cxx
++++ b/vtkVmtk/Misc/vtkvmtkTetGenWrapper.cxx
+@@ -34,6 +34,298 @@
+ #include "tetgen.h"
+ 
+ #include <iostream>
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstdio>
++#include <limits>
++#include <map>
++#include <memory>
++#include <set>
++#include <stdexcept>
++#include <vector>
++#include "vtkErrorCode.h"
++#include "vtkNew.h"
++
++
++namespace
++{
++using Coordinate = std::array<REAL, 3>;
++using Face = std::array<int, 3>;
++
++void Require(bool condition, const char* message)
++{
++  if (!condition) throw std::runtime_error(message);
++}
++
++int NativeCount(vtkIdType count)
++{
++  Require(count >= 0 && count <= std::numeric_limits<int>::max() / 10,
++          "Mesh count exceeds the native allocation/index range.");
++  return static_cast<int>(count);
++}
++
++bool PositiveOrientation(Coordinate a, Coordinate b, Coordinate c, Coordinate d)
++{
++  long double u[3], v[3], w[3];
++  for (int k = 0; k < 3; ++k)
++    {
++    u[k] = static_cast<long double>(b[k]) - a[k];
++    v[k] = static_cast<long double>(c[k]) - a[k];
++    w[k] = static_cast<long double>(d[k]) - a[k];
++    }
++  const long double terms[] = {u[0]*v[1]*w[2], u[1]*v[2]*w[0],
++    u[2]*v[0]*w[1], -u[0]*v[2]*w[1], -u[1]*v[0]*w[2], -u[2]*v[1]*w[0]};
++  long double value = 0, magnitude = 0;
++  for (long double term : terms)
++    {
++    value += term;
++    magnitude += std::abs(term);
++    }
++  // Each term has three subtractions and two products; summation adds five
++  // operations. Coordinates are the represented doubles, not guessed reals.
++  const long double uRound = std::numeric_limits<long double>::epsilon();
++  const long double error = (16*uRound/(1-16*uRound))*magnitude;
++  if (std::isfinite(value) && std::isfinite(error) && std::abs(value) > error)
++    return value > 0;
++
++  // tetrahedralize initializes the predicates before either publication check.
++  // orient3d has the opposite sign to the VTK tetrahedral determinant.
++  const REAL orientation = orient3d(a.data(), b.data(), c.data(), d.data());
++  return std::isfinite(orientation) && orientation < 0;
++}
++
++std::vector<Coordinate> NativePoints(const tetgenio& data)
++{
++  Require(data.numberofpoints > 0 && data.pointlist,
++          "TetGen returned no points.");
++  NativeCount(data.numberofpoints);
++  std::vector<Coordinate> points(data.numberofpoints);
++  for (int i = 0; i < data.numberofpoints; ++i)
++    for (int k = 0; k < 3; ++k)
++      {
++      points[i][k] = data.pointlist[3*i+k];
++      Require(std::isfinite(points[i][k]), "TetGen returned a nonfinite point.");
++      }
++  return points;
++}
++
++std::vector<bool> ValidateVolume(const tetgenio& data)
++{
++  auto points = NativePoints(data);
++  Require(data.numberoftetrahedra > 0 && data.numberofcorners == 4 &&
++          data.tetrahedronlist, "TetGen returned no linear tetrahedral core.");
++  NativeCount(data.numberoftetrahedra);
++  std::vector<bool> incident(points.size(), false);
++  for (int i = 0; i < data.numberoftetrahedra; ++i)
++    {
++    int ids[4];
++    for (int k = 0; k < 4; ++k)
++      {
++      ids[k] = data.tetrahedronlist[4*i+k];
++      Require(ids[k] >= 0 && ids[k] < data.numberofpoints,
++              "TetGen returned an invalid tetrahedral index.");
++      incident[ids[k]] = true;
++      }
++    Require(PositiveOrientation(points[ids[0]], points[ids[1]],
++                                points[ids[2]], points[ids[3]]),
++            "TetGen returned an inverted or unresolved tetrahedron.");
++    }
++  return incident;
++}
++
++struct LengthSample
++{
++  Coordinate position;
++  REAL length;
++};
++
++class SizedSurface final
++{
++public:
++  SizedSurface(vtkUnstructuredGrid& input, vtkDataArray* lengths)
++  {
++    const int count = NativeCount(input.GetNumberOfPoints());
++    const int cellCount = NativeCount(input.GetNumberOfCells());
++    Require(count >= 4 && cellCount >= 4, "Sizing needs a closed triangular surface.");
++    Require(lengths && lengths->GetNumberOfComponents() == 1 &&
++            lengths->GetNumberOfTuples() == count,
++            "Sizing needs exactly one scalar length per input point.");
++    std::set<Coordinate> coordinates;
++    for (int i = 0; i < count; ++i)
++      {
++      LengthSample sample;
++      input.GetPoint(i, sample.position.data());
++      sample.length = lengths->GetComponent(i, 0);
++      Require(std::all_of(sample.position.begin(), sample.position.end(),
++                         [](REAL x) { return std::isfinite(x); }),
++              "Sizing coordinates must be finite.");
++      Require(std::isfinite(sample.length) && sample.length > 0,
++              "Sizing lengths must be finite and positive.");
++      Require(coordinates.insert(sample.position).second,
++              "Sizing coordinates must be unique.");
++      this->Samples.push_back(sample);
++      }
++    std::vector<bool> used(count, false);
++    using Edge = std::pair<int, int>;
++    std::map<Edge, std::vector<std::pair<int, int>>> edges;
++    for (int i = 0; i < cellCount; ++i)
++      {
++      Require(input.GetCellType(i) == VTK_TRIANGLE,
++              "Sizing accepts only triangular surface cells.");
++      vtkIdType size;
++      const vtkIdType* ids;
++      input.GetCellPoints(i, size, ids);
++      Require(size == 3, "Sizing facet is not a triangle.");
++      Face face;
++      for (int k = 0; k < 3; ++k)
++        {
++        Require(ids[k] >= 0 && ids[k] < count, "Sizing facet index is invalid.");
++        face[k] = static_cast<int>(ids[k]);
++        used[face[k]] = true;
++        }
++      Require(face[0] != face[1] && face[1] != face[2] && face[2] != face[0],
++              "Sizing facet repeats a vertex.");
++      const auto& a = this->Samples[face[0]].position;
++      const auto& b = this->Samples[face[1]].position;
++      const auto& c = this->Samples[face[2]].position;
++      long double area = 0;
++      for (int k = 0; k < 3; ++k)
++        {
++        const int j = (k+1)%3, l = (k+2)%3;
++        long double cross = (static_cast<long double>(b[j])-a[j]) *
++                            (static_cast<long double>(c[l])-a[l]) -
++                            (static_cast<long double>(b[l])-a[l]) *
++                            (static_cast<long double>(c[j])-a[j]);
++        area += cross*cross;
++        }
++      Require(std::isfinite(area) && area > 0, "Sizing facet has zero area.");
++      this->Faces.push_back(face);
++      for (int k = 0; k < 3; ++k)
++        {
++        const int aId = face[k], bId = face[(k+1)%3];
++        edges[std::minmax(aId, bId)].push_back({i, aId < bId ? 1 : -1});
++        }
++      }
++    Require(std::all_of(used.begin(), used.end(), [](bool x) { return x; }),
++            "Sizing surface contains unused points.");
++    std::vector<std::vector<std::pair<int, int>>> neighbors(cellCount);
++    for (const auto& edge : edges)
++      {
++      Require(edge.second.size() == 2, "Sizing surface is open or nonmanifold.");
++      const auto a = edge.second[0], b = edge.second[1];
++      neighbors[a.first].push_back({b.first, -a.second*b.second});
++      neighbors[b.first].push_back({a.first, -a.second*b.second});
++      }
++    std::vector<int> orientation(cellCount, 0), queue{0};
++    orientation[0] = 1;
++    for (size_t i = 0; i < queue.size(); ++i)
++      for (const auto& neighbor : neighbors[queue[i]])
++        {
++        const int direction = orientation[queue[i]]*neighbor.second;
++        if (!orientation[neighbor.first])
++          {
++          orientation[neighbor.first] = direction;
++          queue.push_back(neighbor.first);
++          }
++        Require(orientation[neighbor.first] == direction,
++                "Sizing surface is not orientable.");
++        }
++    Require(queue.size() == this->Faces.size(),
++            "Sizing supports one connected shell; cavity shells need hole seeds.");
++    for (int i = 0; i < cellCount; ++i)
++      if (orientation[i] < 0) std::swap(this->Faces[i][1], this->Faces[i][2]);
++    this->CheckEmbedding();
++  }
++
++  std::vector<LengthSample> Samples;
++  std::vector<Face> Faces;
++
++private:
++  void CheckEmbedding() const
++  {
++    tetgenmesh predicates;
++    predicates.macheps = exactinit();
++    for (size_t i = 0; i < this->Faces.size(); ++i)
++      for (size_t j = i+1; j < this->Faces.size(); ++j)
++        {
++        const auto& a = this->Faces[i];
++        const auto& b = this->Faces[j];
++        bool separated = false;
++        for (int k = 0; k < 3; ++k)
++          {
++          REAL amin = this->Samples[a[0]].position[k], amax = amin;
++          REAL bmin = this->Samples[b[0]].position[k], bmax = bmin;
++          for (int l = 1; l < 3; ++l)
++            {
++            amin = std::min(amin, this->Samples[a[l]].position[k]);
++            amax = std::max(amax, this->Samples[a[l]].position[k]);
++            bmin = std::min(bmin, this->Samples[b[l]].position[k]);
++            bmax = std::max(bmax, this->Samples[b[l]].position[k]);
++            }
++          separated |= amax < bmin || bmax < amin;
++          }
++        if (separated) continue;
++        int shared = 0;
++        for (int x : a) for (int y : b) shared += x == y;
++        Require(shared < 3, "Sizing surface contains duplicate facets.");
++        Coordinate p[6];
++        for (int k = 0; k < 3; ++k)
++          {
++          p[k] = this->Samples[a[k]].position;
++          p[k+3] = this->Samples[b[k]].position;
++          }
++        const auto intersection = predicates.tri_tri_inter(p[0].data(),
++          p[1].data(), p[2].data(), p[3].data(), p[4].data(), p[5].data());
++        const auto expected = shared == 2 ? tetgenmesh::SHAREEDGE :
++          shared == 1 ? tetgenmesh::SHAREVERTEX : tetgenmesh::DISJOINT;
++        Require(intersection == expected, "Sizing surface has intersecting facets.");
++        }
++  }
++};
++
++class ScalarBackground final
++{
++public:
++  ScalarBackground(const SizedSurface& surface, double epsilon)
++  {
++    tetgenio cloud;
++    cloud.firstnumber = 0;
++    cloud.numberofpoints = NativeCount(surface.Samples.size());
++    cloud.pointlist = new REAL[3*cloud.numberofpoints];
++    std::map<Coordinate, REAL> lengths;
++    for (int i = 0; i < cloud.numberofpoints; ++i)
++      {
++      const auto& sample = surface.Samples[i];
++      std::copy(sample.position.begin(), sample.position.end(), cloud.pointlist+3*i);
++      lengths.emplace(sample.position, sample.length);
++      }
++    char options[64];
++    std::snprintf(options, sizeof(options), "T%ezQ", epsilon);
++    tetrahedralize(options, &cloud, &this->Data, nullptr, nullptr);
++    auto incident = ValidateVolume(this->Data);
++    Require(this->Data.numberofpoints == cloud.numberofpoints,
++            "Background seed lost or added a sizing sample.");
++    this->Data.numberofpointmtrs = 1;
++    this->Data.pointmtrlist = new REAL[this->Data.numberofpoints];
++    auto points = NativePoints(this->Data);
++    for (int i = 0; i < this->Data.numberofpoints; ++i)
++      {
++      const auto found = lengths.find(points[i]);
++      Require(found != lengths.end() && incident[i],
++              "Background seed moved, repeated, or isolated a sizing sample.");
++      this->Data.pointmtrlist[i] = found->second;
++      lengths.erase(found);
++      }
++    Require(lengths.empty(), "Background seed omitted a sizing sample.");
++  }
++  ScalarBackground(const ScalarBackground&) = delete;
++  ScalarBackground& operator=(const ScalarBackground&) = delete;
++  tetgenio* NativeInput() { return &this->Data; }
++private:
++  tetgenio Data;
++};
++}
+ 
+ vtkStandardNewMacro(vtkvmtkTetGenWrapper);
+ 
+@@ -106,15 +398,33 @@
+   vtkUnstructuredGrid *output = vtkUnstructuredGrid::SafeDownCast(
+     outInfo->Get(vtkDataObject::DATA_OBJECT()));
+ 
++  output->Initialize();
++  this->LastRunExitStatus = 1;
++  this->SetErrorCode(vtkErrorCode::NoError);
++  const char* stage = "input validation";
++  try
++    {
++  Require(input != nullptr, "No input mesh.");
++  if (this->UseSizingFunction)
++    {
++    Require(this->PLC && this->Quality && this->OutputVolumeElements && this->Order == 1 &&
++      !this->Refine && !this->Coarsen && !this->FixedVolume && !this->VarVolume &&
++      !this->RegionAttrib && !this->DetectInter && !this->CheckClosure,
++      "Sizing requires linear PLC quality volume meshing without conflicting modes.");
++    Require(std::isfinite(this->Epsilon) && this->Epsilon > 0 &&
++      std::isfinite(this->MinRatio) && this->MinRatio > 0 &&
++      std::isfinite(this->MinDihedral) && this->MinDihedral >= 0 &&
++      std::isfinite(this->MaxDihedral) && this->MaxDihedral > this->MinDihedral &&
++      this->MaxDihedral < 180, "Sizing quality or tolerance settings are invalid.");
++    }
+   if (this->VarVolume && !this->TetrahedronVolumeArrayName)
+     {
+-    vtkErrorMacro(<<"VarVolumeOn but TetrahedronVolumeArrayName not specified");
+-    return 1;
++    throw std::runtime_error("VarVolumeOn but TetrahedronVolumeArrayName not specified");
+     }
+ 
+   vtkStdString tetgenOptionString;
+ 
+-  char buffer[64];
++  char buffer[512];
+ 
+   if (this->PLC)
+     {
+@@ -201,7 +511,6 @@
+     }
+ 
+   tetgenOptionString += "z";  
+-// tetgenOptionString += "Y";  
+ 
+   if (this->Verbose)
+     {
+@@ -218,31 +527,16 @@
+     sizingFunctionArray = input->GetPointData()->GetArray(this->SizingFunctionArrayName);
+     }
+ 
+-  if (this->UseSizingFunction && sizingFunctionArray)
+-    {
+-    // TetGen reads a sizing function through its -m switch, and -m means "take the sizes from a
+-    // background mesh". This wrapper has no way to hand one over, so TetGen makes its own by
+-    // duplicating the mesh it is about to refine, and that path does not answer the same way
+-    // twice: the same surface, meshed twice over in one session, comes back filled with
+-    // tetrahedra one time and empty the next. Nothing is produced here rather than a mesh that
+-    // cannot be reproduced.
+-    vtkErrorMacro(<<"UseSizingFunction is on, and the sizing function array '"
+-      <<this->SizingFunctionArrayName<<"' was found on the input, so TetGen would be run with its "
+-      "-m switch. -m takes element sizes from a background mesh; with none given, TetGen builds "
+-      "one out of the mesh it is meshing, and that gives a different answer from one run to the "
+-      "next - the same input meshed twice in one session comes back tetrahedralized once and "
+-      "empty once. No mesh is generated, rather than one that cannot be reproduced.\n"
+-      "  To ask for a size without it: leave UseSizingFunction off and bound the element volume "
+-      "instead, with SetFixedVolume(1) and SetMaxVolume(v), where v is the volume of the regular "
+-      "tetrahedron of the edge length wanted - v = a*a*a/(6*sqrt(2)) for edge length a. That "
+-      "gives the same mesh every time.\n"
+-      "  A single volume bound is one size for the whole mesh, where the sizing function was a "
+-      "size per point. Where the size has to vary, vary the triangles of the surface that is "
+-      "handed in: the elements against it follow their size, and the bound then only says how "
+-      "coarse the middle may become.");
+-    this->SetLastRunExitStatus(1);
+-    return 1;
+-    }
++  std::unique_ptr<SizedSurface> surface;
++  std::unique_ptr<ScalarBackground> background;
++  if (this->UseSizingFunction)
++    {
++    surface.reset(new SizedSurface(*input, sizingFunctionArray));
++    stage = "coordinate-only background construction";
++    background.reset(new ScalarBackground(*surface, this->Epsilon));
++    tetgenOptionString += "m";
++    }
++  stage = "native input construction";
+ 
+   tetgenio in_tetgenio;
+   tetgenio out_tetgenio;
+@@ -252,24 +546,17 @@
+   const int meshDimensionality = 3; //TODO: set this
+   in_tetgenio.mesh_dim = meshDimensionality;
+ 
+-  //TODO - all point arrays except marker array
+   in_tetgenio.pointattributelist = NULL; //REAL*
+   in_tetgenio.numberofpointattributes = 0;
+-  //TODO
+ 
+   in_tetgenio.pointmtrlist = NULL;
+   in_tetgenio.numberofpointmtrs = 0;
+ 
+-  int numberOfPoints = input->GetNumberOfPoints();
++  int numberOfPoints = NativeCount(input->GetNumberOfPoints());
+ 
+   in_tetgenio.numberofpoints = numberOfPoints;
+   in_tetgenio.pointlist = new REAL[meshDimensionality * numberOfPoints];
+-#if 0
+-  if (pointMarkerArray)
+-    {
+-    in_tetgenio.pointmarkerlist = new int[numberOfPoints];
+-    }
+-#endif
++
+   if (sizingFunctionArray)
+     {
+     in_tetgenio.numberofpointmtrs = 1;
+@@ -284,30 +571,21 @@
+     in_tetgenio.pointlist[meshDimensionality * i + 0] = point[0];
+     in_tetgenio.pointlist[meshDimensionality * i + 1] = point[1];
+     in_tetgenio.pointlist[meshDimensionality * i + 2] = point[2];
+-#if 0
+-    if (pointMarkerArray)
+-      {
+-      in_tetgenio.pointmarkerlist[i] = static_cast<int>(pointMarkerArray->GetComponent(i,0));
+-      }
+-    else
+-      {
+-      in_tetgenio.pointmarkerlist[i] = 0;
+-      }
+-#endif
++
+     if (sizingFunctionArray)
+       {
+       in_tetgenio.pointmtrlist[i] = sizingFunctionArray->GetComponent(i,0);
+-      if (in_tetgenio.pointmtrlist[i] == 0.0)
++      if (!this->UseSizingFunction && in_tetgenio.pointmtrlist[i] == 0.0)
+         {
+         in_tetgenio.pointmtrlist[i] = VTK_VMTK_FLOAT_TOL;
+         }
+       }
+     }
+ 
+-  vtkIdList* facetCellIds = vtkIdList::New();
+-  vtkIdList* tetraCellIds = vtkIdList::New();
+-
+-  int numberOfCells = input->GetNumberOfCells();
++  vtkNew<vtkIdList> facetCellIds;
++  vtkNew<vtkIdList> tetraCellIds;
++
++  int numberOfCells = NativeCount(input->GetNumberOfCells());
+   for (i=0; i<numberOfCells; i++)
+     {
+     vtkCell* cell = input->GetCell(i);
+@@ -344,15 +622,13 @@
+   int numberOfFacets = facetCellIds->GetNumberOfIds();
+   int numberOfTetras = tetraCellIds->GetNumberOfIds();
+ 
+-  //TODO - input as vtkPointSet (point inside hole ([0],[1],[2]))
+   in_tetgenio.holelist = NULL; //REAL* 
+   in_tetgenio.numberofholes = 0; 
+-  //TODO
+   
+   if (numberOfFacets > 0)
+     {
+     in_tetgenio.numberoffacets = numberOfFacets;
+-    in_tetgenio.facetlist = new tetgenio::facet[numberOfFacets];
++    in_tetgenio.facetlist = new tetgenio::facet[numberOfFacets]();
+     in_tetgenio.facetmarkerlist = new int[numberOfFacets];
+ 
+     vtkDataArray* facetMarkerArray = input->GetCellData()->GetArray(this->CellEntityIdsArrayName);
+@@ -363,7 +639,7 @@
+       const vtkIdType *pts;
+       input->GetCellPoints(facetCellIds->GetId(i),npts,pts);
+       in_tetgenio.facetlist[i].numberofpolygons = 1;
+-      in_tetgenio.facetlist[i].polygonlist = new tetgenio::polygon[in_tetgenio.facetlist[i].numberofpolygons];
++      in_tetgenio.facetlist[i].polygonlist = new tetgenio::polygon[in_tetgenio.facetlist[i].numberofpolygons]();
+       in_tetgenio.facetlist[i].numberofholes = 0;
+       in_tetgenio.facetlist[i].holelist = NULL;
+       in_tetgenio.facetlist[i].polygonlist[0].numberofvertices = npts;
+@@ -384,10 +660,8 @@
+       }
+     }
+ 
+-  //TODO - all cell arrays except volume array
+   in_tetgenio.tetrahedronattributelist = NULL; //REAL* 
+   in_tetgenio.numberoftetrahedronattributes = 0; 
+-  //TODO
+ 
+   if (numberOfTetras > 0)
+     {
+@@ -435,38 +709,25 @@
+       }
+     }
+ 
+-  facetCellIds->Delete();
+-  tetraCellIds->Delete();
+-
+-  //TODO - input as vtkPointSet + arrays for attributes (point inside region ([0],[1],[2]), regional attribute [3], volume constraint [4])
++
+   in_tetgenio.regionlist = NULL; //REAL* 
+   in_tetgenio.numberofregions = 0; 
+-  //TODO
+-
+-  char tetgenOptions[512];
+-  strcpy(tetgenOptions,tetgenOptionString.c_str());
++
++  std::vector<char> options(tetgenOptionString.begin(), tetgenOptionString.end());
++  options.push_back('\0');
++  char* tetgenOptions = options.data();
+   std::cout<<"TetGen command line options: "<<tetgenOptions<<endl;
+-  try
+-    {
+-    tetrahedralize(tetgenOptions,&in_tetgenio,&out_tetgenio);
+-    }
+-  catch ( ... )
+-    {
+-    vtkErrorMacro(<<"TetGen quit with an exception.");
+-    this->LastRunExitStatus = 1;
+-    return 1;
+-    }
+-    
+-  this->LastRunExitStatus = 0;
+-
+-  //TODO
+-//  out_tetgenio.edgelist; //int* 
+-//  out_tetgenio.edgemarkerlist; //int* 
+-//  out_tetgenio.numberofedges; 
+-//  out_tetgenio.neighborlist; //int* 
+-  //TODO
+-
+-  vtkPoints* outputPoints = vtkPoints::New();
++  stage = "target tetrahedralization";
++  tetrahedralize(tetgenOptions, &in_tetgenio, &out_tetgenio, nullptr,
++                 background ? background->NativeInput() : nullptr);
++  stage = "native output validation";
++  if (this->UseSizingFunction) ValidateVolume(out_tetgenio);
++  stage = "VTK output conversion";
++  vtkNew<vtkUnstructuredGrid> staged;
++
++
++  vtkNew<vtkPoints> outputPoints;
++  if (this->UseSizingFunction) outputPoints->SetDataTypeToDouble();
+ 
+   outputPoints->SetNumberOfPoints(out_tetgenio.numberofpoints);
+   for (i=0; i<out_tetgenio.numberofpoints; i++)
+@@ -477,9 +738,9 @@
+     outputPoints->SetPoint(i,point);
+     }
+ 
+-  output->SetPoints(outputPoints);
+-
+-  vtkCellArray* outputCellArray = vtkCellArray::New();
++  staged->SetPoints(outputPoints);
++
++  vtkNew<vtkCellArray> outputCellArray;
+ 
+   int numberOfOutputCells = 0;
+ 
+@@ -493,16 +754,16 @@
+     numberOfOutputCells += out_tetgenio.numberoftrifaces;
+     }
+ 
+-  int* outputCellTypes = new int[numberOfOutputCells];
+-
+-  vtkIntArray* outputCellMarkerArray = vtkIntArray::New();
++  std::vector<int> outputCellTypes(numberOfOutputCells);
++
++  vtkNew<vtkIntArray> outputCellMarkerArray;
+   outputCellMarkerArray->SetNumberOfTuples(numberOfOutputCells);
+   outputCellMarkerArray->SetName(this->CellEntityIdsArrayName);
+   outputCellMarkerArray->FillComponent(0,0.0);
+ 
+   int cellIdOffset = 0;
+ 
+-#if 1 
++ 
+   if (this->OutputVolumeElements)
+     {
+     int outputCellType;
+@@ -549,66 +810,52 @@
+ 
+     cellIdOffset = out_tetgenio.numberoftrifaces;
+     }
+-#else
+-  if (this->OutputSurfaceElements)
+-    {
+-    int outputCellType = VTK_TRIANGLE;
+-    int numberOfTrifaceCorners = 3;
+-
+-    for (i=0; i<out_tetgenio.numberoftrifaces; i++)
+-      {
+-      outputCellArray->InsertNextCell(numberOfTrifaceCorners);
+-      for (int j=0; j<numberOfTrifaceCorners; j++)
+-        {
+-        outputCellArray->InsertCellPoint(out_tetgenio.trifacelist[i*numberOfTrifaceCorners + j]);
+-        }
+-      outputCellTypes[cellIdOffset+i] = outputCellType;
+-      outputCellMarkerArray->SetValue(cellIdOffset+i,out_tetgenio.trifacemarkerlist[i]+1);
+-      }
+-
+-    cellIdOffset = out_tetgenio.numberoftrifaces;
+-    }
+-
+-  if (this->OutputVolumeElements)
+-    {
+-    int outputCellType;
+-    switch (this->Order)
+-      {
+-      case 1:
+-        outputCellType = VTK_TETRA;
+-        break;
+-      case 2:
+-        outputCellType = VTK_QUADRATIC_TETRA;
+-        break;
+-      default:
+-        outputCellType = VTK_TETRA;
+-      }
+-    
+-    for (i=0; i<out_tetgenio.numberoftetrahedra; i++)
+-      {
+-      outputCellArray->InsertNextCell(out_tetgenio.numberofcorners);
+-      for (int j=0; j<out_tetgenio.numberofcorners; j++)
+-        {
+-        outputCellArray->InsertCellPoint(out_tetgenio.tetrahedronlist[i*out_tetgenio.numberofcorners + j]);
+-        }
+-      outputCellTypes[cellIdOffset+i] = outputCellType;
+-      }
+-
+-    cellIdOffset = out_tetgenio.numberoftetrahedra;
+-    }
+-#endif
+-
+-  output->SetCells(outputCellTypes,outputCellArray);
+-
+-  output->GetCellData()->AddArray(outputCellMarkerArray);
+-
+-  outputPoints->Delete();
+-  outputCellArray->Delete();
+-  delete[] outputCellTypes;
+-
+-  outputCellMarkerArray->Delete();
+-
++
++
++  staged->SetCells(outputCellTypes.data(),outputCellArray);
++
++  staged->GetCellData()->AddArray(outputCellMarkerArray);
++
++  if (this->UseSizingFunction)
++    {
++    stage = "converted volume validation";
++    for (vtkIdType cellId = 0; cellId < staged->GetNumberOfCells(); ++cellId)
++      {
++      vtkIdType count;
++      const vtkIdType* ids;
++      staged->GetCellPoints(cellId, count, ids);
++      for (vtkIdType j = 0; j < count; ++j)
++        Require(ids[j] >= 0 && ids[j] < staged->GetNumberOfPoints(),
++                "Converted cell has an invalid point index.");
++      if (staged->GetCellType(cellId) == VTK_TETRA)
++        {
++        Coordinate p[4];
++        for (int j = 0; j < 4; ++j) staged->GetPoint(ids[j], p[j].data());
++        Require(PositiveOrientation(p[0], p[1], p[2], p[3]),
++                "Converted tetrahedron is inverted or unresolved.");
++        }
++      }
++    }
++  output->ShallowCopy(staged);
++  this->LastRunExitStatus = 0;
+   return 1;
++    }
++  catch (int code)
++    {
++    vtkErrorMacro(<<stage<<": TetGen threw integer "<<code<<".");
++    }
++  catch (const std::exception& error)
++    {
++    vtkErrorMacro(<<stage<<": "<<error.what());
++    }
++  catch (...)
++    {
++    vtkErrorMacro(<<stage<<": unknown failure.");
++    }
++  output->Initialize();
++  this->LastRunExitStatus = 1;
++  this->SetErrorCode(vtkErrorCode::UserError);
++  return 0;
+ }
+ 
+ void vtkvmtkTetGenWrapper::PrintSelf(std::ostream& os, vtkIndent indent)
+--- a/vtkVmtk/Misc/vtkvmtkTetGenWrapper.h
++++ b/vtkVmtk/Misc/vtkvmtkTetGenWrapper.h
+@@ -102,9 +102,9 @@
+ 
+   ///@{
+   /**
+-   * Toggle variable (mesh-size-driven) maximum tetrahedron volume constraint (TetGen "-a" switch
+-   * without a following number, using a sizing function -- see UseSizingFunction/
+-   * SizingFunctionArrayName). Default: off.
++   * Toggle per-tetrahedron maximum volume constraints from TetrahedronVolumeArrayName
++   * (TetGen "-a" without a following number). These are volumes, independent of
++   * the point lengths selected by UseSizingFunction. Default: off.
+    */
+   vtkSetMacro(VarVolume,int);
+   vtkGetMacro(VarVolume,int);
+@@ -258,8 +258,8 @@
+   ///@{
+   /**
+    * Set/Get the name of the point data array of the input surface holding the desired local mesh
+-   * size (target tetrahedron edge length/volume) at each point, used when UseSizingFunction (and
+-   * VarVolume) are on. See vtkvmtkPolyDataSizingFunction.
++   * length at each point, used when UseSizingFunction is on. The array must contain
++   * one finite positive scalar per point. See vtkvmtkPolyDataSizingFunction.
+    * Commonly named "VolumeSizingFunction".
+    */
+   vtkSetStringMacro(SizingFunctionArrayName);
+@@ -287,15 +287,13 @@
+ 
+   ///@{
+   /**
+-   * Toggle using the per-point sizing function (SizingFunctionArrayName) as a spatially-varying
+-   * maximum tetrahedron volume constraint (TetGen "-m" switch, used together with VarVolume).
+-   * Default: off.
+-   *
+-   * Turning this on is refused, with an error saying what to do instead: "-m" takes its sizes
+-   * from a background mesh, this wrapper cannot supply one, and the mesh TetGen then builds for
+-   * itself puts it on a path that does not answer the same way twice - the same input meshed
+-   * twice in one session comes back tetrahedralized once and empty once. Bound the element
+-   * volume with FixedVolume and MaxVolume instead.
++   * Toggle a scalar length field (TetGen "-m"). The wrapper constructs a private
++   * coordinate-only Delaunay background and attaches the original point lengths.
++   * Sizing requires a closed, connected, embedded triangular surface, linear
++   * PLC quality meshing and volume output. Refinement, coarsening, volume bounds,
++   * region attributes and diagnostic-only modes cannot be combined with sizing.
++   * Invalid input or failed native work leaves empty output and a nonzero status.
++   * Successful sized output uses double-precision points. Default: off.
+    */
+   vtkSetMacro(UseSizingFunction,int);
+   vtkGetMacro(UseSizingFunction,int);
+@@ -303,11 +301,11 @@
+   ///@}
+ 
+   /**
+-   * Set the exit status recorded for the most recent TetGen run; set internally after each
+-   * RequestData(), 0 on success, non-zero on failure. Only a setter is provided (no corresponding
+-   * getter is declared).
++   * Set/Get the most recent request status: zero only after successful output
++   * publication, nonzero on failure. Failures also set the VTK error code.
+    */
+   vtkSetMacro(LastRunExitStatus,int);
++  vtkGetMacro(LastRunExitStatus,int);
+  
+   protected:
+   vtkvmtkTetGenWrapper();
+--- a/vmtkScripts/vmtktetgen.py
++++ b/vmtkScripts/vmtktetgen.py
+@@ -100,14 +100,16 @@
+ 
+     def Execute(self):
+ 
+-        if self.Mesh == None:
+-            self.PrintError('Error: No input mesh.')
++        mesh = self.Mesh
++        self.Mesh = None
++        if mesh is None:
++            raise RuntimeError('No input mesh.')
+ 
+         if self.GenerateCaps == 1:
+-            if not ((self.Mesh.IsHomogeneous() == 1) & (self.Mesh.GetCellType(0) == 5)):
+-                self.PrintError('Error: In order to generate caps, all input mesh elements must be triangles.')
++            if not ((mesh.IsHomogeneous() == 1) & (mesh.GetCellType(0) == 5)):
++                raise RuntimeError('In order to generate caps, all input mesh elements must be triangles.')
+             meshToSurfaceFilter = vtk.vtkGeometryFilter()
+-            meshToSurfaceFilter.SetInputData(self.Mesh)
++            meshToSurfaceFilter.SetInputData(mesh)
+             meshToSurfaceFilter.Update()
+             cap = vtkvmtk.vtkvmtkSimpleCapPolyData()
+             cap.SetInputConnection(meshToSurfaceFilter.GetOutputPort())
+@@ -116,10 +118,10 @@
+             surfacetomesh = vtkvmtk.vtkvmtkPolyDataToUnstructuredGridFilter()
+             surfacetomesh.SetInputConnection(cap.GetOutputPort())
+             surfacetomesh.Update()
+-            self.Mesh = surfacetomesh.GetOutput()
++            mesh = surfacetomesh.GetOutput()
+ 
+         tetgen = vtkvmtk.vtkvmtkTetGenWrapper()
+-        tetgen.SetInputData(self.Mesh)
++        tetgen.SetInputData(mesh)
+         tetgen.SetPLC(self.PLC)
+         tetgen.SetRefine(self.Refine)
+         tetgen.SetCoarsen(self.Coarsen)
+@@ -148,6 +150,8 @@
+         tetgen.SetOutputVolumeElements(self.OutputVolumeElements)
+         tetgen.Update()
+ 
++        if tetgen.GetLastRunExitStatus() != 0:
++            raise RuntimeError('TetGen failed; no mesh was generated.')
+         self.Mesh = tetgen.GetOutput()
+ 
+ 
+--- a/vmtkScripts/vmtkmeshgenerator.py
++++ b/vmtkScripts/vmtkmeshgenerator.py
+@@ -97,9 +97,11 @@
+ 
+     def Execute(self):
+ 
++        self.Mesh = None
++        self.RemeshedSurface = None
+         from vmtk import vmtkscripts
+         if self.Surface == None:
+-            self.PrintError('Error: No input surface.')
++            raise RuntimeError('No input surface.')
+ 
+         wallEntityOffset = 1
+ 
+@@ -247,14 +249,6 @@
+             tetgen.OutputVolumeElements = 1
+             tetgen.Execute()
+ 
+-            #w = vtk.vtkXMLUnstructuredGridWriter()
+-            #w.SetInput(tetgen.Mesh)
+-            #w.SetFileName('tet.vtu')
+-            #w.Write()
+-
+-            if tetgen.Mesh.GetNumberOfCells() == 0 and surfaceToMesh.Mesh.GetNumberOfCells() > 0:
+-                self.PrintLog('An error occurred during tetrahedralization. Will only output surface mesh and boundary layer.')
+-
+             if not self.BoundaryLayerOnCaps:
+                 surfaceToMesh.Mesh.GetCellData().GetArray(self.CellEntityIdsArrayName).FillComponent(0,wallEntityOffset)
+ 
+@@ -264,12 +258,11 @@
+             appendFilter.AddInputData(boundaryLayer.Mesh)
+             appendFilter.AddInputData(tetgen.Mesh)
+ 
+-            #appendFilter.AddInput(boundaryLayer.InnerSurfaceMesh)
+-
+             if not self.BoundaryLayerOnCaps:
+                 threshold = vtk.vtkThreshold()
+                 threshold.SetInputData(surfaceToMesh2.Mesh)
+-                threshold.ThresholdByUpper(1.5)
++                threshold.SetUpperThreshold(1.5)
++                threshold.SetThresholdFunction(vtk.vtkThreshold.THRESHOLD_UPPER)
+                 threshold.SetInputArrayToProcess(0,0,0,1,self.CellEntityIdsArrayName)
+                 threshold.Update()
+                 endcaps = threshold.GetOutput()
+@@ -277,14 +270,14 @@
+ 
+             appendFilter.Update()
+ 
+-            self.Mesh = appendFilter.GetOutput()
+-
+-            if not self.BoundaryLayerOnCaps:
+-                cellEntityIdsArray = self.Mesh.GetCellData().GetArray(self.CellEntityIdsArrayName)
++            mesh = appendFilter.GetOutput()
++
++            if not self.BoundaryLayerOnCaps:
++                cellEntityIdsArray = mesh.GetCellData().GetArray(self.CellEntityIdsArrayName)
+ 
+                 def VisitNeighbors(i, cellEntityId):
+                     cellPointIds = vtk.vtkIdList()
+-                    self.Mesh.GetCellPoints(i,cellPointIds)
++                    mesh.GetCellPoints(i,cellPointIds)
+                     neighborPointIds = vtk.vtkIdList()
+                     neighborPointIds.SetNumberOfIds(1)
+                     pointNeighborCellIds = vtk.vtkIdList()
+@@ -292,14 +285,14 @@
+ 
+                     for j in range(cellPointIds.GetNumberOfIds()):
+                         neighborPointIds.SetId(0,cellPointIds.GetId(j))
+-                        self.Mesh.GetCellNeighbors(i,neighborPointIds,pointNeighborCellIds)
++                        mesh.GetCellNeighbors(i,neighborPointIds,pointNeighborCellIds)
+                         for k in range(pointNeighborCellIds.GetNumberOfIds()):
+                             neighborCellIds.InsertNextId(pointNeighborCellIds.GetId(k))
+ 
+                     for j in range(neighborCellIds.GetNumberOfIds()):
+                         cellId = neighborCellIds.GetId(j)
+                         neighborCellEntityId = cellEntityIdsArray.GetTuple1(cellId)
+-                        neighborCellType = self.Mesh.GetCellType(cellId)
++                        neighborCellType = mesh.GetCellType(cellId)
+                         if neighborCellType not in [vtk.VTK_TRIANGLE, vtk.VTK_QUADRATIC_TRIANGLE, vtk.VTK_QUAD]:
+                             continue
+                         if neighborCellEntityId != placeholderCellEntityId:
+@@ -307,9 +300,9 @@
+                         cellEntityIdsArray.SetTuple1(cellId,cellEntityId)
+                         VisitNeighbors(cellId,cellEntityId)
+ 
+-                for i in range(self.Mesh.GetNumberOfCells()):
++                for i in range(mesh.GetNumberOfCells()):
+                     cellEntityId = cellEntityIdsArray.GetTuple1(i)
+-                    cellType = self.Mesh.GetCellType(i)
++                    cellType = mesh.GetCellType(i)
+                     if cellType not in [vtk.VTK_TRIANGLE, vtk.VTK_QUADRATIC_TRIANGLE, vtk.VTK_QUAD]:
+                         continue
+                     if cellEntityId in [0, 1, placeholderCellEntityId]:
+@@ -346,20 +339,17 @@
+             tetgen.OutputVolumeElements = 1
+             tetgen.Execute()
+ 
+-            self.Mesh = tetgen.Mesh
+-
+-            if self.Mesh.GetNumberOfCells() == 0 and surfaceToMesh.Mesh.GetNumberOfCells() > 0:
+-                self.PrintLog('An error occurred during tetrahedralization. Will only output surface mesh.')
+-                self.Mesh = surfaceToMesh.Mesh
++            mesh = tetgen.Mesh
+ 
+         if self.Tetrahedralize:
+ 
+             tetrahedralize = vtkvmtk.vtkvmtkUnstructuredGridTetraFilter()
+-            tetrahedralize.SetInputData(self.Mesh)
++            tetrahedralize.SetInputData(mesh)
+             tetrahedralize.Update()
+ 
+-            self.Mesh = tetrahedralize.GetOutput()
+-
++            mesh = tetrahedralize.GetOutput()
++
++        self.Mesh = mesh
+         self.RemeshedSurface = remeshedSurface
+ 
+ 
+--- a/vtkVmtk/Misc/vtkvmtkUnstructuredGridTetraFilter.cxx
++++ b/vtkVmtk/Misc/vtkvmtkUnstructuredGridTetraFilter.cxx
+@@ -196,7 +196,14 @@
+       {
+       ptId = cell->PointIds->GetId(j);
+       cell->Points->GetPoint(j, x);
+-      this->Triangulator->InsertPoint(ptId, x, p, 0);
++      // VTK wedges and tetrahedra use opposite reference handedness.
++      double reference[3] = {p[0], p[1], p[2]};
++      if (cell->GetCellType() == VTK_WEDGE)
++        {
++        reference[0] = p[1];
++        reference[1] = p[0];
++        }
++      this->Triangulator->InsertPoint(ptId, x, reference, 0);
+       }//for all cell points
+     if ( cell->IsPrimaryCell() ) //use templates if topology is fixed
+       {
+--- a/vtkVmtk/Misc/vtkvmtkBoundaryLayerGenerator.cxx
++++ b/vtkVmtk/Misc/vtkvmtkBoundaryLayerGenerator.cxx
+@@ -156,6 +156,8 @@
+ 
+   vtkPoints* outputPoints = vtkPoints::New();
+   vtkPoints* warpedPoints = vtkPoints::New();
++  outputPoints->SetDataType(inputPoints->GetDataType());
++  warpedPoints->SetDataType(inputPoints->GetDataType());
+ 
+   vtkCellArray* boundaryLayerCellArray = vtkCellArray::New();
+   vtkIdList* boundaryLayerCellTypes = vtkIdList::New();
+@@ -516,6 +518,7 @@
+   this->InnerSurface->DeepCopy(input);
+ 
+   vtkPoints* innerSurfacePoints = vtkPoints::New();
++  innerSurfacePoints->SetDataType(outputPoints->GetDataType());
+   innerSurfacePoints->SetNumberOfPoints(numberOfInputPoints);
+   for (i=0; i<numberOfInputPoints; i++)
+     {
+@@ -590,7 +593,8 @@
+ void vtkvmtkBoundaryLayerGenerator::IncrementalWarpVectors(vtkUnstructuredGrid* input, int numberOfSubsteps, double relaxation)
+ {   
+   vtkPoints* inputPoints = input->GetPoints();
+-  vtkPoints* warpedPoints = vtkPoints::New();    
++  vtkPoints* warpedPoints = vtkPoints::New();
++  warpedPoints->SetDataType(inputPoints->GetDataType());
+   vtkIdType numberOfInputPoints = inputPoints->GetNumberOfPoints();    
+ 
+   vtkPoints* basePoints = vtkPoints::New();
+--- a/vtkVmtk/ComputationalGeometry/vtkvmtkAppendFilter.cxx
++++ b/vtkVmtk/ComputationalGeometry/vtkvmtkAppendFilter.cxx
+@@ -30,6 +30,7 @@
+ #include "vtkInformationVector.h"
+ #include "vtkObjectFactory.h"
+ #include "vtkPointData.h"
++#include "vtkPointSet.h"
+ #include "vtkUnstructuredGrid.h"
+ 
+ #include "vtkMath.h"
+@@ -92,6 +93,7 @@
+   vtkDataSetAttributes::FieldList cellList(numInputs);
+   int firstPD=1;
+   int firstCD=1;
++  int pointType = VTK_FLOAT;
+   vtkInformation *inInfo = 0;
+   for (idx = 0; idx < numInputs; ++idx)
+     {
+@@ -110,6 +112,12 @@
+ 
+       numPts += ds->GetNumberOfPoints();
+       numCells += ds->GetNumberOfCells();
++      vtkPointSet* pointSet = vtkPointSet::SafeDownCast(ds);
++      if (pointSet && pointSet->GetNumberOfPoints() > 0 &&
++          pointSet->GetPoints()->GetDataType() == VTK_DOUBLE)
++        {
++        pointType = VTK_DOUBLE;
++        }
+ 
+       ds->GetBounds(inputBounds);
+       if (vtkMath::AreBoundsInitialized(bounds))
+@@ -175,6 +183,7 @@
+   outputCD->CopyAllocate(cellList,numCells);
+ 
+   newPts = vtkPoints::New();
++  newPts->SetDataType(pointType);
+   ptIds = vtkIdList::New(); ptIds->Allocate(VTK_CELL_SIZE);
+   newPtIds = vtkIdList::New(); newPtIds->Allocate(VTK_CELL_SIZE);
+   
+--- a/PypeS/pypeserver.py
++++ b/PypeS/pypeserver.py
+@@ -46,9 +46,8 @@
+     try:
+         pipe.ParseArguments()
+         pipe.Execute()
+-    except BaseException as e:
+-        print(traceback.format_exc())
+-    del pipe
++    finally:
++        del pipe
+ 
+ 
+ def PypeServer(queue, output, error, returnIfEmptyQueue=False):
+@@ -72,7 +71,12 @@
+         try:
+             if queue:
+                 arguments = queue.pop(0)
+-                RunPypeProcess(arguments,outputStream=outputStream)
++                try:
++                    RunPypeProcess(arguments,outputStream=outputStream)
++                except BaseException:
++                    if returnIfEmptyQueue:
++                        raise
++                    print(traceback.format_exc())
+                 ranOnce = True
+             elif returnIfEmptyQueue:
+                 if ranOnce:
+@@ -80,8 +84,12 @@
+             else:
+                 time.sleep(0.5)
+         except IOError as e:
++            if returnIfEmptyQueue:
++                raise
+             print("Connection closed")
+             break
+         except KeyboardInterrupt as e:
++            if returnIfEmptyQueue:
++                raise
+             print("Connection closed")
+             break
+--- a/PypeS/pyperun.py
++++ b/PypeS/pyperun.py
+@@ -24,26 +24,34 @@
+     raise
+ 
+ if __name__=='__main__':
+-    manager = Manager()
+-    queue = manager.list()
++    pypeProcess = None
++    exitCode = 0
++    try:
++        with Manager() as manager:
++            try:
++                queue = manager.list()
++                args = sys.argv[:]
++                if sys.argv[0].startswith('pyperun'):
++                    args = sys.argv[1:]
++                queue.append(args)
+ 
+-    if sys.platform != 'darwin':
+-        pypeProcess = Process(target=pypeserver.PypeServer, args=(queue,None,None), kwargs={"returnIfEmptyQueue":True})
+-        pypeProcess.start()
+-
+-    args = sys.argv[:]
+-    if sys.argv[0].startswith('pyperun'):
+-        args = sys.argv[1:]
+-
+-    queue.append(args)
+-
+-    try:
+-        if sys.platform != 'darwin':
+-            pypeProcess.join()
+-        else:
+-            pypeserver.PypeServer(queue,None,None,returnIfEmptyQueue=True)
++                if sys.platform != 'darwin':
++                    pypeProcess = Process(target=pypeserver.PypeServer, args=(queue,None,None), kwargs={"returnIfEmptyQueue":True})
++                    pypeProcess.start()
++                    pypeProcess.join()
++                    exitCode = pypeProcess.exitcode
++                    if exitCode < 0:
++                        exitCode = 128 - exitCode
++                else:
++                    pypeserver.PypeServer(queue,None,None,returnIfEmptyQueue=True)
++            finally:
++                if pypeProcess is not None and pypeProcess.pid is not None:
++                    if pypeProcess.is_alive():
++                        pypeProcess.terminate()
++                    pypeProcess.join()
+     except KeyboardInterrupt:
+-        pypeProcess.terminate()
+-    except BaseException as e:
++        exitCode = 130
++    except Exception as e:
+         print(str(e))
+-        sys.exit(1)
++        exitCode = 1
++    sys.exit(exitCode)
