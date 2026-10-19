@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "nftsim_arm64 1.0.2": {
+      "version": "20261019",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming",
+    "hippocampus"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "nftsim"
+}

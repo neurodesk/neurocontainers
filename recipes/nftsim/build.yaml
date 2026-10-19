@@ -78,6 +78,10 @@ build:
         - cp /app/.git/refs/heads/master /app/source-commit
     - run:
         - printf '%s\n' '{{ context.base_image_tag }}' > /app/vendor-version
+        # The shipped example predates upstream's nus -> nu parameter rename.
+        # Correct its spelling without changing any numerical simulation inputs.
+        - sed -i 's/Ramp - nus:/Ramp - nu:/' /app/configs/test_coupling_ramp.conf
+        - test "$(grep -c 'Ramp - nu:' /app/configs/test_coupling_ramp.conf)" -eq 1
     - environment:
         PATH: /app/bin:$PATH
     - workdir: /app
@@ -87,6 +91,7 @@ build:
         path:
           - /app/bin
           - /app/configs
+
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAmlJREFUSEvllV1IU2EYx39nO9Ol0+bmV2OKlSbrJvHKCNNVEEJ2ISIOdpOVBOK9trooqBulEALropJFFwVRF12si31I131c2qhdhNJGbay1g+3jbHEmSmuuTpk39XIuDu/hOb/3ef7P83+FjL89j9qlrWYqcI7PiaTaCIR/D5DPgyCUqcBWS5TLw9vlNPVGLaYabSnlbwAWX68SS8icPFSNTvwhla0AsnKeJ88lHJfChZNbG0TuTjfR1VHJ9Ydxrt6LFfZrjSYS8bX3zVZDcwt9A6MYzY2FzxtdtA64GegkEAgQCoW4MN7FlLOOB74k+45eY3h4GIu1lbOnTzE7O1vyf0mS2N1uUwdQoicnJ6mK3edjXMY+eoOhoaECYPzMGDMzM/T39yPL8gYomUyyEo6qAwSDQdra2jCbzSiBbre7BCCKYhFAIakuUW9vL36/H4/Hw+Dg4KaA+fn5IsDc3ByWvd207+9Go13rwrIa2Gw2nE4nLpeLnp4eJiYmSjJIp9NFOjgcDj5JonrA0tISkUiEbDaL1+tVVaLDx0d+D2C32/H5fESjUfR6fZHIigZdB49R32gFQXkEDLV17DTVIwiaX5fogGWZl8EUt9zPUEBKG37fRTW1RvoGHDS37EEo4y8/1eDiSBxpNcf0HZlwOEwqlSqagz8CrE+ykt/jK7vo7qzk8kKM208TJZO8o8rAkRNOdRkoRhdayRD6kCGXA40GOqw6Wpt0vI9kePEmxaPFr0R0dir0BsSKCjSCpmAJ1TXGstah+sKRc/DqncBCcAwZcXtutCxVnA+M80Va3R4AW7FrVUf6LwHfAA+Ur1jBngS7AAAAAElFTkSuQmCC
 categories:
   - programming

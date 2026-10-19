@@ -4,39 +4,88 @@ version: 5.3.1
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  upstream_version: 5.3.1
+  itk_version: 5.4.7
 
 auto_update:
-  method: github_release
-  repo: SuperElastix/elastix
-  assets:
-    downloaded_file: elastix-[0-9.]+-(?:linux|ubuntu)\.zip
+  method: sources
+  container_version: elastix
+  sources:
+    - id: elastix
+      method: github_release
+      repo: SuperElastix/elastix
+      target:
+        variable: upstream_version
+    - id: itk
+      method: github_release
+      repo: InsightSoftwareConsortium/ITK
+      version_regex: v(?P<version>5\.4\.\d+)
+      target:
+        variable: itk_version
 
 build:
   kind: neurodocker
-
-  base-image: ubuntu:22.04
+  base-image: '{{ "ubuntu:22.04" if arch == "x86_64" else "ubuntu:24.04" }}'
   pkg-manager: apt
-
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-
     - install:
         - ca-certificates
         - unzip
         - libgomp1
-
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - cmake
+        - libdouble-conversion-dev
+        - libexpat1-dev
+        - libfftw3-dev
+        - libhdf5-dev
+        - libjpeg-dev
+        - libpng-dev
+        - libtiff-dev
+        - zlib1g-dev
     - workdir: /opt/{{ context.name }}-{{ context.version }}
-
     - run:
         - cp {{ get_file("downloaded_file") }} elastix-{{ context.version }}.zip
         - unzip elastix-{{ context.version }}.zip
         - chmod a+x /opt/{{ context.name }}-{{ context.version }}/bin/*
         - rm elastix-{{ context.version }}.zip
-
+      condition: arch == "x86_64"
+    - condition: arch == "aarch64"
+      run:
+        - mkdir -p /tmp/itk-src
+        - tar -xzf {{ get_file("itk_source_tar_gz") }} -C /tmp/itk-src --strip-components 1
+        - cmake -S /tmp/itk-src -B /tmp/itk-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/itk -DBUILD_TESTING=OFF -DITK_BUILD_DEFAULT_MODULES=ON -DBUILD_SHARED_LIBS=ON -DITK_WRAP_PYTHON=OFF
+        - cmake --build /tmp/itk-build --parallel 2
+        - cmake --install /tmp/itk-build
+        - mkdir -p /tmp/elastix-src
+        - tar -xzf {{ get_file("elastix_source_tar_gz") }} -C /tmp/elastix-src --strip-components 1
+        - cmake -S /tmp/elastix-src -B /tmp/elastix-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/{{ context.name }}-{{ context.version }} -DBUILD_TESTING=OFF -DELASTIX_USE_OPENCL=OFF -DITK_DIR=/opt/itk/lib/cmake/ITK-5.4
+        - cmake --build /tmp/elastix-build --parallel 2
+        - cmake --install /tmp/elastix-build
+        - |
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'export LD_LIBRARY_PATH="/opt/itk/lib:/opt/{{ context.name }}-{{ context.version }}/lib:${LD_LIBRARY_PATH:-}"' \
+            'exec /opt/{{ context.name }}-{{ context.version }}/bin/elastix "$@"' \
+            > /usr/local/bin/elastix
+          chmod +x /usr/local/bin/elastix
+        - |
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'export LD_LIBRARY_PATH="/opt/itk/lib:/opt/{{ context.name }}-{{ context.version }}/lib:${LD_LIBRARY_PATH:-}"' \
+            'exec /opt/{{ context.name }}-{{ context.version }}/bin/transformix "$@"' \
+            > /usr/local/bin/transformix
+          chmod +x /usr/local/bin/transformix
+        - rm -rf /tmp/itk-src /tmp/itk-build /tmp/elastix-src /tmp/elastix-build
     - environment:
         PATH: $PATH:/opt/{{ context.name }}-{{ context.version }}/bin
-        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/opt/{{ context.name }}-{{ context.version }}/lib
+        LD_LIBRARY_PATH: '{{ "/opt/itk/lib:" if arch == "aarch64" else "" }}$LD_LIBRARY_PATH:/opt/{{ context.name }}-{{ context.version }}/lib'
 
 deploy:
   path:
@@ -77,4 +126,11 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAASSElE
 
 files:
   - name: downloaded_file
-    url: "https://github.com/SuperElastix/elastix/releases/download/{{ context.version }}/elastix-{{ context.version }}-ubuntu.zip"
+    url: https://github.com/SuperElastix/elastix/releases/download/{{ context.upstream_version }}/elastix-{{ context.upstream_version }}-ubuntu.zip
+    condition: arch == "x86_64"
+  - name: itk_source_tar_gz
+    condition: arch == "aarch64"
+    url: https://github.com/InsightSoftwareConsortium/ITK/archive/refs/tags/v{{ context.itk_version }}.tar.gz
+  - name: elastix_source_tar_gz
+    condition: arch == "aarch64"
+    url: https://github.com/SuperElastix/elastix/archive/refs/tags/{{ context.upstream_version }}.tar.gz

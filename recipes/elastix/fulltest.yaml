@@ -1,5 +1,5 @@
 # elastix container test suite
-# Tests for elastix v5.1.0 - medical image registration toolbox
+# Tests for elastix v5.3.1 - medical image registration toolbox
 #
 # elastix is open source software based on ITK for rigid and nonrigid
 # registration of images. It provides a modular design allowing users to
@@ -412,6 +412,31 @@ setup:
     EOF
 
 tests:
+  - name: Direct deployed binaries resolve all libraries
+    description: Check the exposed raw executables independently of PATH wrappers, with no unresolved ldd entries and successful version execution
+    command: |
+      set -eu
+      export LC_ALL=C
+      for tool in elastix transformix; do
+        set -- /opt/elastix*/bin/"$tool"
+        test "$#" -eq 1
+        test -x "$1"
+        linkage=$(ldd "$1" 2>&1)
+        printf '%s\n' "$linkage"
+        if printf '%s\n' "$linkage" | grep -qF 'not found'; then
+          exit 1
+        fi
+        actual_tool_version=$("$1" --version 2>&1)
+        printf '%s\n' "$actual_tool_version"
+        case "$actual_tool_version" in
+          *'${version}'*) ;;
+          *) exit 1 ;;
+        esac
+      done
+      echo 'Both directly deployed executables resolve all libraries and run'
+    expected_output_contains: Both directly deployed executables resolve all libraries and run
+    expected_exit_code: 0
+
   # ==========================================================================
   # BASIC FUNCTIONALITY - VERSION AND HELP
   # ==========================================================================
@@ -663,18 +688,23 @@ tests:
   # ==========================================================================
   - name: Missing fixed image error
     description: Verify proper error when fixed image is missing
-    command: mkdir -p test_output/elastix/error_test && elastix -m ${t2} -out test_output/elastix/error_test -p test_output/params/quick_rigid.txt 2>&1 || true
+    command: mkdir -p test_output/elastix/error_test && elastix -m ${t2} -out test_output/elastix/error_test -p test_output/params/quick_rigid.txt 2>&1
+    expected_exit_code: 1
     expected_output_contains: "-f"
 
   - name: Missing parameter file error
     description: Verify proper error when parameter file is missing
-    command: mkdir -p test_output/elastix/error_test && elastix -f ${t1w} -m ${t2} -out test_output/elastix/error_test 2>&1 || true
-    expected_output_contains: "-p"
+    command: mkdir -p test_output/elastix/error_test && elastix -f ${t1w} -m ${t2} -out test_output/elastix/error_test 2>&1
+    # The released CLI returns -1 here, which POSIX exposes as 255.
+    expected_exit_code: 255
+    expected_output_contains: 'ERROR: No CommandLine option "-p" given!'
 
   - name: Transformix missing transform parameters error
     description: Verify proper error when transform parameters are missing
-    command: mkdir -p test_output/transformix/error_test && transformix -in ${t2} -out test_output/transformix/error_test 2>&1 || true
-    expected_output_contains: "-tp"
+    command: mkdir -p test_output/transformix/error_test && transformix -in ${t2} -out test_output/transformix/error_test 2>&1
+    # The released CLI returns -1 here, which POSIX exposes as 255.
+    expected_exit_code: 255
+    expected_output_contains: 'ERROR: No CommandLine option "-tp" given!'
 
 cleanup:
   script: |
