@@ -52,6 +52,8 @@ build:
         - ln -sf /usr/bin/gcc /usr/bin/aarch64-linux-gnu-gcc
 
     - run:
+        # Last pip series supporting Python 3.8; records PEP 610 Git provenance.
+        - python3.8 -m pip install --no-cache-dir --upgrade pip==25.0.1
         - python3.8 -m pip install git+https://github.com/cvnlab/GLMsingle.git@{{ context.source_commit }}
 
     - run:
