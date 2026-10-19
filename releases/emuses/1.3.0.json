@@ -1,7 +1,7 @@
 {
   "apps": {
     "emuses 1.3.0": {
-      "version": "20260526",
+      "version": "20261019",
       "exec": "",
       "apptainer_args": []
     }

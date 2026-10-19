@@ -1,8 +1,9 @@
 {
   "apps": {
     "nftsim 1.0.2": {
-      "version": "20250725",
-      "exec": ""
+      "version": "20261019",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [

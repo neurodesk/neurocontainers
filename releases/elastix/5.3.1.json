@@ -1,7 +1,7 @@
 {
   "apps": {
     "elastix 5.3.1": {
-      "version": "20260925",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }

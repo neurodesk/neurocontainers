@@ -110,10 +110,12 @@ jobs:
     if: ${{ github.repository == 'neurodesk/neurocontainers' && (needs.detect.outputs.recipes != '[]') }}
     # Maintainers can set ci-blacksmith-x86 before synchronizing or reopening
     # a PR to use the existing alternate pool when the ARC queue is blocked.
+    # ci-github-arm selects native GitHub ARM hardware for CPU-sensitive checks.
+    # This changes the runner only; all candidate runtime and image gates remain.
     # ARC pods are ephemeral; untrusted recipe build commands never run on a
     # persistent self-hosted machine. The ARM64 pool must satisfy the same
     # property: Blacksmith runners are ephemeral cloud VMs, not persistent hosts.
-    runs-on: ${{ matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || (contains(github.event.pull_request.labels.*.name, 'ci-blacksmith-x86') && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers') }}
+    runs-on: ${{ matrix.architecture == 'aarch64' && (contains(github.event.pull_request.labels.*.name, 'ci-github-arm') && 'ubuntu-24.04-arm' || 'blacksmith-8vcpu-ubuntu-2404-arm') || (contains(github.event.pull_request.labels.*.name, 'ci-blacksmith-x86') && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers') }}
     timeout-minutes: 720
     strategy:
       fail-fast: false
