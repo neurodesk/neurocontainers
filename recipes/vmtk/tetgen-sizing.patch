@@ -39,16 +39,15 @@
        insertarray[j] = pointtraverse();
      }
    }
-@@ -23284,6 +23291,8 @@
+@@ -23284,6 +23291,7 @@
          }
        }
      }
-+    // The face traversal has ended with loc == 4.
 +    newtet.loc = 0;
      // Let the corners of t2 point to it for fast searching.
      pointptr = org(newtet);
      setpoint2tet(pointptr, encode(newtet));
-@@ -26843,7 +26852,26 @@
+@@ -26843,7 +26851,26 @@
    } else {
      setpoint2bgmtet(pt, (tetrahedron) NULL);  // in m
    }
@@ -75,7 +74,7 @@
  }
  
  ///////////////////////////////////////////////////////////////////////////////
-@@ -26861,6 +26889,20 @@
+@@ -26861,6 +26888,20 @@
  
  void tetgenmesh::interpolatesizemap()
  {
@@ -96,7 +95,7 @@
    list *adjtetlist;
    triface tetloop, neightet, bgmtet;
    point searchpt;
-@@ -28493,6 +28535,10 @@
+@@ -28493,6 +28534,10 @@
  
  void tetgenmesh::setnewpointsize(point newpt, point e1, point e2)
  {
@@ -107,7 +106,7 @@
    if (b->metric) {
      // Interpolate the point size in a background mesh.
      triface bgmtet;
-@@ -28533,6 +28579,8 @@
+@@ -28533,6 +28578,8 @@
    face startsh, spinsh, checksh;
    int i;
  
@@ -116,7 +115,7 @@
    if (optflag) {
      mytetlist = new list(sizeof(triface), NULL, 1024);
      myflipque = new queue(sizeof(badface));
-@@ -28604,7 +28652,7 @@
+@@ -28604,7 +28651,7 @@
        // Check if p encroaches adjacent subfaces.
        tallencsubs(newpt, 1, &tetlist);
      }
@@ -125,7 +124,7 @@
        // Check if there are new bad quality tets at p.
        for (i = 0; i < tetlist->len(); i++) {
          starttet = * (triface *)(* tetlist)[i];
-@@ -28813,10 +28861,12 @@
+@@ -28813,10 +28860,12 @@
  
    // Loop until the pool 'badsubsegs' is empty. Note that steinerleft == -1
    //   if an unlimited number of Steiner points is allowed.
@@ -140,7 +139,7 @@
        // Get an encroached subsegment s.
        splitseg = encloop->ss;
        // Clear the in-queue flag in s.
-@@ -28937,7 +28987,8 @@
+@@ -28937,7 +28986,8 @@
  
    // Loop until the pool 'badsubfaces' is empty. Note that steinerleft == -1
    //   if an unlimited number of Steiner points is allowed.
@@ -150,7 +149,7 @@
      // Get an encroached subface f.
      encloop = dequeueencsub(&quenumber);
      splitsub = encloop->ss;
-@@ -29124,7 +29175,8 @@
+@@ -29124,7 +29174,8 @@
  
    // Loop until pool 'badtetrahedrons' is empty. Note that steinerleft == -1
    //   if an unlimited number of Steiner points is allowed.
@@ -160,7 +159,7 @@
      // Get a bad-quality tet t.
      badtet = topbadtetra();
      // Make sure that the tet is still the same one when it was tested.
-@@ -29211,7 +29263,7 @@
+@@ -29211,7 +29262,7 @@
            if (badsubfaces->items > 0) {
              repairencsubs(true);
            }
@@ -169,7 +168,7 @@
              // Some encroaching subsegments/subfaces got split. Re-queue the
              //   tet if it is still alive.
              starttet = badtet->tt;
-@@ -29298,6 +29350,11 @@
+@@ -29298,6 +29349,11 @@
    vertcount = points->items;
    // Fix encroached segments without noting any enc subfaces.
    repairencsegs(false, false);
@@ -181,7 +180,7 @@
    if (b->verbose > 0) {
      printf("  %ld split points.\n", points->items - vertcount);
    }
-@@ -29316,6 +29373,12 @@
+@@ -29316,6 +29372,12 @@
    vertcount = points->items;
    // Fix encroached subfaces without noting bad tetrahedra.
    repairencsubs(false);
@@ -194,7 +193,7 @@
    if (b->verbose > 0) {
      printf("  %ld split points.\n", points->items - vertcount);
    }
-@@ -29345,6 +29408,7 @@
+@@ -29345,6 +29407,7 @@
      }
      total += points->items - vertcount;
      delete badtetrahedrons;
@@ -202,7 +201,7 @@
    }
  
    if (b->verbose > 0) {
-@@ -29353,6 +29417,7 @@
+@@ -29353,6 +29416,7 @@
  
    delete badsubfaces;
    delete badsubsegs;
@@ -210,7 +209,7 @@
  }
  
  ////                                                                       ////
-@@ -29950,6 +30015,8 @@
+@@ -29950,6 +30014,8 @@
    if (iter > 0) {
      if (segflag) smoothsegverts++;
      for (i = 0; i < 3; i++) smthpt[i] = startpt[i];
@@ -219,7 +218,7 @@
      if (b->verbose > 1) {
        printf("    Move to new location (%g, %g, %g).\n", smthpt[0], smthpt[1],
               smthpt[2]);
-@@ -29985,7 +30052,7 @@
+@@ -29985,7 +30051,7 @@
  
    // Find a Steiner volume point and smooth it.
    smthed = false;
@@ -228,7 +227,7 @@
      smthpt = (point) remedge->tt.tet[4 + i];
      // Is it a volume point?
      if (pointtype(smthpt) == FREEVOLVERTEX) {
-@@ -30097,9 +30164,10 @@
+@@ -30097,9 +30163,10 @@
        setnewpointsize(newpt, pt[0], NULL);
        if (steinerleft > 0) steinerleft--;
        // Smooth p.
@@ -241,7 +240,7 @@
          starttet = * (triface *)(* ceillist)[i];
          checktet4opt(&starttet, true);
        }
-@@ -30138,7 +30206,7 @@
+@@ -30138,7 +30205,7 @@
        setnewpointsize(newpt, pt[0], NULL);
        if (steinerleft > 0) steinerleft--;
        // Queue new slivers.
@@ -250,7 +249,7 @@
          starttet = * (triface *)(* ceillist)[i];
          checktet4opt(&starttet, true);
        }
-@@ -30320,7 +30388,7 @@
+@@ -30320,7 +30387,7 @@
        // Clean the pool of bad tets.
        badtetrahedrons->restart();
        slivercount = 0;
@@ -259,7 +258,7 @@
          remtet = (badface *)(* splittetlist)[i];
          if (!isdead(&remtet->tt) && org(remtet->tt) == remtet->forg &&
              dest(remtet->tt) == remtet->fdest && 
-@@ -30360,7 +30428,7 @@
+@@ -30360,7 +30427,7 @@
              newbadtet = (badface *) badtetrahedrons->alloc();
              *newbadtet = *remtet;
              // Try to remove this tet.
@@ -268,7 +267,7 @@
                splitsliver(remtet, tetlist, ceillist);
              }
            }
-@@ -30373,7 +30441,7 @@
+@@ -30373,7 +30440,7 @@
      }
  
      optpasscount++;
@@ -277,7 +276,7 @@
  
    if (b->verbose) {
      if (opt_tet_peels > 0l) {
-@@ -34056,6 +34124,7 @@
+@@ -34056,6 +34123,7 @@
  void tetrahedralize(tetgenbehavior *b, tetgenio *in, tetgenio *out,
    tetgenio *addin, tetgenio *bgmin)
  {
@@ -285,7 +284,7 @@
    tetgenmesh m;
    // Variables for timing the performance of TetGen (defined in time.h).
    clock_t tv[17];
-@@ -34067,7 +34136,8 @@
+@@ -34067,7 +34135,8 @@
    m.macheps = exactinit();
    m.steinerleft = b->steiner;
    if (b->metric) {
@@ -295,7 +294,7 @@
      m.bgm->b = b;
      m.bgm->in = bgmin;
      m.bgm->macheps = exactinit();
-@@ -34204,7 +34274,11 @@
+@@ -34204,7 +34273,11 @@
    }
  
    if (b->metric) {
@@ -307,7 +306,7 @@
    }
  
    tv[9] = clock();
-@@ -34231,6 +34305,7 @@
+@@ -34231,6 +34304,7 @@
  
    if (b->quality) {
      m.enforcequality();
@@ -315,7 +314,7 @@
    }
  
    tv[11] = clock();
-@@ -34244,6 +34319,7 @@
+@@ -34244,6 +34318,7 @@
  
    if (b->quality && (b->optlevel > 0)) {
      m.optimizemesh2(true);
@@ -323,7 +322,7 @@
    }
  
    tv[12] = clock();
-@@ -34253,6 +34329,11 @@
+@@ -34253,6 +34328,11 @@
        printf("Optimize seconds:  %g\n",
               (tv[12] - tv[11]) / (REAL) CLOCKS_PER_SEC);
      }
@@ -335,7 +334,7 @@
    }
  
    if (!b->nojettison && ((m.dupverts > 0) || (m.unuverts > 0)
-@@ -34402,9 +34483,6 @@
+@@ -34402,9 +34482,6 @@
      m.statistics();
    }
  

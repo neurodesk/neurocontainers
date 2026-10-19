@@ -38,7 +38,6 @@ assert manifest["archive_sha256"] == archive_hash
 patch = Path(patch_file).read_bytes()
 assert hashlib.sha256(patch).hexdigest() == manifest["patch_sha256"]
 
-# Match exact lines and hashes. No offsets, fuzz, reversed patch or partial write.
 lines = patch.decode().splitlines(keepends=True)
 position = 0
 staged = {}
