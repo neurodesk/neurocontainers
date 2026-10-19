@@ -1,5 +1,6 @@
 variables:
   upstream_version: '1.2'
+  source_commit: 9b7f685100366fb79c222c37661924ea25d78743
 
 name: glmsingle
 version: "1.2.0"
@@ -13,9 +14,20 @@ architectures:
   - aarch64
 
 auto_update:
-  version_variable: "upstream_version"
-  method: github_release
-  repo: cvnlab/GLMsingle
+  method: sources
+  container_version: {variable: upstream_version}
+  sources:
+    - id: glmsingle_source
+      method: github_commit
+      repo: cvnlab/GLMsingle
+      ref: main
+      version_file: setup.py
+      version_regex: "version='(?P<version>[0-9.]+)'"
+      target:
+        variable: source_commit
+        fulltest_variable: source_commit
+        variables:
+          upstream_version: version
 
 build:
   kind: neurodocker
@@ -40,7 +52,7 @@ build:
         - ln -sf /usr/bin/gcc /usr/bin/aarch64-linux-gnu-gcc
 
     - run:
-        - python3.8 -m pip install git+https://github.com/cvnlab/GLMsingle.git@{{ context.upstream_version }}
+        - python3.8 -m pip install git+https://github.com/cvnlab/GLMsingle.git@{{ context.source_commit }}
 
     - run:
         - python3.8 -m pip install ipykernel jupyterlab
