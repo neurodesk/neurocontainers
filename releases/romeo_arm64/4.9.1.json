@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "romeo_arm64 4.9.1": {
+      "version": "20261019",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "phase processing"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "romeo"
+}
