@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "emuses_arm64 1.3.0": {
+      "version": "20261019",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "machine learning",
+    "statistics"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "emuses"
+}
