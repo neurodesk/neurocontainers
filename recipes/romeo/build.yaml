@@ -1,8 +1,8 @@
 name: romeo
-version: 4.9.0
+version: "4.9.1"
 
 variables:
-  compilemri_version: 4.9.0
+  compilemri_version: "4.9.1"
   julia_version: 1.10.12
 
 copyright:
@@ -129,7 +129,7 @@ files:
   - name: compilemri_source
     condition: arch == "aarch64"
     url: https://github.com/korbinian90/CompileMRI.jl/archive/refs/tags/v{{ context.compilemri_version }}.tar.gz
-    sha256: 0810bc99b08536757330f8dc52e5abb8acc22dd99fda6aaea91a74fe2b826fe5
+    sha256: "4110e00c35c3fb383a6ac1607fe390ba30e3970c6ad2ac85f90c4823b94e647c"
   - name: julia
     condition: arch == "aarch64"
     url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.10/julia-{{ context.julia_version }}-linux-aarch64.tar.gz

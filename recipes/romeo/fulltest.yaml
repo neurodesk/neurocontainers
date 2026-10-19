@@ -1,5 +1,5 @@
 name: romeo
-version: 4.9.0
+version: "4.9.1"
 env:
   JULIA_PROJECT: /opt/romeo-${version}/share/julia
 required_files:
