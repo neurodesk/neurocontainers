@@ -7,20 +7,44 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
+  pydeface_version: "2.1.0"
+  fsl_arm64_version: "6.0.7.23"
+  conda_installer:
+    try:
+      - value: miniconda_sh
+        condition: arch == "x86_64"
+      - value: miniconda_arm64_sh
+        condition: arch == "aarch64"
   conda_version: py312_25.5.1-0
   conda_dir: /opt/miniconda-{{ context.conda_version }}
   conda_download_url: https://repo.anaconda.com/miniconda/Miniconda3-{{ context.conda_version }}-Linux-x86_64.sh
 
 auto_update:
-  method: pypi
-  package: pydeface
+  container_version: pydeface
+  method: sources
+  sources:
+    - id: pydeface
+      method: pypi
+      package: pydeface
+      target:
+        variable: pydeface_version
+        fulltest_variable: pydeface_version
+    - id: fsl-arm64
+      dependency: true
+      method: webpage
+      url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/manifest.json
+      version_regex: '"latest"\s*:\s*"(?P<version>\d+(?:\.\d+)+)"'
+      target:
+        variable: fsl_arm64_version
+        fulltest_variable: fsl_arm64_version
 
 build:
   kind: neurodocker
 
-  base-image: vnmd/fsl_6.0.3:20200905
+  base-image: "{{ 'vnmd/fsl_6.0.3:20200905' if arch == 'x86_64' else 'ubuntu:24.04' }}"
   pkg-manager: apt
 
   directives:
@@ -28,13 +52,22 @@ build:
         CONDA_DIR: "{{ context.conda_dir }}"
         PATH: "{{ context.conda_dir }}/bin:$PATH"
 
+    - condition: arch == "aarch64"
+      template:
+        name: fsl
+        version: "{{ context.fsl_arm64_version }}"
+
+    - condition: arch == "aarch64"
+      environment:
+        PATH: "{{ context.conda_dir }}/bin:$PATH"
+
     - run:
-        - bash {{ get_file("miniconda_sh") }} -b -p {{ context.conda_dir }}
+        - bash {{ get_file(context.conda_installer) }} -b -p {{ context.conda_dir }}
         - conda init bash
         - python -m pip install --no-cache-dir --upgrade pip setuptools wheel
         # Ubuntu 16.04 base (glibc 2.23) only loads manylinux2014 wheels; pin to
         # the newest cp312 builds that still ship them and refuse sdist fallbacks.
-        - 'python -m pip install --no-cache-dir --only-binary=:all: "numpy==2.2.6" "scipy==1.16.3" "nibabel==5.4.2" "nipype==1.12.0" osfclient "pydeface=={{ context.version }}"'
+        - 'python -m pip install --no-cache-dir --only-binary=:all: "numpy==2.2.6" "scipy==1.16.3" "nibabel==5.4.2" "nipype==1.12.0" osfclient "pydeface=={{ context.pydeface_version }}"'
         - rm -rf /root/.cache/pip
 
 deploy:
@@ -74,4 +107,9 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAATNElE
 
 files:
   - name: miniconda_sh
+    condition: arch == "x86_64"
     url: "{{ context.conda_download_url }}"
+  - name: miniconda_arm64_sh
+    condition: arch == "aarch64"
+    url: https://repo.anaconda.com/miniconda/Miniconda3-{{ context.conda_version }}-Linux-aarch64.sh
+    sha256: 9bd5765f163568f4ac85b8189aa2b260d1febb1080d085bb2535a3cae2d7f0e4
