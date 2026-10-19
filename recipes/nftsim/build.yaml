@@ -78,6 +78,10 @@ build:
         - cp /app/.git/refs/heads/master /app/source-commit
     - run:
         - printf '%s\n' '{{ context.base_image_tag }}' > /app/vendor-version
+        # The shipped example predates upstream's nus -> nu parameter rename.
+        # Correct its spelling without changing any numerical simulation inputs.
+        - sed -i 's/Ramp - nus:/Ramp - nu:/' /app/configs/test_coupling_ramp.conf
+        - test "$(grep -c 'Ramp - nu:' /app/configs/test_coupling_ramp.conf)" -eq 1
     - environment:
         PATH: /app/bin:$PATH
     - workdir: /app

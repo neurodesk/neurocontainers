@@ -211,15 +211,16 @@ tests:
       - output_exists: ${output_dir}/test-coupling-map.output
 
   - name: Coupling ramp test
-    description: Run the bundled ramp example with the documented nu parameter spelling, preserving all numerical inputs and requiring a complete finite time series.
+    description: Run the corrected bundled ramp example unchanged in a writable directory and require a complete finite time series.
     command: |
       set -euo pipefail
-      test "$(grep -c 'Ramp - nus:' ${test_coupling_ramp})" -eq 1
-      sed 's/Ramp - nus:/Ramp - nu:/' ${test_coupling_ramp} > test_output/test-coupling-ramp.conf
+      test "$(grep -c 'Ramp - nu:' ${test_coupling_ramp})" -eq 1
+      cp ${test_coupling_ramp} test_output/test-coupling-ramp.conf
       rm -f test_output/test-coupling-ramp.output
       nftsim -i test_output/test-coupling-ramp.conf -o test_output/test-coupling-ramp.output
       test -s test_output/test-coupling-ramp.output
       awk -v minimum_duration=0.14 -f test_output/assert-finite-output.awk test_output/test-coupling-ramp.output
+      cmp ${test_coupling_ramp} test_output/test-coupling-ramp.conf
     expected_output_contains: Finite simulation output verified
 
   # ==========================================================================
