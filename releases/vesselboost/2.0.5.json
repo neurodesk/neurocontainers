@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "vesselboost 2.0.5": {
+      "version": "20261019",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}
