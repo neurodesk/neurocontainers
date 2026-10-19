@@ -13,6 +13,8 @@
 
 name: glmsingle
 version: "1.2.0"
+upstream_version: '1.2'
+source_commit: 9b7f685100366fb79c222c37661924ea25d78743
 
 required_files:
   - dataset: ds000001
@@ -51,9 +53,19 @@ tests:
     expected_output_contains: "Python 3"
 
   - name: Check installed package metadata
-    description: Verify the packaged GLMsingle distribution metadata is present
-    command: "python3 -c \"import importlib.metadata as md; print(md.metadata('GLMsingle')['Name'])\""
-    expected_output_contains: "GLMsingle"
+    description: Verify the packaged GLMsingle version and exact upstream Git source identity.
+    command: |
+      python3 - <<'PYGLMSOURCE'
+      import importlib.metadata as md
+      import json
+      distribution = md.distribution('GLMsingle')
+      assert distribution.version == '${upstream_version}'
+      source = json.loads(distribution.read_text('direct_url.json'))
+      assert source['url'].rstrip('/').lower() == 'https://github.com/cvnlab/glmsingle.git'
+      assert source['vcs_info']['commit_id'] == '${source_commit}'
+      print('GLMsingle version and source verified')
+      PYGLMSOURCE
+    expected_output_contains: GLMsingle version and source verified
 
   - name: Container labels check
     description: Verify Apptainer metadata labels were embedded during local conversion
@@ -563,14 +575,20 @@ tests:
   # COLORMAP AND VISUALIZATION UTILITIES
   # ==========================================================================
   - name: Turbo colormap
-    description: Test turbo colormap (known bug - scipy interp1d API change in container's scipy version)
+    description: Require real Turbo colormaps with finite RGB values in range at full and reduced resolutions.
     command: |
       python3 -c "
+      import numpy as np
       from glmsingle.utils.cmapturbo import cmapturbo
-      cmap = cmapturbo()
-      print('Colormap shape', cmap.shape)
-      " 2>&1 || echo "cmapturbo bug: scipy interp1d API change"
-    expected_output_contains: "cmapturbo bug"
+      for entries in (256, 64, 2):
+          cmap = cmapturbo(entries)
+          assert cmap.shape == (entries, 3), cmap.shape
+          assert np.isfinite(cmap).all()
+          assert ((cmap >= 0) & (cmap <= 1)).all()
+          assert np.ptp(cmap, axis=0).max() > 0
+      print('Finite Turbo RGB colormaps verified')
+      "
+    expected_output_contains: Finite Turbo RGB colormaps verified
 
   - name: Sign4 colormap
     description: Test sign4 colormap for signed data
