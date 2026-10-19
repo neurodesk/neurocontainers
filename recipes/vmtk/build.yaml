@@ -33,10 +33,6 @@ variables:
 auto_update:
   method: sources
   container_version: vmtk
-  local:
-    - recipes/vmtk/tetgen-sizing.patch
-    - recipes/vmtk/tetgen-sizing.json
-    - recipes/vmtk/verify-source.py
   sources:
     - id: vmtk
       method: github_tags
