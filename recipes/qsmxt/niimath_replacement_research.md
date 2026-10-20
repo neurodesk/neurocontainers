@@ -263,3 +263,150 @@ acquisition; they add no anatomical accuracy or scanner interoperability claim.
 Native QSMxT remains the largest elapsed stage. Its HD-BET timing includes model
 preprocessing, inference and mask refinements, which need separate profiling
 before an upstream optimization can be selected.
+
+## Exact phase conversion and single-echo reuse
+
+The combined image had an observed 21.4% median paired elapsed-time reduction
+on this shared host across five matched triplets. Individual comparisons ranged
+from a near tie to 25.2% faster. All 15 replays preserved the scientific
+outputs exactly. The timing qualifications below limit attribution and generalization.
+
+The 2026-10-19–20 follow-up removes repeated array work. Finite phase input
+uses direct extrema without a full finite-value copy. Bulk nonnegative integer
+scanner counts use a bounded lookup evaluated with the original float32
+complex exponential and angle expression. Fractional and other inputs retain
+the existing behavior. Regression tests cover every 12-bit and 16-bit count.
+
+The native runner passes its corrected single-echo magnitude into masking at
+full precision when the working magnitude and RSS input match bit for bit.
+This removes a second bias-correction pass. Reading the saved float32 magnitude
+would lose precision, so the patch moves the float64 array directly. Cached
+stages, original-source fallbacks, custom masks, multiple echoes and nonidentical
+RSS inputs keep the previous path. QSM.rs numerical code is unchanged.
+
+Three frozen images ran five matched triplets: A is the released PR3700 baseline;
+B adds the phase conversion only and retains the official native binary; C adds
+the same phase conversion and a source-built native binary with the reuse patch.
+B→C therefore measures the native rebuild and reuse together, including any
+compiler effect. The compiler effect was not measured independently. All three
+images share their first 20 dependency layers and identical niimath and HD-BET
+weights. B and C have identical adapter sources.
+
+The actual OpenRecon client and server processed the same full-resolution
+acquisition described above: one inferred DC reconstructed-image group, two
+repetitions, one 19.3-ms echo, 7 T, 510×540×352 at 0.4 mm. HD-BET, ROMEO,
+native-grid V-SHARP, Tikhonov λ=0.01 with identity regularization, mean reference
+and NLM off were unchanged. Each scored container had 8 CPUs, 16 GiB RAM, no
+additional swap, no network and `HOME=/nonexistent`. The shared machine has
+8 logical AMD EPYC-Milan CPUs and about 32 GiB RAM.
+
+All arms received an excluded validated full replay before scoring; the A
+replay also supplied the excluded native/Python profile. The order was ABC,
+BCA, CAB, CBA, BAC. No scored run was discarded. Two chat interruptions stopped
+the host controller after the C01 and A02 containers had completed normally.
+Their original timings and resource samples were retained; their post-run
+hashes and scientific validation were collected on resumption. There were
+unplanned gaps between triplets 1/2 and 2/3. A Docker controller then completed
+the remaining triplets. Its validation work occurs outside client timing.
+
+| Triplet | A: released, seconds | B: phase only, seconds | C: combined, seconds | Order |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 591.967 | 583.280 | 591.860 | ABC |
+| 2 | 626.052 | 536.609 | 489.770 | BCA |
+| 3 | 637.623 | 542.619 | 581.896 | CAB |
+| 4 | 630.530 | 536.553 | 471.618 | CBA |
+| 5 | 559.095 | 541.258 | 439.408 | BAC |
+
+| Comparison | Median paired saving, seconds | Median paired elapsed reduction | Paired reduction range |
+| --- | ---: | ---: | ---: |
+| A→B: phase change | 89.443 | 14.3% | 1.5%–14.9% |
+| B→C: native rebuild + reuse | 46.839 | 8.7% | -7.2%–18.8% |
+| A→C: combined | 119.687 | 21.4% | 0.0%–25.2% |
+
+Paired reductions use the median of `100 * (1 - after_i / before_i)` across
+five triplets. Paired savings use the median of `before_i - after_i`. Separate
+arm medians are descriptive and do not produce the same statistic.
+Unchanged native and EPI stages also varied, contributing to the observed
+end-to-end differences. Total A→B savings exceed the directly measured phase
+conversion reduction in 3 of five triplets. The component timers below quantify
+the affected work; the full-replay rows include shared-host and cache variation.
+The B→C bundle had 3 wins and 2 regressions, so its isolated end-to-end
+effect is inconclusive in this small shared-host experiment. These descriptive
+results do not guarantee a production speedup.
+
+| Step | A median, seconds | B median, seconds | C median, seconds |
+| --- | ---: | ---: | ---: |
+| Full OpenRecon replay | 626.052 | 541.258 | 489.770 |
+| Original-image copy | 12.527 | 14.601 | 13.008 |
+| BIDS preparation, including EPI | 207.075 | 163.598 | 167.898 |
+| Phase conversion, within BIDS | 38.480 | 4.168 | 5.004 |
+| EPI preprocessing, within BIDS | 131.485 | 120.746 | 124.676 |
+| Motion estimation, within EPI | 37.263 | 37.158 | 39.534 |
+| Cartesian resampling, within EPI | 17.873 | 11.764 | 13.014 |
+| Phase matching and average, within EPI | 29.556 | 26.858 | 26.693 |
+| Averaged-image save, within EPI | 2.667 | 2.684 | 2.670 |
+| Other BIDS preparation | 75.590 | 41.808 | 41.928 |
+| Native QSMxT | 351.486 | 334.991 | 281.717 |
+| Phase scaling, within native QSMxT | 5.830 | 5.715 | 5.689 |
+| Magnitude and bias correction, within native QSMxT | 63.552 | 62.979 | 64.777 |
+| Masking: HD-BET, correction and refinements | 137.935 | 129.219 | 74.976 |
+| ROMEO, within native QSMxT | 27.918 | 26.089 | 26.565 |
+| V-SHARP, within native QSMxT | 86.256 | 82.459 | 87.063 |
+| Tikhonov, within native QSMxT | 15.071 | 14.616 | 14.548 |
+| Mean reference, within native QSMxT | 8.035 | 7.307 | 7.206 |
+| Native loading, setup and other I/O | 6.935 | 6.190 | 6.464 |
+| Derived-image packing | 11.761 | 9.779 | 11.504 |
+| Output validation | 0.464 | 0.459 | 0.469 |
+| Original and derived image send | 4.624 | 5.186 | 4.585 |
+| Other client and protocol work | 11.369 | 13.403 | 12.723 |
+
+Nested rows overlap their parent. Independent stage medians need not sum to
+full-replay medians. Concurrent resampling and saves use their wall spans.
+Timing runs from MRD client launch until all returned images arrive. Server
+startup, input hashing, artifact export, scientific validation and retained
+working-directory cleanup are excluded for every arm.
+
+Native QSMxT remains the largest component, with a median share of 58.8%
+of client time across the five C replays. The excluded baseline CPU profile
+identified smoothing, filtering and 3-D FFT work among the native hotspots.
+A parallel-smoothing prototype was screened outside the scored experiment
+and deferred. This candidate retains the existing QSM.rs numerical kernels.
+
+| Metric | A median (range) | B median (range) | C median (range) |
+| --- | ---: | ---: | ---: |
+| Full replay, seconds | 626.052 (559.095–637.623) | 541.258 (536.553–583.280) | 489.770 (439.408–591.860) |
+| Cgroup CPU, seconds | 781.007 (759.158–806.662) | 730.855 (722.688–771.144) | 686.081 (652.211–704.973) |
+| Kernel cgroup memory peak, GiB | 12.206 (10.978–13.016) | 12.250 (11.894–13.107) | 12.166 (10.929–13.208) |
+| Sampled anonymous peak, GiB | 10.846 (10.838–11.011) | 10.839 (10.831–10.848) | 10.833 (10.831–10.848) |
+| Sampled file-cache peak, GiB | 2.326 (2.212–2.684) | 2.210 (1.708–2.783) | 2.263 (1.900–3.221) |
+| Sampled native RSS peak, GiB | 9.605 (9.579–9.749) | 9.583 (9.574–9.607) | 9.576 (9.570–9.585) |
+
+The host was shared and caches were not flushed. Host load and unchanged stages
+varied during the experiment; end-to-end differences include that variation.
+Component timers and the runtime reuse marker identify the removed work.
+The kernel memory peak includes startup and filesystem cache. Anonymous and
+native RSS peaks are 1-second samples within client timing; short peaks can be
+missed, and cache charging varies across cgroups. All 15 runs stayed within
+16 GiB without OOM events.
+
+All 15 complete Chimap arrays, masks, affines and scientific TOML files matched
+H01 exactly. Every returned original and derived pixel, and every derived QSM
+slice position, matched. Averaged magnitude and phase from A01/B01/C01 also
+matched exactly. Both whole input files matched their recorded digests before
+and after every replay, with the delayed checks noted above. Every C replay
+logged exactly one full-precision reuse; every A/B replay logged none.
+
+The source-built candidate passed its two handoff tests during the recipe build
+and all 22 checked-in runtime commands offline. The source runner passed 56
+unit tests; the adapter/regional suite passed 374 tests. Required repository
+checks passed: 1,614 builder tests (8 skipped), 280 recipe validations,
+391 generated Dockerfiles, 32 OpenRecon labels and codespell. The recipe pins
+QSMxT 10.0.0 source, Rust 1.98.0, the patch and build script; it retains QSM.rs
+v0.39.0 commit `42ab620190ad315c9dcf7aa8ec4a036402002b7e`. Runtime provenance
+is recorded in `/opt/qsmxt/native-build.json`. Temporary Rust/Cargo/build files
+are removed in the build layer.
+
+Per-trial aggregate timings and resource measurements are in
+[the CSV snapshot](openrecon-performance-20261019.csv). MRI data and images
+remain local. The acquisition, fixture normalization, anatomical accuracy and
+scanner-interoperability limits above still apply.
