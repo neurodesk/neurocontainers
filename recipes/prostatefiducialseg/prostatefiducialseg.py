@@ -8,9 +8,10 @@ detected markers drawn in. Per-marker mean probability, position and the count f
 series description.
 
 Parameters (OpenReconLabel.json): ``markers`` (implant count K, default 3),
-``ensemble`` ("all" = 5-network ensemble, default, or one network "0".."4") and
-``mirroring`` (test-time mirroring, default off: the ensemble without mirroring gave the
-same top-3 as mirrored nnU-Net on 34/34 parity cases).
+``network1``..``network5`` (which of the 5 networks to use; the probability maps of the
+selected networks are averaged; default all 5, the configuration evaluated on independent
+patients) and ``mirroring`` (test-time mirroring, default off: the ensemble without
+mirroring gave the same top-3 as mirrored nnU-Net on 34/34 parity cases).
 Environment overrides: SEEDSEG_DEVICE (cpu|cuda), SEEDSEG_MIRROR (0|1), SEEDSEG_MODELS,
 SEEDSEG_SRC.
 """
@@ -162,8 +163,11 @@ def process_image(images, connection, config, metadata):
         return []
     t0 = time.time()
     k = mrdhelper.get_json_config_param(config, 'markers', default=3, type='int')
-    ens = mrdhelper.get_json_config_param(config, 'ensemble', default='all', type='str')
-    folds = [ens] if ens in ('0', '1', '2', '3', '4') else ['0', '1', '2', '3', '4']
+    folds = [str(i) for i in range(5)
+             if mrdhelper.get_json_config_param(config, f'network{i + 1}', default=True, type='bool')]
+    if not folds:
+        logging.warning("SeedSeg: no network selected; using all 5")
+        folds = [str(i) for i in range(5)]
     mirror = mrdhelper.get_json_config_param(config, 'mirroring', default=False, type='bool')
     if os.environ.get('SEEDSEG_MIRROR') is not None:
         mirror = os.environ['SEEDSEG_MIRROR'] == '1'

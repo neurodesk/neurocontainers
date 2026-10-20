@@ -73,52 +73,58 @@
       }
     },
     {
-      "id": "ensemble",
+      "id": "network1",
       "label": {
-        "en": "Networks"
+        "en": "Network 1 of 5"
       },
-      "type": "choice",
-      "values": [
-        {
-          "id": "all",
-          "name": {
-            "en": "All 5 networks (evaluated ensemble)"
-          }
-        },
-        {
-          "id": "0",
-          "name": {
-            "en": "Network 1 of 5 only"
-          }
-        },
-        {
-          "id": "1",
-          "name": {
-            "en": "Network 2 of 5 only"
-          }
-        },
-        {
-          "id": "2",
-          "name": {
-            "en": "Network 3 of 5 only"
-          }
-        },
-        {
-          "id": "3",
-          "name": {
-            "en": "Network 4 of 5 only"
-          }
-        },
-        {
-          "id": "4",
-          "name": {
-            "en": "Network 5 of 5 only"
-          }
-        }
-      ],
-      "default": "all",
+      "type": "boolean",
+      "default": true,
       "information": {
-        "en": "The 5-network ensemble is the configuration evaluated on independent patients; a single network is faster."
+        "en": "Use this network. The probability maps of the selected networks are averaged. All 5 (the default) is the configuration evaluated on independent patients; fewer networks are faster."
+      }
+    },
+    {
+      "id": "network2",
+      "label": {
+        "en": "Network 2 of 5"
+      },
+      "type": "boolean",
+      "default": true,
+      "information": {
+        "en": "Use this network. The probability maps of the selected networks are averaged. All 5 (the default) is the configuration evaluated on independent patients; fewer networks are faster."
+      }
+    },
+    {
+      "id": "network3",
+      "label": {
+        "en": "Network 3 of 5"
+      },
+      "type": "boolean",
+      "default": true,
+      "information": {
+        "en": "Use this network. The probability maps of the selected networks are averaged. All 5 (the default) is the configuration evaluated on independent patients; fewer networks are faster."
+      }
+    },
+    {
+      "id": "network4",
+      "label": {
+        "en": "Network 4 of 5"
+      },
+      "type": "boolean",
+      "default": true,
+      "information": {
+        "en": "Use this network. The probability maps of the selected networks are averaged. All 5 (the default) is the configuration evaluated on independent patients; fewer networks are faster."
+      }
+    },
+    {
+      "id": "network5",
+      "label": {
+        "en": "Network 5 of 5"
+      },
+      "type": "boolean",
+      "default": true,
+      "information": {
+        "en": "Use this network. The probability maps of the selected networks are averaged. All 5 (the default) is the configuration evaluated on independent patients; fewer networks are faster."
       }
     },
     {
