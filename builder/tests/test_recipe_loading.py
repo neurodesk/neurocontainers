@@ -353,8 +353,9 @@ categories: [workflows]
     assert "gpu-enabled" in render_dockerfile(compiled.definition)
 
 
-def test_macro_declared_file_resolves_next_to_the_macro(tmp_path) -> None:
-    macro_dir = tmp_path / "macros" / "openrecon_i2i"
+@pytest.mark.parametrize("macro_name", ["openrecon_i2i", "ep3d"])
+def test_macro_declared_file_resolves_next_to_the_macro(tmp_path, macro_name) -> None:
+    macro_dir = tmp_path / "macros" / macro_name
     macro_dir.mkdir(parents=True)
     (macro_dir / "helper.py").write_text("HELPER = 1\n")
     (macro_dir / "helpers.yaml").write_text(
@@ -375,7 +376,7 @@ def test_macro_declared_file_resolves_next_to_the_macro(tmp_path) -> None:
     )
     (recipe_dir / "local.txt").write_text("local\n")
     recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text())
-    recipe["build"]["directives"] = [{"include": "macros/openrecon_i2i/helpers.yaml"}]
+    recipe["build"]["directives"] = [{"include": f"macros/{macro_name}/helpers.yaml"}]
     (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe, sort_keys=False))
 
     compiled = compile_recipe(

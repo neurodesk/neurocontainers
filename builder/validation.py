@@ -86,6 +86,7 @@ INCLUDE_MACROS = [
     "openrecon_i2i/helpers.yaml",
     "macros/openrecon_i2i/helpers.yaml",
     "macros/b0_shimming/helpers.yaml",
+    "macros/ep3d/helpers.yaml",
 ]
 
 
