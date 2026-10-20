@@ -2438,17 +2438,18 @@ def _dual_polarity_images(repetitions=4, slices=2):
 def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeypatch):
     seen = {}
 
-    def fake_preprocessing(magnitude_path, phase_path, work_dir, settings):
-        magnitude = nib.load(str(magnitude_path)).get_fdata()
+    def fake_preprocessing(magnitude_path, phase_path, work_dir, *, denoise, n_procs):
+        reference = nib.load(str(magnitude_path))
+        magnitude = reference.get_fdata()
         phase = nib.load(str(phase_path)).get_fdata()
-        seen.update(magnitude=magnitude, phase=phase, denoise=settings["ep3d_denoise"])
+        seen.update(magnitude=magnitude, phase=phase, denoise=denoise)
         mean_magnitude = work_dir / "mean_magnitude.nii.gz"
         mean_phase = work_dir / "mean_phase.nii.gz"
-        nib.save(nib.Nifti1Image(magnitude.mean(axis=-1), np.eye(4)), mean_magnitude)
-        nib.save(nib.Nifti1Image(phase.mean(axis=-1), np.eye(4)), mean_phase)
+        nib.save(nib.Nifti1Image(magnitude.mean(axis=-1), reference.affine), mean_magnitude)
+        nib.save(nib.Nifti1Image(phase.mean(axis=-1), reference.affine), mean_phase)
         return {"magnitude": str(mean_magnitude), "phase": str(mean_phase)}
 
-    monkeypatch.setattr(qsmxt, "_run_ep3d_preprocessing", fake_preprocessing)
+    monkeypatch.setattr(qsmxt.ep3d_mrd, "run_preprocessing", fake_preprocessing)
     settings = qsmxt._settings_from_config(
         {"parameters": {"ep3ddualpolarity": "true", "ep3ddenoise": "true", "sendoutputs": "all"}},
         FakeMetadata(),
@@ -2514,7 +2515,7 @@ def test_ep3d_dual_polarity_rejects_mismatched_repetitions(tmp_path):
 )
 def test_phase_to_radians_uses_fixed_count_cycle(counts, expected):
     np.testing.assert_allclose(
-        qsmxt._phase_to_radians(np.array(counts, dtype=np.float32), 4096.0),
+        qsmxt.ep3d_mrd.phase_to_radians(np.array(counts, dtype=np.float32), 4096.0),
         expected,
         atol=1e-5,
     )
@@ -2522,17 +2523,17 @@ def test_phase_to_radians_uses_fixed_count_cycle(counts, expected):
 
 def test_phase_to_radians_rejects_phase_wider_than_one_cycle():
     with pytest.raises(ValueError, match="set phasewrap"):
-        qsmxt._phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
+        qsmxt.ep3d_mrd.phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
 
 
 @pytest.mark.parametrize("dtype", [np.uint16, np.float32])
 def test_phase_to_radians_bulk_scanner_counts_preserve_wrap_boundary(dtype):
     unique_counts = np.array([0, 1024, 2048, 3072, 4095], dtype=dtype)
-    expected = qsmxt._phase_to_radians(unique_counts, 4096.0)
+    expected = qsmxt.ep3d_mrd.phase_to_radians(unique_counts, 4096.0)
     counts = np.tile(unique_counts, 2048)
     original = counts.copy()
 
-    radians = qsmxt._phase_to_radians(counts, 4096.0)
+    radians = qsmxt.ep3d_mrd.phase_to_radians(counts, 4096.0)
 
     assert radians.dtype == np.float32
     np.testing.assert_array_equal(
@@ -2550,8 +2551,8 @@ def test_phase_to_radians_bulk_scanner_counts_preserve_wrap_boundary(dtype):
 @pytest.mark.parametrize("counts_per_cycle", [4096, 65536])
 def test_phase_to_radians_preserves_every_scanner_count_when_repeated(counts_per_cycle):
     counts = np.arange(counts_per_cycle, dtype=np.uint16)
-    expected = qsmxt._phase_to_radians(counts, float(counts_per_cycle))
-    repeated = qsmxt._phase_to_radians(np.tile(counts, 3), float(counts_per_cycle))
+    expected = qsmxt.ep3d_mrd.phase_to_radians(counts, float(counts_per_cycle))
+    repeated = qsmxt.ep3d_mrd.phase_to_radians(np.tile(counts, 3), float(counts_per_cycle))
 
     np.testing.assert_array_equal(
         repeated.view(np.uint32), np.tile(expected, 3).view(np.uint32)
@@ -2560,9 +2561,9 @@ def test_phase_to_radians_preserves_every_scanner_count_when_repeated(counts_per
 
 def test_phase_to_radians_bulk_fractional_counts_keep_sub_count_precision():
     unique_counts = np.array([1024.5, 2048.5, 3072.5], dtype=np.float32)
-    expected = qsmxt._phase_to_radians(unique_counts, 4096.0)
+    expected = qsmxt.ep3d_mrd.phase_to_radians(unique_counts, 4096.0)
     counts = np.tile(unique_counts, 2048)
-    actual = qsmxt._phase_to_radians(counts, 4096.0)
+    actual = qsmxt.ep3d_mrd.phase_to_radians(counts, 4096.0)
 
     np.testing.assert_array_equal(
         actual.view(np.uint32), np.tile(expected, 2048).view(np.uint32)
@@ -2989,7 +2990,7 @@ def test_explicit_relaxometry_rejected_before_processing(tmp_path, monkeypatch, 
     def unexpected(*args, **kwargs):
         pytest.fail("Unsupported map request reached preprocessing or native execution")
 
-    monkeypatch.setattr(qsmxt, "_ep3d_dual_polarity_average", unexpected)
+    monkeypatch.setattr(qsmxt.ep3d_mrd, "preprocess_images", unexpected)
     monkeypatch.setattr(qsmxt, "_run_qsmxt", unexpected)
     monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
     parameters = dict(params, ep3ddualpolarity=epi, echotimesms="10,20")

@@ -540,7 +540,9 @@ tables against `qsmci-in-silico-2019.json`. The snapshot records source hashes.
 
 ## 3D EPI preprocessing
 
-The EPI configurations run `ep3d_preproc.py` before QSMxT. niimath estimates rigid
+The EPI configurations and the `ep3d` app share `macros/ep3d/helpers.yaml`.
+`ep3d_mrd.preprocess_images` pairs repetitions and runs `ep3d_preproc.py` before
+QSMxT. niimath estimates rigid
 motion from the 4D magnitude series with `-moco -ref 0 -estimate`. Its
 `-resample` operation applies the same `-hmc` parameters to both Cartesian components on the
 first repetition's grid, using cubic B-spline interpolation and zero outside the

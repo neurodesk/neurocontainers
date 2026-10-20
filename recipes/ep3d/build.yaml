@@ -1,0 +1,89 @@
+name: ep3d
+version: 1.0.0
+copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
+  - name: ep3d-highres-preprocessing (no license file upstream; packaged with the author's permission)
+    url: https://github.com/mrphysics-bonn/ep3d-highres-preprocessing
+  - license: BSD-2-Clause
+    url: https://github.com/rordenlab/niimath/blob/master/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/ANTsX/ANTsPy/blob/master/LICENSE
+architectures:
+  - x86_64
+variables:
+  qsmxt_base_digest: sha256:f61c95051a559f72068955bc9a9967b6a86632de0c10afa1650863b6d5f6bdd2
+auto_update:
+  method: sources
+  container_version: false
+  local:
+    - macros/ep3d
+  sources:
+    - id: qsmxt_base
+      method: oci_digest
+      image: ghcr.io/neurodesk/qsmxt_10.0.0
+      tag: latest
+      target:
+        variable: qsmxt_base_digest
+build:
+  kind: neurodocker
+  base-image: ghcr.io/neurodesk/qsmxt_10.0.0@{{ context.qsmxt_base_digest }}
+  pkg-manager: apt
+  add-default-template: false
+  directives:
+    - environment:
+        PYTHONPATH: /opt/code/python-ismrmrd-server
+        OPENRECON_SOFTWARE_VERSION: '{{ context.version }}'
+        OPENRECON_CONTAINER_VERSION: '{{ context.version }}'
+    - include: macros/ep3d/helpers.yaml
+    - run:
+        - install -m 644 {{ get_file("ep3d.py") }} /opt/code/python-ismrmrd-server/ep3d.py
+        - install -m 644 {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - install -m 644 {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - mkdir -p /opt/ep3d /tmp/share/ep3d
+        - install -m 644 {{ get_file("verify_runtime.py") }} /opt/ep3d/verify_runtime.py
+        - chmod 1777 /tmp/share /tmp/share/ep3d
+deploy:
+  bins:
+    - ep3d-preprocess
+    - python
+    - siemens_to_ismrmrd
+files:
+  - name: ep3d.py
+    filename: ep3d.py
+  - name: verify_runtime.py
+    filename: verify_runtime.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+categories:
+  - image reconstruction
+  - phase processing
+readme: |
+  ## ep3d/{{ context.version }}
+
+  3D EPI post-processing from the NeuroContainers QSMxT 10.0.0 image.
+  Motion correct, phase match, and complex average repeated single-echo magnitude
+  and phase volumes. Optional ANTs NLM denoising is off by default.
+
+  OpenRecon config `ep3d` returns corrected magnitude and wrapped phase in two
+  series per selected input pair. It preserves the first repetition's geometry
+  and phase reference. It does not run QSM reconstruction or return originals.
+  The QSMxT tools and models remain installed in the inherited image.
+
+  The QSMxT base is pinned by digest. Automatic updates track rebuilds of the
+  QSMxT 10.0.0 image, including its installed OpenRecon and preprocessing stack.
+  Both apps install the shared preprocessing modules from macros/ep3d.
+  Changes to that macro rebuild both apps.
+  See OpenReconREADME.md for input requirements, scanner parameters, and scaling.
+
+  For a 4D NIfTI magnitude and radian-phase pair:
+
+  ```bash
+  ep3d-preprocess magnitude.nii.gz phase.nii.gz output output.json --n-procs 4
+  ```
+
+  Add `--denoise` for NLM denoising. The outputs are float32
+  `output/average_magnitude.nii` and `output/average_phase.nii`.
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==

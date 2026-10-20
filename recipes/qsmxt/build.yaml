@@ -135,6 +135,7 @@ auto_update:
       variable: antspyx_version
   local:
   - macros/openrecon
+  - macros/ep3d
 
 build:
   kind: neurodocker
@@ -158,6 +159,7 @@ build:
         openrecon_ubuntu_version: "24.04"
 
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/ep3d/helpers.yaml
 
     - workdir: /opt/qsmxt
 
@@ -213,13 +215,12 @@ build:
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
         - cp {{ get_file("qsmxt_regional_report.py") }} /opt/code/python-ismrmrd-server/qsmxt_regional_report.py
-        - cp {{ get_file("ep3d_preproc.py") }} /opt/code/python-ismrmrd-server/ep3d_preproc.py
         - cp {{ get_file("qsmxt_gre_motion.py") }} /opt/code/python-ismrmrd-server/qsmxt_gre_motion.py
         - cp {{ get_file("qsmxt_ep3d.py") }} /opt/code/python-ismrmrd-server/qsmxt_ep3d.py
         - cp {{ get_file("qsmxt_ep3d_denoise.py") }} /opt/code/python-ismrmrd-server/qsmxt_ep3d_denoise.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
-        - chmod 644 /opt/code/python-ismrmrd-server/qsmxt.py /opt/code/python-ismrmrd-server/qsmxt_regional_report.py /opt/code/python-ismrmrd-server/qsmxt_gre_motion.py /opt/code/python-ismrmrd-server/ep3d_preproc.py /opt/code/python-ismrmrd-server/qsmxt_ep3d.py /opt/code/python-ismrmrd-server/qsmxt_ep3d_denoise.py /opt/code/python-ismrmrd-server/OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - chmod 644 /opt/code/python-ismrmrd-server/qsmxt.py /opt/code/python-ismrmrd-server/qsmxt_regional_report.py /opt/code/python-ismrmrd-server/qsmxt_gre_motion.py /opt/code/python-ismrmrd-server/qsmxt_ep3d.py /opt/code/python-ismrmrd-server/qsmxt_ep3d_denoise.py /opt/code/python-ismrmrd-server/OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconREADME.md
         - mkdir -p /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
         - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
 
@@ -369,8 +370,6 @@ files:
     filename: qsmxt.py
   - name: qsmxt_regional_report.py
     filename: qsmxt_regional_report.py
-  - name: ep3d_preproc.py
-    filename: ep3d_preproc.py
   - name: qsmxt_gre_motion.py
     filename: qsmxt_gre_motion.py
   - name: qsmxt_ep3d.py
