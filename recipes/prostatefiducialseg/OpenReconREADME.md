@@ -24,8 +24,8 @@ K most probable are outlined.
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `prostatefiducialseg` | Selects the MRD server configuration. |
 | Implanted markers | `markers` | int | 3 | Number of implanted markers (K). |
-| Model folds | `ensemble` | choice | 5 | Folds averaged: 5 (full ensemble) or 1 (faster). |
-| Test-time mirroring | `mirroring` | boolean | true | Averages over mirrored copies (8 times the compute). |
+| Networks | `ensemble` | choice | `all` | All 5 networks (the evaluated ensemble) or one network (`0`..`4`). |
+| Test-time mirroring | `mirroring` | boolean | false | Averages over mirrored copies (8 times the compute). |
 
 ## Outputs
 

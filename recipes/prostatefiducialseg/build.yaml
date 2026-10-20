@@ -24,24 +24,24 @@ files:
     - name: miniconda.sh
       url: "{{ context.conda_download_url }}"
     # SeedSeg v2 nnU-Net folds (ONNX, fp32) and their description (patch size, spacing,
-    # mirroring axes, file digests). URLs: TODO, set once the files are uploaded (sha256 below are final).
+    # mirroring axes, file digests), on OSF project f7hjv (folder seedseg-v2).
     - name: seedseg-v2.json
-      url: https://TODO-model-host.invalid/seedseg-v2.json
+      url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faac4d4e9c7ec8b5a7ac
       sha256: d4bb1adec2bfa153769395c7113191616b760bfaf1e31fb5aa4e2dad0a2dcda6
     - name: seedseg-v2_fold0.onnx
-      url: https://TODO-model-host.invalid/seedseg-v2_fold0.onnx
+      url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faba65a444044fb5a7ec
       sha256: a39969d56053d43b3d76dcea184cc1d5bd7ed95d7306d4ad92c76fb84b7c246f
     - name: seedseg-v2_fold1.onnx
-      url: https://TODO-model-host.invalid/seedseg-v2_fold1.onnx
+      url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6facbc66464f30749ef41
       sha256: bccbf6c373d01b1b9c5f06ffb61d139b3af064616e1c92158c34ff873b89d6f4
     - name: seedseg-v2_fold2.onnx
-      url: https://TODO-model-host.invalid/seedseg-v2_fold2.onnx
+      url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6fadafe576fae8bc4d0f5
       sha256: d30700090480f64391e38bb8df03ff1f1a121042cc4f8c01a8dfa3ec6e487998
     - name: seedseg-v2_fold3.onnx
-      url: https://TODO-model-host.invalid/seedseg-v2_fold3.onnx
+      url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faeac66464f30749f04d
       sha256: ee319bb26726642ce8e8bff89e538a03af0ddba9852094f56b8727d95c5af71e
     - name: seedseg-v2_fold4.onnx
-      url: https://TODO-model-host.invalid/seedseg-v2_fold4.onnx
+      url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6fafbaf81c3ccbec4d19d
       sha256: 7c6b80a183e0ef500903734bfbfe91169ec3441de264a130cb54e8676c6aa0c0
 
 auto_update:
@@ -85,32 +85,32 @@ auto_update:
       variable: openrecon_server_commit
   - id: seedseg-v2-json
     method: http_digest
-    url: https://TODO-model-host.invalid/seedseg-v2.json
+    url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faac4d4e9c7ec8b5a7ac
     target:
       file: seedseg-v2.json
   - id: seedseg-v2_fold0
     method: http_digest
-    url: https://TODO-model-host.invalid/seedseg-v2_fold0.onnx
+    url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faba65a444044fb5a7ec
     target:
       file: seedseg-v2_fold0.onnx
   - id: seedseg-v2_fold1
     method: http_digest
-    url: https://TODO-model-host.invalid/seedseg-v2_fold1.onnx
+    url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6facbc66464f30749ef41
     target:
       file: seedseg-v2_fold1.onnx
   - id: seedseg-v2_fold2
     method: http_digest
-    url: https://TODO-model-host.invalid/seedseg-v2_fold2.onnx
+    url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6fadafe576fae8bc4d0f5
     target:
       file: seedseg-v2_fold2.onnx
   - id: seedseg-v2_fold3
     method: http_digest
-    url: https://TODO-model-host.invalid/seedseg-v2_fold3.onnx
+    url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faeac66464f30749f04d
     target:
       file: seedseg-v2_fold3.onnx
   - id: seedseg-v2_fold4
     method: http_digest
-    url: https://TODO-model-host.invalid/seedseg-v2_fold4.onnx
+    url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6fafbaf81c3ccbec4d19d
     target:
       file: seedseg-v2_fold4.onnx
   - id: onnxruntime_gpu

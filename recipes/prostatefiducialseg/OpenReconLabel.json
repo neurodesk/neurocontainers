@@ -75,26 +75,50 @@
     {
       "id": "ensemble",
       "label": {
-        "en": "Model folds"
+        "en": "Networks"
       },
       "type": "choice",
       "values": [
         {
-          "id": "5",
+          "id": "all",
           "name": {
-            "en": "5 (full ensemble)"
+            "en": "All 5 networks (evaluated ensemble)"
+          }
+        },
+        {
+          "id": "0",
+          "name": {
+            "en": "Network 1 of 5 only"
           }
         },
         {
           "id": "1",
           "name": {
-            "en": "1 (faster)"
+            "en": "Network 2 of 5 only"
+          }
+        },
+        {
+          "id": "2",
+          "name": {
+            "en": "Network 3 of 5 only"
+          }
+        },
+        {
+          "id": "3",
+          "name": {
+            "en": "Network 4 of 5 only"
+          }
+        },
+        {
+          "id": "4",
+          "name": {
+            "en": "Network 5 of 5 only"
           }
         }
       ],
-      "default": "5",
+      "default": "all",
       "information": {
-        "en": "Number of nnU-Net cross-validation folds averaged."
+        "en": "The 5-network ensemble is the configuration evaluated on independent patients; a single network is faster."
       }
     },
     {
@@ -103,7 +127,7 @@
         "en": "Test-time mirroring"
       },
       "type": "boolean",
-      "default": true,
+      "default": false,
       "information": {
         "en": "Average predictions over mirrored copies of the image (8 times the compute)."
       }
