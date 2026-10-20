@@ -1,0 +1,19 @@
+name: ep3d
+version: "1.0.0"
+
+tests:
+  - name: OpenRecon server and preprocessing launcher
+    script: |
+      set -euo pipefail
+      test "$OPENRECON_SOFTWARE_VERSION" = '${version}'
+      test "$OPENRECON_CONTAINER_VERSION" = '${version}'
+      python /opt/code/python-ismrmrd-server/main.py -h
+      ep3d-preprocess --help
+      niimath --version
+      python -c 'import ep3d, ep3d_mrd, ep3d_preproc, ants'
+      test -r /opt/code/python-ismrmrd-server/OpenReconLabel.json
+
+  - name: Corrected magnitude and phase from repeated 3D EPI images
+    description: Exercise real motion correction, phase matching, averaging, NLM, scanner output, and failure handling.
+    command: python /opt/ep3d/verify_runtime.py
+    expected_output_contains: "3D EPI corrected magnitude and phase verified"

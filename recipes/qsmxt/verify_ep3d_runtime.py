@@ -11,10 +11,10 @@ from pathlib import Path
 import ismrmrd
 import nibabel as nib
 import numpy as np
-from scipy.ndimage import gaussian_filter, shift
 
 sys.path.append("/opt/code/python-ismrmrd-server")
 import ep3d_preproc
+from ep3d_fixture import dual_polarity_phantom
 import qsmxt
 
 
@@ -106,18 +106,13 @@ def main():
     for command in ("mcflirt", "flirt", "conda", "mamba", "micromamba"):
         assert shutil.which(command) is None, f"Unexpected dependency: {command}"
 
-    rng = np.random.default_rng(0)
-    shape = (48, 48, 32)
-    x, y, z = np.meshgrid(*[np.linspace(-1, 1, n) for n in shape], indexing="ij")
-    inside = x**2 / 0.8 + y**2 / 0.8 + z**2 / 0.7 < 1
-    magnitude = np.where(
-        inside, 1000 + 400 * gaussian_filter(rng.standard_normal(shape), 2), 0
-    )
-    tissue_phase = gaussian_filter(rng.standard_normal(shape), 2.5) / 0.05 * 0.4
-    field_phase = 1.2 * x + 0.8 * z
-    polarity_phase = 1.3 * (0.5 + y)
-    truth = magnitude * np.exp(1j * (field_phase + tissue_phase + polarity_phase))
-    motion = [(0, 0, 0), (0, 0, 0), (1.5, -1.0, 0), (1.5, -1.0, 0)]
+    phantom = dual_polarity_phantom()
+    magnitude = phantom.magnitude
+    tissue_phase = phantom.tissue_phase
+    truth = phantom.truth
+    core = phantom.core
+    volumes = phantom.signals
+    shape = magnitude.shape
 
     def mrd_volume(series, repetition, data_xyz, image_type):
         image = ismrmrd.Image.from_array(
@@ -147,17 +142,8 @@ def main():
         image.attribute_string = meta.serialize()
         return image
 
-    images, volumes = [], []
-    for repetition, offset in enumerate(motion):
-        sign = 1 if repetition % 2 == 0 else -1
-        signal = magnitude * np.exp(
-            1j * (field_phase + tissue_phase + sign * polarity_phase)
-        )
-        signal = shift(signal.real, offset, order=3) + 1j * shift(
-            signal.imag, offset, order=3
-        )
-        signal += 80 * (rng.standard_normal(shape) + 1j * rng.standard_normal(shape))
-        volumes.append(signal)
+    images = []
+    for repetition, signal in enumerate(volumes):
         counts = np.round((np.angle(signal) + np.pi) / (2 * np.pi) * 4096) % 4096
         images.append(
             mrd_volume(1, repetition, np.abs(signal), ismrmrd.IMTYPE_MAGNITUDE)
@@ -191,7 +177,6 @@ def main():
         averaged = nib.load(result["magnitude_paths"][0]).get_fdata() * np.exp(
             1j * nib.load(result["phase_paths"][0]).get_fdata()
         )
-        core = inside & (x**2 / 0.8 + y**2 / 0.8 + z**2 / 0.7 < 0.6)
         difference = averaged * np.conj(truth)
         residual = np.angle(
             difference * np.exp(-1j * np.angle(difference[core].sum()))

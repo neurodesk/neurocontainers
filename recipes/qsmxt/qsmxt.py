@@ -15,7 +15,6 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import time
 import traceback
@@ -28,6 +27,7 @@ import nibabel as nib
 import numpy as np
 
 from openrecon_metadata import new_uid, processing_metadata, stamp_derived
+import ep3d_mrd
 import qsmxt_regional_report
 
 try:
@@ -39,7 +39,6 @@ except ImportError:
 
 RECIPE_NAME = "qsmxt"
 DEFAULT_QSMXT_BINARY = "/opt/qsmxt/qsmxt"
-EP3D_PREPROC_DRIVER = Path(__file__).with_name("ep3d_preproc.py")
 OPENRECON_WORK_ROOT = Path("/tmp/share/qsmxt_openrecon")
 QSMXT_DERIVATIVE_ROOT = Path("derivatives/qsmxt")
 DEFAULT_ECHO_TIME_MS = 20.0
@@ -471,13 +470,22 @@ def write_bids_dataset(
     preprocessed_volume = None
     if settings["ep3d_dual_polarity"]:
         settings = _settings_for_echo_count(settings, 1)
-        magnitude_echo_groups, phase_echo_groups, preprocessed_volume = (
-            _ep3d_dual_polarity_average(
-                magnitude_group["images"],
-                phase_group["images"],
-                bids_dir.parent / "ep3d",
-                settings,
-            )
+        preprocessed = ep3d_mrd.preprocess_images(
+            magnitude_group["images"],
+            phase_group["images"],
+            bids_dir.parent / "ep3d",
+            read_volume=_images_to_nifti_volume,
+            phase_wrap=settings["phase_wrap"],
+            denoise=settings["ep3d_denoise"],
+            n_procs=_cpu_budget(),
+        )
+        magnitude_echo_groups = [preprocessed.magnitude_reference]
+        phase_echo_groups = [preprocessed.phase_reference]
+        magnitude_nifti = nib.load(preprocessed.magnitude_path)
+        preprocessed_volume = (
+            magnitude_nifti.get_fdata(dtype=np.float32),
+            nib.load(preprocessed.phase_path).get_fdata(dtype=np.float32),
+            magnitude_nifti.affine,
         )
     else:
         magnitude_echo_groups = _echo_image_groups(magnitude_group["images"])
@@ -749,134 +757,6 @@ def _validate_2d_stack_positions(images):
         raise ValueError("Nonuniform 2D slice positions cannot be represented by a NIfTI affine")
 
 
-def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settings):
-    """Motion-correct and complex-average a dual-polarity 3D-EPI series.
-
-    Returns the first repetition as the single echo group that supplies echo
-    time and output geometry, plus the averaged (magnitude, phase, affine).
-    """
-    magnitude_keys, magnitude_volumes = _repetition_image_groups(magnitude_images)
-    phase_keys, phase_volumes = _repetition_image_groups(phase_images)
-    if magnitude_keys != phase_keys:
-        raise ValueError(
-            "3D EPI dual polarity QSM needs one phase volume per magnitude "
-            "volume; (repetition, set, average) keys differ: "
-            f"magnitude={magnitude_keys} phase={phase_keys}"
-        )
-    if len(magnitude_volumes) < 2:
-        raise ValueError(
-            "3D EPI dual polarity QSM needs at least two repetitions; the "
-            f"magnitude series has {len(magnitude_images)} image(s) in one "
-            "repetition"
-        )
-
-    magnitude_4d = []
-    phase_4d = []
-    affines = []
-    for magnitude_volume_images, phase_volume_images in zip(
-        magnitude_volumes, phase_volumes
-    ):
-        magnitude, affine = _images_to_nifti_volume(
-            magnitude_volume_images, kind="magnitude"
-        )
-        phase, _ = _images_to_nifti_volume(phase_volume_images, kind="phase")
-        magnitude_4d.append(magnitude)
-        phase_4d.append(phase)
-        affines.append(affine)
-    if len({volume.shape for volume in magnitude_4d + phase_4d}) != 1:
-        raise ValueError(
-            "3D EPI dual polarity repetitions have different shapes: "
-            f"{sorted({volume.shape for volume in magnitude_4d + phase_4d})}"
-        )
-    reference_affine = affines[0]
-    logging.info(
-        "3D EPI dual polarity: %d repetition(s) of shape %s, denoise=%s",
-        len(magnitude_4d),
-        magnitude_4d[0].shape,
-        settings["ep3d_denoise"],
-    )
-
-    work_dir.mkdir(parents=True, exist_ok=True)
-    magnitude_path = work_dir / "magnitude.nii"
-    phase_path = work_dir / "phase.nii"
-    nib.save(
-        nib.Nifti1Image(np.stack(magnitude_4d, axis=-1), reference_affine),
-        magnitude_path,
-    )
-    nib.save(
-        nib.Nifti1Image(
-            _phase_to_radians(np.stack(phase_4d, axis=-1), settings["phase_wrap"]),
-            reference_affine,
-        ),
-        phase_path,
-    )
-    del magnitude_4d, phase_4d, magnitude, phase
-    averaged = _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings)
-    magnitude = nib.load(averaged["magnitude"]).get_fdata(dtype=np.float32)
-    phase = nib.load(averaged["phase"]).get_fdata(dtype=np.float32)
-    return (
-        [magnitude_volumes[0]],
-        [phase_volumes[0]],
-        (magnitude, phase, reference_affine),
-    )
-
-
-def _repetition_image_groups(images):
-    def volume_key(image):
-        header = image.getHead()
-        return (
-            int(getattr(header, "repetition", 0)),
-            int(getattr(header, "set", 0)),
-            int(getattr(header, "average", 0)),
-        )
-
-    ordered = sorted(images, key=lambda image: (volume_key(image), _image_sort_key(image)))
-    keys = [volume_key(image) for image in ordered]
-    return sorted(set(keys)), _group_images_by_ordered_key(ordered, keys)
-
-
-def _phase_to_radians(phase_volume, phase_wrap):
-    """Map scanner phase counts onto [-pi, pi] with ``phase_wrap`` counts per cycle.
-
-    Radian input passes through. The period is fixed rather than inferred
-    from the data range, so phase that does not span the full encoding keeps
-    its scale.
-    """
-    phase = np.asarray(phase_volume, dtype=np.float32)
-    if phase.size == 0:
-        return phase
-    data_min, data_max = phase.min(), phase.max()
-    all_finite = np.isfinite(data_min) and np.isfinite(data_max)
-    if not all_finite:
-        finite = phase[np.isfinite(phase)]
-        if finite.size == 0:
-            return phase
-        data_min, data_max = finite.min(), finite.max()
-        del finite
-    if -np.pi <= data_min and data_max <= np.pi:
-        return phase
-    span = float(data_max - data_min)
-    if span > phase_wrap:
-        raise ValueError(
-            f"Phase spans {span:.6g} counts, more than one {phase_wrap:.6g}-count "
-            "cycle; set phasewrap to the scanner's counts per 2*pi"
-        )
-    if (
-        all_finite
-        and 0 <= data_min
-        and data_max <= np.iinfo(np.uint16).max
-        and phase.size > int(data_max) + 1
-    ):
-        indices = phase.astype(np.uint16)
-        if np.array_equal(phase, indices):
-            counts = np.arange(int(data_max) + 1, dtype=np.float32)
-            lookup = np.angle(
-                np.exp(1j * counts * (2.0 * np.pi / phase_wrap))
-            ).astype(np.float32)
-            return lookup[indices]
-    return np.angle(np.exp(1j * phase * (2.0 * np.pi / phase_wrap))).astype(np.float32)
-
-
 def _cpu_budget():
     """Respect CPU affinity and a cgroup v2 quota, up to 24 workers."""
     available = os.cpu_count() or 1
@@ -889,39 +769,6 @@ def _cpu_budget():
     except (OSError, ValueError, ZeroDivisionError):
         pass
     return max(1, min(24, available))
-
-
-def _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings):
-    outputs_path = work_dir / "outputs.json"
-    cmd = [
-        sys.executable,
-        str(EP3D_PREPROC_DRIVER),
-        str(magnitude_path),
-        str(phase_path),
-        str(work_dir / "preprocessing"),
-        str(outputs_path),
-        "--n-procs",
-        str(_cpu_budget()),
-    ]
-    if settings["ep3d_denoise"]:
-        cmd.append("--denoise")
-    logging.info("Running 3D EPI dual polarity preprocessing: %s", " ".join(cmd))
-    started_at = time.monotonic()
-    result = subprocess.run(cmd, check=False, text=True, capture_output=True)
-    logging.info(
-        "3D EPI preprocessing result: returncode=%d elapsed_seconds=%.3f",
-        result.returncode,
-        time.monotonic() - started_at,
-    )
-    if result.stdout:
-        logging.info("3D EPI preprocessing stdout:\n%s", result.stdout)
-    if result.stderr:
-        logging.info("3D EPI preprocessing stderr:\n%s", result.stderr)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"3D EPI dual polarity preprocessing failed with exit code {result.returncode}"
-        )
-    return json.loads(outputs_path.read_text())
 
 
 def _qsmxt_command(bids_dir, output_dir, settings):

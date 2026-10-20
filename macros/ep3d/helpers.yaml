@@ -1,0 +1,22 @@
+builder: neurodocker
+
+directives:
+  - file:
+      name: ep3d_preproc.py
+      filename: ep3d_preproc.py
+  - file:
+      name: ep3d_mrd.py
+      filename: ep3d_mrd.py
+  - file:
+      name: ep3d_fixture.py
+      filename: ep3d_fixture.py
+  - file:
+      name: ep3d-preprocess
+      contents: |
+        #!/usr/bin/env bash
+        exec python3 /opt/code/python-ismrmrd-server/ep3d_preproc.py "$@"
+  - run:
+      - install -m 644 {{ get_file("ep3d_preproc.py") }} /opt/code/python-ismrmrd-server/ep3d_preproc.py
+      - install -m 644 {{ get_file("ep3d_mrd.py") }} /opt/code/python-ismrmrd-server/ep3d_mrd.py
+      - install -m 644 {{ get_file("ep3d_fixture.py") }} /opt/code/python-ismrmrd-server/ep3d_fixture.py
+      - install -m 755 {{ get_file("ep3d-preprocess") }} /usr/local/bin/ep3d-preprocess
