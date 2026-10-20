@@ -10,7 +10,7 @@ variables:
     openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
     openrecon_ismrmrd_version: "1.14.2"
-    upstream_commit: "40a346476bc3e4dbaab6bda09330864900edd519"
+    upstream_commit: "87a7dbf5ab94df28c8656b9a45648a6db4098a3e"
     onnxruntime_gpu_version: "1.23.2"
     conda_version: "25.5.1-0"
     conda_download_url: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
@@ -27,7 +27,7 @@ files:
     # mirroring axes, file digests), on OSF project f7hjv (folder seedseg-v2).
     - name: seedseg-v2.json
       url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faac4d4e9c7ec8b5a7ac
-      sha256: d4bb1adec2bfa153769395c7113191616b760bfaf1e31fb5aa4e2dad0a2dcda6
+      sha256: 7128fa5430feb5c34f3d0ba524f153d619748cd062b25ae96f9f8576c6a6400a
     - name: seedseg-v2_fold0.onnx
       url: https://files.au-1.osf.io/v1/resources/f7hjv/providers/osfstorage/6ad6faba65a444044fb5a7ec
       sha256: a39969d56053d43b3d76dcea184cc1d5bd7ed95d7306d4ad92c76fb84b7c246f
