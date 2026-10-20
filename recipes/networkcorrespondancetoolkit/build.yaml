@@ -1,5 +1,5 @@
 name: networkcorrespondancetoolkit
-version: "0.3.3"
+version: "0.4.1"
 
 copyright:
   - license: MIT
@@ -64,8 +64,8 @@ readme: |-
   ----------------------------------
 
 variables:
-  upstream_version: 0.3.3
-  data_commit: 0675b0df7fedc98d95c06c90da58b754a3cbfd49
+  upstream_version: "0.4.1"
+  data_commit: "326a23f66df2200376d73ff787923609446cacff"
 
 auto_update:
   container_version: "upstream"
@@ -168,7 +168,7 @@ files:
     url: https://github.com/rubykong/cbig_network_correspondence_data/archive/{{ context.data_commit }}.tar.gz
   - name: environment.yml
     url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
-    sha256: fa5d943cd48ea097445c94bea89e133f7f0114032ad1d20e3911802fbd372230
+    sha256: "6c731873c8e8d9ba0bccf75e80f560f9a71a7dbcc0f58b85c1c75045b2336a40"
   - name: miniconda.sh
     url: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
     sha256: aa8cbd6aa7ef85d0528616d2dffce8bd0b51924e7ddd18734ede6c1c63c462d0
