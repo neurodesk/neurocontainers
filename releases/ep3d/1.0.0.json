@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "ep3d 1.0.0": {
+      "version": "20261020",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "phase processing"
+  ]
+}
