@@ -34,7 +34,7 @@ tests:
         data = np.random.default_rng(7).normal(100, 20, (29, 30, 31)).astype(np.float32)
         affine = np.diag([1.2, 1.3, 1.4, 1.])
         nib.save(nib.Nifti1Image(data, affine), source)
-        subprocess.run(['predict3.py', '-i', str(source), '-o', str(root), '--folds', '0', '--no-mirror',
+        subprocess.run(['predict3.py', '-i', str(source), '-o', str(root), '--folds', '0',
                         '--no-n4', '--device', 'cpu', '--threads', '2'], check=True)
         prob = nib.load(root / 'marker_prob.nii.gz')
         assert prob.shape == data.shape

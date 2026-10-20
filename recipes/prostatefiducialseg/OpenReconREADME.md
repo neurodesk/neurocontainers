@@ -24,7 +24,7 @@ K most probable are outlined.
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `prostatefiducialseg` | Selects the MRD server configuration. |
 | Implanted markers | `markers` | int | 3 | Number of implanted markers (K). |
-| Networks | `ensemble` | choice | `all` | All 5 networks (the evaluated ensemble) or one network (`0`..`4`). |
+| Network 1 of 5 ... Network 5 of 5 | `network1` ... `network5` | boolean | true | Networks to use; their probability maps are averaged. All 5 is the configuration evaluated on independent patients; fewer networks are faster. |
 | Test-time mirroring | `mirroring` | boolean | false | Averages over mirrored copies (8 times the compute). |
 
 ## Outputs
@@ -38,7 +38,7 @@ K most probable are outlined.
 
 ## Command Line
 
-`predict3.py -i t1.nii -o out/ [--n-markers 3] [--folds 0 1 2 3 4] [--no-mirror]`
+`predict3.py -i t1.nii -o out/ [--n-markers 3] [--folds 0 1 2 3 4] [--mirror]`
 writes `marker_prob.nii.gz`, `top3_markers.nii.gz` and `detections.json`.
 
 ## Open Source Development

@@ -29,7 +29,7 @@ def main() -> None:
     parser.add_argument('--n-markers', type=int, default=3, help='implant count K')
     parser.add_argument('--threshold', type=float, default=0.1)
     parser.add_argument('--folds', nargs='+', help='fold subset (default: all five)')
-    parser.add_argument('--no-mirror', action='store_true', help='skip test-time mirroring (8x faster)')
+    parser.add_argument('--mirror', action='store_true', help='test-time mirroring (8x slower; default off)')
     parser.add_argument('--no-n4', action='store_true', help='input is already N4-corrected')
     parser.add_argument('--device', default='auto', choices=['auto', 'cpu', 'cuda'])
     parser.add_argument('--threads', type=int)
@@ -40,7 +40,7 @@ def main() -> None:
     if device == 'auto':
         import onnxruntime as ort
         device = 'cuda' if 'CUDAExecutionProvider' in ort.get_available_providers() else 'cpu'
-    model = seedseg_onnx.SeedSegONNX(args.models, args.folds, mirror=not args.no_mirror, device=device,
+    model = seedseg_onnx.SeedSegONNX(args.models, args.folds, mirror=args.mirror, device=device,
                                      threads=args.threads)
     det, pm, img = seedseg_onnx.run_nifti(model, args.input, n4=not args.no_n4, k=args.n_markers,
                                           threshold=args.threshold)
