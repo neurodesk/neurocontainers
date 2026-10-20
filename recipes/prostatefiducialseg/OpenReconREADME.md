@@ -1,40 +1,53 @@
 # Prostate Fiducial Segmentation OpenRecon
 
-`prostatefiducialseg` is an OpenRecon image-in/image-out package for prostate
-fiducial segmentation. It receives reconstructed T1-weighted prostate images,
-preprocesses the volume, runs the bundled `predict3.py` ensemble models, and
-returns the source image data with detected fiducial boundaries overlaid.
+`prostatefiducialseg` is an OpenRecon image-in/image-out package that detects
+implanted gold fiducial markers in T1-weighted prostate images. It receives the
+reconstructed magnitude images of a series and returns them with the outlines of
+the detected markers drawn in.
 
 ## Recommended Sequence
 
-Use a 3D T1-weighted prostate acquisition with consistent slice geometry. The
-wrapper expects a complete image volume, writes it to NIfTI, applies N4 bias
-field correction, runs the bundled fiducial models, and re-slices the result
-back into MRD image messages.
+The model was trained on 2D T1-weighted FLASH images of the prostate (2 mm slices,
+0.69 x 0.69 mm in plane). Images with other voxel sizes are resampled to that grid.
+
+## Processing
+
+SeedSeg v2: N4 bias field correction, then an nnU-Net (residual encoder) 5-fold
+ensemble run with ONNX Runtime (GPU when available, otherwise CPU), with nnU-Net's
+sliding-window inference and optional test-time mirroring. Marker candidates are the
+connected regions of marker probability above 0.1, ranked by mean probability; the
+K most probable are outlined.
 
 ## UI Parameters
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `prostatefiducialseg` | Selects the MRD server configuration. |
+| Implanted markers | `markers` | int | 3 | Number of implanted markers (K). |
+| Model folds | `ensemble` | choice | 5 | Folds averaged: 5 (full ensemble) or 1 (faster). |
+| Test-time mirroring | `mirroring` | boolean | true | Averages over mirrored copies (8 times the compute). |
 
-## Runtime Notes
+## Outputs
 
-- The OpenRecon label exposes only `config`; model paths and postprocessing are
-  fixed in the wrapper.
-- The runtime uses the four published SeedSeg ONNX models staged under
-  `/opt/models/*.onnx`. Each download is checked against its SHA-256 digest.
-- `predict3.py` retains the OpenRecon command interface and output filenames
-  while using preprocessing and marker selection from the tracked SeedSeg source.
-- CUDA inference is available on x86_64; `--device cpu` also works on both
-  supported architectures.
-- Returned images preserve source geometry and add an example ROI metadata
-  field.
+- Images: the input images with the marker outlines at maximum intensity.
+- `SequenceDescriptionAdditional`: `SeedSeg <n>of<K>`, with `_CHECK` appended when
+  fewer than K candidates were found (review the series).
+- `ImageComments`: the mean probability of each marker.
+- `SeedSegMarkers` (base64 JSON): rank, mean probability, image index, row, column
+  and volume of each marker, the number of candidates and the count flag.
+
+## Command Line
+
+`predict3.py -i t1.nii -o out/ [--n-markers 3] [--folds 0 1 2 3 4] [--no-mirror]`
+writes `marker_prob.nii.gz`, `top3_markers.nii.gz` and `detections.json`.
 
 ## Open Source Development
 
 The source for this OpenRecon package is in the NeuroContainers repository:
 https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/prostatefiducialseg
+
+The SeedSeg pipeline itself is `scripts/deploy/seedseg_onnx.py` in
+https://github.com/astewartau/seedseg.
 
 For bugs and feature requests, opening an issue in the NeuroContainers
 repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
