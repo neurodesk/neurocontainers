@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "prostatefiducialseg 8.0.1": {
+      "version": "20261020",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "body"
+  ]
+}
