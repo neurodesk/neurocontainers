@@ -1,637 +1,209 @@
-import ismrmrd
-import logging
-import traceback
-import numpy as np
+"""OpenRecon (MRD image-in/image-out) module for SeedSeg prostate gold-marker detection.
+
+Receives the reconstructed T1 magnitude images of one series, runs the SeedSeg v2
+pipeline (``seedseg_onnx.py`` from the SeedSeg repository: N4, nnU-Net ensemble with
+ONNX Runtime, top-K candidates) and returns the images with the outlines of the K
+detected markers drawn in. Per-marker mean probability, position and the count flag
+(fewer candidates than implanted markers) are written to the image metadata and the
+series description.
+
+Parameters (OpenReconLabel.json): ``markers`` (implant count K, default 3),
+``ensemble`` ("5" folds or "1" fold) and ``mirroring`` (test-time mirroring).
+Environment overrides: SEEDSEG_DEVICE (cpu|cuda), SEEDSEG_MIRROR (0|1), SEEDSEG_MODELS,
+SEEDSEG_SRC.
+"""
 import base64
-import mrdhelper
-import constants
-import nibabel as nib
-import subprocess
+import json
+import logging
 import os
+import sys
+import time
+import traceback
 
-from scipy.ndimage.morphology import binary_fill_holes
+import ismrmrd
+import numpy as np
+from scipy.ndimage import binary_dilation, binary_fill_holes
 from skimage.segmentation import find_boundaries
-from skimage.morphology import dilation
-import SimpleITK as sitk
 
-# Folder for debug output files
-debugFolder = "/tmp/share/debug"
+import constants
+import mrdhelper
+
+sys.path.insert(0, os.environ.get('SEEDSEG_SRC', '/opt/seedseg/scripts/deploy'))
+import seedseg_onnx  # noqa: E402
+
+MODEL_DIR = os.environ.get('SEEDSEG_MODELS', '/opt/models')
+_model_cache = {}
+
+
+def get_model(folds, device, mirror):
+    key = (tuple(folds), device, mirror)
+    if key not in _model_cache:
+        _model_cache.clear()
+        _model_cache[key] = seedseg_onnx.SeedSegONNX(MODEL_DIR, folds, mirror=mirror, device=device, log=logging.info)
+    return _model_cache[key]
+
+
+def default_device():
+    """cuda when ONNX Runtime has the CUDA provider and a GPU is visible, else cpu."""
+    import onnxruntime as ort
+    try:
+        ort.preload_dlls()
+    except Exception:
+        pass
+    if 'CUDAExecutionProvider' not in ort.get_available_providers():
+        return 'cpu'
+    try:
+        import ctypes
+        n = ctypes.c_int()
+        ok = ctypes.CDLL('libcudart.so.12').cudaGetDeviceCount(ctypes.byref(n)) == 0 and n.value > 0
+    except Exception:
+        ok = False
+    return 'cuda' if ok else 'cpu'
+
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
-
-    # Metadata should be MRD formatted header, but may be a string
-    # if it failed conversion earlier
     try:
-        # Disabled due to incompatibility between PyXB and Python 3.8:
-        # https://github.com/pabigot/pyxb/issues/123
-        # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
-
         logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
-        logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
-            metadata.encoding[0].trajectory, 
-            metadata.encoding[0].encodedSpace.matrixSize.x, 
-            metadata.encoding[0].encodedSpace.matrixSize.y, 
-            metadata.encoding[0].encodedSpace.matrixSize.z, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
-
     except Exception as e:
         logging.warning("Failed to parse metadata properly: %s", str(e))
 
-    # Continuously parse incoming data parsed from MRD messages
     currentSeries = 0
-    acqGroup = []
     imgGroup = []
-    waveformGroup = []
-    
-    # Statistics tracking
-    total_acquisitions = 0
-    total_images = 0
-    total_waveforms = 0
-    
     try:
-        logging.info("Starting data processing loop...")
         for item in connection:
-            # ----------------------------------------------------------
-            # Raw k-space data messages
-            # ----------------------------------------------------------
-            if isinstance(item, ismrmrd.Acquisition):
-                total_acquisitions += 1
-                
-                # Log acquisition flags for debugging
-                flags = []
-                if item.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT):
-                    flags.append("NOISE")
-                if item.is_flag_set(ismrmrd.ACQ_IS_PARALLEL_CALIBRATION):
-                    flags.append("PARALLEL_CAL")
-                if item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA):
-                    flags.append("PHASECORR")
-                if item.is_flag_set(ismrmrd.ACQ_IS_NAVIGATION_DATA):
-                    flags.append("NAVIGATION")
-                if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
-                    flags.append("LAST_IN_SLICE")
-                
-                if flags:
-                    logging.debug("Acquisition %d flags: %s", total_acquisitions, ", ".join(flags))
-                
-                # Accumulate all imaging readouts in a group
-                if (not item.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT) and
-                    not item.is_flag_set(ismrmrd.ACQ_IS_PARALLEL_CALIBRATION) and
-                    not item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA) and
-                    not item.is_flag_set(ismrmrd.ACQ_IS_NAVIGATION_DATA)):
-                    acqGroup.append(item)
-                    logging.debug("Added acquisition %d to group (group size: %d)", total_acquisitions, len(acqGroup))
-
-                # When this criteria is met, run process_raw() on the accumulated
-                # data, which returns images that are sent back to the client.
-                if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
-                    logging.info("Processing k-space group with %d acquisitions", len(acqGroup))
-                    image = process_raw(acqGroup, connection, config, metadata)
-                    connection.send_image(image)
-                    acqGroup = []
-
-            # ----------------------------------------------------------
-            # Image data messages
-            # ----------------------------------------------------------
-            elif isinstance(item, ismrmrd.Image):
-                total_images += 1
-                logging.debug("Received image %d: series=%d, type=%s, shape=%s", 
-                             total_images, item.image_series_index, item.image_type, item.data.shape)
-                
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
+            if isinstance(item, ismrmrd.Image):
                 if item.image_series_index != currentSeries:
-                    logging.info("Series change detected: %d -> %d, processing image group with %d images", 
-                                currentSeries, item.image_series_index, len(imgGroup))
                     currentSeries = item.image_series_index
-                    
-                    if len(imgGroup) > 0:
-                        image = process_image(imgGroup, connection, config, metadata)
-                        connection.send_image(image)
+                    if imgGroup:
+                        connection.send_image(process_image(imgGroup, connection, config, metadata))
                     imgGroup = []
-
-                # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
                     imgGroup.append(item)
-                    logging.debug("Added magnitude image to group (group size: %d)", len(imgGroup))
                 else:
-                    logging.debug("Sending non-magnitude image directly (type: %s)", item.image_type)
                     tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
                     tmpMeta['Keep_image_geometry'] = 1
                     item.attribute_string = tmpMeta.serialize()
-
                     connection.send_image(item)
-                    continue
-
-            # ----------------------------------------------------------
-            # Waveform data messages
-            # ----------------------------------------------------------
-            elif isinstance(item, ismrmrd.Waveform):
-                total_waveforms += 1
-                waveformGroup.append(item)
-                logging.debug("Received waveform %d: ID=%d, samples=%d", 
-                             total_waveforms, item.waveform_id, item.number_of_samples)
-
+            elif isinstance(item, (ismrmrd.Acquisition, ismrmrd.Waveform)):
+                continue  # image-in/image-out only
             elif item is None:
-                logging.info("Received end-of-stream signal")
                 break
-
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
-
-        # Extract raw ECG waveform data. Basic sorting to make sure that data 
-        # is time-ordered, but no additional checking for missing data.
-        # ecgData has shape (5 x timepoints)
-        if len(waveformGroup) > 0:
-            logging.info("Processing %d waveform items", len(waveformGroup))
-            waveformGroup.sort(key = lambda item: item.time_stamp)
-            ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
-            if ecgData:
-                ecgData = np.concatenate(ecgData, 1)
-                logging.info("ECG data extracted: shape=%s", ecgData.shape)
-            else:
-                logging.warning("No ECG data found (waveform_id == 0)")
-
-        # Process any remaining groups of raw or image data.  This can 
-        # happen if the trigger condition for these groups are not met.
-        # This is also a fallback for handling image data, as the last
-        # image in a series is typically not separately flagged.
-        if len(acqGroup) > 0:
-            logging.info("Processing remaining k-space group with %d acquisitions (untriggered)", len(acqGroup))
-            image = process_raw(acqGroup, connection, config, metadata)
-            connection.send_image(image)
-            acqGroup = []
-
-        if len(imgGroup) > 0:
-            logging.info("Processing remaining image group with %d images (untriggered)", len(imgGroup))
-            image = process_image(imgGroup, connection, config, metadata)
-            connection.send_image(image)
-            imgGroup = []
-
-        # Final statistics
-        logging.info("=== Processing session completed ===")
-        logging.info("Statistics - Acquisitions: %d, Images: %d, Waveforms: %d", 
-                    total_acquisitions, total_images, total_waveforms)
-
-    except Exception as e:
-        logging.error("Fatal error in main processing loop: %s", str(e))
+        if imgGroup:
+            connection.send_image(process_image(imgGroup, connection, config, metadata))
+    except Exception:
         logging.error(traceback.format_exc())
         connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
-
     finally:
-        logging.info("Sending close signal to connection")
         connection.send_close()
 
 
-def apply_homogeneity_correction(image_data):
-    logging.info("Starting N4 bias field correction on data shape: %s", image_data.shape)
-    
-    try:
-        # 1) NumPy → SITK
-        logging.debug("Converting NumPy array to SimpleITK image")
-        sitk_image = sitk.GetImageFromArray(image_data)
-        
-        # 2) Float32 input for N4
-        logging.debug("Converting to Float32 for N4 processing")
-        sitk_image = sitk.Cast(sitk_image, sitk.sitkFloat32)
-        
-        # 3) Otsu mask → UInt8
-        logging.debug("Generating Otsu threshold mask")
-        mask = sitk.OtsuThreshold(sitk_image, 0, 1, 200)
-        mask = sitk.Cast(mask, sitk.sitkUInt8)
-        
-        # Log mask statistics
-        mask_array = sitk.GetArrayFromImage(mask)
-        mask_volume = np.sum(mask_array)
-        total_volume = mask_array.size
-        mask_percentage = (mask_volume / total_volume) * 100
-        logging.info("Otsu mask covers %.1f%% of volume (%d/%d voxels)", 
-                    mask_percentage, mask_volume, total_volume)
-        
-        # 4) N4 on floats + uint8 mask
-        logging.debug("Running N4 bias field correction")
-        corrected = sitk.N4BiasFieldCorrection(sitk_image, mask)
-        
-        # 5) Back to NumPy (still float)
-        logging.debug("Converting corrected image back to NumPy")
-        corrected_array = sitk.GetArrayFromImage(corrected)
-        
-        # Log intensity statistics
-        original_stats = f"min={image_data.min():.2f}, max={image_data.max():.2f}, mean={image_data.mean():.2f}"
-        corrected_stats = f"min={corrected_array.min():.2f}, max={corrected_array.max():.2f}, mean={corrected_array.mean():.2f}"
-        logging.info("Intensity before correction: %s", original_stats)
-        logging.info("Intensity after correction: %s", corrected_stats)
-        
-        return corrected_array
-        
-    except Exception as e:
-        logging.error("Error in homogeneity correction: %s", str(e))
-        logging.error("Returning original data unchanged")
-        return image_data
+def slice_order(images):
+    """Indices of `images` sorted along the slice normal (read x phase), as GDCM/SimpleITK
+    sort a DICOM series; this gives the voxel layout of the training NIfTIs."""
+    n = np.cross(np.array(images[0].read_dir), np.array(images[0].phase_dir))
+    return np.argsort([float(np.dot(np.array(im.position), n)) for im in images], kind='stable')
 
 
-def do_segmentation(data):
-    logging.info("=== Starting segmentation pipeline ===")
-    logging.info("Input data shape: %s, dtype: %s", data.shape, data.dtype)
-    
-    # ===== PRE-PREDICTION TRANSFORM =====
-    # A) (Row,Col,Slice) to (Row,Col,Slice)
-    order = (0, 1, 2)
-    # B) (Row,Col,Slice) to (Row,Slice,Col)
-    #order = (0, 2, 1)
-    # C) (Row,Col,Slice) to (Col,Row,Slice)
-    #order = (1, 0, 2)
-    # D) (Row,Col,Slice) to (Col,Slice,Row)
-    #order = (1, 2, 0)
-    # E) (Row,Col,Slice) to (Slice,Row,Col)
-    #order = (2, 0, 1)
-    # F) (Row,Col,Slice) to (Slice,Col,Row)
-    #order = (2, 1, 0)
+def to_volume(images):
+    """MRD images -> (z, y, x) volume in the training (dcm2niix) layout: z = slices sorted
+    along the normal, y = rows bottom-up, x = columns. Returns (vol, order, spacing_zyx)."""
+    order = slice_order(images)
+    sl = [np.asarray(images[i].data, np.float64).reshape(images[i].data.shape[-2:]) for i in order]  # [row, col]
+    vol = np.stack(sl)[:, ::-1, :]
+    h = images[0].getHead()
+    fov, mat = np.array(h.field_of_view[:], float), np.array(h.matrix_size[:], float)
+    rows, cols = vol.shape[1:]
+    # MRD field_of_view/matrix_size are (read/x=cols, phase/y=rows, slice)
+    vx = fov[0] / (mat[0] if mat[0] == cols else cols)
+    vy = fov[1] / (mat[1] if mat[1] == rows else rows)
+    if len(images) > 1:
+        pos = np.array([images[i].position for i in order])
+        dz = float(np.median(np.linalg.norm(np.diff(pos, axis=0), axis=1)))
+    else:
+        dz = float(fov[2])
+    return vol, order, np.array([dz, vy, vx])
 
-    # --- Pre-Prediction Transform ---
-    logging.info("Applying pre-prediction transform with order: %s", order)
-    original_shape = data.shape
-    data = np.transpose(data, order)
-    logging.info("Shape after transpose: %s -> %s", original_shape, data.shape)
-    # ====================================
-    
-    # ——— Homogeneity correction ———
-    logging.info("Applying N4 bias‐field correction")
-    data = apply_homogeneity_correction(data)
 
-    # ——— Save to NIfTI for prediction ———
-    logging.info("Saving preprocessed data to NIfTI format")
-    try:
-        new_img = nib.nifti1.Nifti1Image(data, np.eye(4))
-        nib.save(new_img, 't1_from_h5.nii')
-        
-        # Verify file was created
-        if os.path.exists('t1_from_h5.nii'):
-            file_size = os.path.getsize('t1_from_h5.nii')
-            logging.info("NIfTI file saved successfully: t1_from_h5.nii (%.2f MB)", file_size / (1024*1024))
-        else:
-            logging.error("Failed to create NIfTI file: t1_from_h5.nii")
-            
-    except Exception as e:
-        logging.error("Error saving NIfTI file: %s", str(e))
-        raise
+def marker_outline(mask):
+    """Outline of the dilated, hole-filled marker mask ([image, row, col])."""
+    m = binary_dilation(mask > 0, structure=np.ones((3, 3, 3)))
+    m = binary_fill_holes(m)
+    return find_boundaries(m, mode='outer')
 
-    # ——— Run prediction script ———
-    logging.info("Starting ensemble prediction with predict3.py")
 
-    try:
-        # Run ensemble prediction with multiple models
-        cmd = [
-            "predict3.py",
-            "-i", "t1_from_h5.nii",
-            "-m", "/opt/models/*.onnx",
-            "-o", "output",
-            "--n-markers", "3"
-        ]
-        logging.info("Running command: %s", " ".join(cmd))
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode == 0:
-            logging.info("Prediction script completed successfully")
-            if result.stdout:
-                logging.debug("Prediction stdout: %s", result.stdout.strip())
-        else:
-            logging.error("Prediction script failed with return code: %d", result.returncode)
-            if result.stderr:
-                logging.error("Prediction stderr: %s", result.stderr.strip())
-            if result.stdout:
-                logging.error("Prediction stdout: %s", result.stdout.strip())
-
-    except Exception as e:
-        logging.error("Error running prediction script: %s", str(e))
-        raise
-
-    # ——— Load prediction results ———
-    logging.info("Loading prediction results")
-    try:
-        segmentation_seeds_nii = 'output/consensus_top3_seeds.nii.gz'
-        segmentation_prostate_nii = 'output/consensus_argmax_segmentation.nii.gz'
-        t1_file = 't1_from_h5.nii'
-
-        # Check if output files exist
-        if not os.path.exists(segmentation_seeds_nii):
-            logging.error("Segmentation output file not found: %s", segmentation_seeds_nii)
-            raise FileNotFoundError(f"Missing segmentation file: {segmentation_seeds_nii}")
-        if not os.path.exists(segmentation_prostate_nii):
-            logging.warning("Prostate segmentation file not found: %s (using argmax segmentation instead)", segmentation_prostate_nii)
-            # Use argmax segmentation - extract class 2 as prostate
-            segmentation_prostate_nii = None
-
-        if not os.path.exists(t1_file):
-            logging.error("T1 input file not found: %s", t1_file)
-            raise FileNotFoundError(f"Missing T1 file: {t1_file}")
-
-        logging.info('Loading seeds segmentation image from: %s', segmentation_seeds_nii)
-        segmentation_seeds = nib.load(segmentation_seeds_nii).get_fdata()
-        logging.info("Seeds segmentation loaded: shape=%s, dtype=%s", segmentation_seeds.shape, segmentation_seeds.dtype)
-
-        if segmentation_prostate_nii:
-            logging.info('Loading prostate segmentation image from: %s', segmentation_prostate_nii)
-            segmentation_prostate = nib.load(segmentation_prostate_nii).get_fdata()
-            logging.info("Prostate segmentation loaded: shape=%s, dtype=%s", segmentation_prostate.shape, segmentation_prostate.dtype)
-            # Extract class 2 (prostate) from argmax segmentation
-            segmentation_prostate = (segmentation_prostate == 2).astype(np.uint8)
-            logging.info("Extracted prostate class from argmax segmentation")
-        else:
-            logging.warning("No prostate segmentation available, creating empty mask")
-            segmentation_prostate = np.zeros_like(segmentation_seeds, dtype=np.uint8)
-        
-        logging.info('Loading T1 image from: %s', t1_file)
-        data = nib.load(t1_file).get_fdata()
-        logging.info("T1 data reloaded: shape=%s, dtype=%s", data.shape, data.dtype)
-                
-    except Exception as e:
-        logging.error("Error loading prediction results: %s", str(e))
-        raise
-
-    # ——— Post-processing of segmentation ———
-    logging.info("Starting post-processing of segmentation")
-
-    try:
-        # # Create prostate mask from segmentation
-        # logging.debug("Creating prostate mask from segmentation")
-        # prostate_mask = (segmentation_prostate > 0)
-        # prostate_voxel_count = np.sum(prostate_mask)
-        # logging.info("Prostate mask contains %d voxels", prostate_voxel_count)
-        # if prostate_voxel_count == 0:
-        #     logging.warning("No prostate voxels found in segmentation")
-        #
-        # # Create prostate boundary mask
-        # logging.debug("Finding boundaries of prostate mask")
-        # prostate_mask = binary_fill_holes(prostate_mask)
-        # prostate_mask = find_boundaries(prostate_mask, mode='outer')
-        # prostate_boundary_count = np.sum(prostate_mask)
-
-        # logging.info("Prostate boundary mask contains %d voxels", prostate_boundary_count)
-        # if prostate_boundary_count == 0:
-        #     logging.warning("No prostate boundary voxels found in segmentation")
-
-        # # Apply prostate boundary overlay to original data
-        # logging.debug("Applying prostate boundary overlay to original data")
-        # data_max = data.max()
-        # modified_voxels = 0
-        # for z in range(prostate_mask.shape[2]):
-        #     rows, cols = np.where(prostate_mask[:, :, z])
-        #     if len(rows) > 0:
-        #         data[rows, cols, z] = data_max
-        #         modified_voxels += len(rows)
-        # logging.info("Modified %d voxels with prostate boundary overlay (max value: %.2f)", modified_voxels, data_max)
-        
-        # Create seed mask
-        logging.debug("Creating seed mask from segmentation")
-        seed_mask = (segmentation_seeds > 0)
-        initial_seed_count = np.sum(seed_mask)
-        logging.info("Initial seed mask: %d voxels", initial_seed_count)
-        
-        # Dilation
-        logging.debug("Applying morphological dilation")
-        seed_mask = dilation(seed_mask, footprint=np.ones((3, 3, 3)))
-        dilated_seed_count = np.sum(seed_mask)
-        logging.info("After dilation: %d voxels (+%d)", dilated_seed_count, dilated_seed_count - initial_seed_count)
-        
-        # Fill holes
-        logging.debug("Filling holes in seed mask")
-        seed_mask = binary_fill_holes(seed_mask)
-        filled_seed_count = np.sum(seed_mask)
-        logging.info("After hole filling: %d voxels (+%d)", filled_seed_count, filled_seed_count - dilated_seed_count)
-        
-        # Find boundaries
-        logging.debug("Finding boundaries of seed mask")
-        seed_mask = find_boundaries(seed_mask, mode='outer')
-        boundary_count = np.sum(seed_mask)
-        logging.info("Boundary mask: %d voxels", boundary_count)
-        
-        # Apply overlay to data
-        logging.debug("Applying boundary overlay to original data")
-        data_max = data.max()
-        modified_voxels = 0
-        
-        for z in range(seed_mask.shape[2]):
-            rows, cols = np.where(seed_mask[:, :, z])
-            if len(rows) > 0:
-                data[rows, cols, z] = data_max
-                modified_voxels += len(rows)
-                
-        logging.info("Modified %d voxels with boundary overlay (max value: %.2f)", modified_voxels, data_max)
-        
-    except Exception as e:
-        logging.error("Error in post-processing: %s", str(e))
-        raise
-    
-    # ===== POST-PREDICTION TRANSFORM =====
-    # Reverse the pre-prediction transform
-    logging.info("Applying post-prediction transform (reversing order)")
-    reverse_order = np.argsort(order)
-    logging.info("Reverse transform order: %s", reverse_order)
-    pre_reverse_shape = data.shape
-    data = np.transpose(data, reverse_order)
-    logging.info("Shape after reverse transpose: %s -> %s", pre_reverse_shape, data.shape)
-    # =====================================
-
-    return data
+def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirror=True):
+    """Detection on one series. Returns (det, mask [image,row,col] with value = rank, summary)."""
+    vol, order, spacing = to_volume(images)
+    logging.info("Volume (z,y,x) %s, spacing %s mm", vol.shape, np.round(spacing, 4))
+    xyz = seedseg_onnx.n4_correct_xyz(vol.T)  # N4 on the NIfTI-order array, as for training
+    model = get_model(folds, device, mirror)
+    probs = model.predict(xyz.T, spacing_zyx=spacing)
+    thr = model.meta['candidates']['threshold']
+    p = probs[model.meta['marker_class']]  # (z, y, x)
+    det = seedseg_onnx.detect(p, spacing, k=k, threshold=thr)
+    m = seedseg_onnx.marker_mask(p, det, thr)  # (z, y, x)
+    mask = np.zeros((len(images),) + vol.shape[1:], np.uint8)
+    mask[order] = m[:, ::-1, :]
+    summary = []
+    for c in det['markers']:
+        z, y, x = c['centroid_vox']
+        summary.append(dict(rank=c['rank'], mean_prob=round(c['mean_prob'], 4), image=int(order[int(round(z))]),
+                            row=round(vol.shape[1] - 1 - y, 1), col=round(x, 1), volume_mm3=round(c['volume_mm3'], 1)))
+    return det, mask, summary
 
 
 def process_image(images, connection, config, metadata):
-    if len(images) == 0:
-        logging.warning("process_image called with empty image list")
+    if not images:
         return []
+    t0 = time.time()
+    k = mrdhelper.get_json_config_param(config, 'markers', default=3, type='int')
+    ens = mrdhelper.get_json_config_param(config, 'ensemble', default='5', type='str')
+    folds = ['0'] if ens == '1' else ['0', '1', '2', '3', '4']
+    mirror = mrdhelper.get_json_config_param(config, 'mirroring', default=True, type='bool')
+    if os.environ.get('SEEDSEG_MIRROR') is not None:
+        mirror = os.environ['SEEDSEG_MIRROR'] == '1'
+    device = os.environ.get('SEEDSEG_DEVICE') or default_device()
+    logging.info("SeedSeg: %d images, K=%d, folds=%s, mirroring=%s, device=%s", len(images), k, folds, mirror, device)
 
-    logging.info("=== Starting image processing ===")
-    logging.info("Processing %d images", len(images))
-
-    # Create folder, if necessary
-    # if not os.path.exists(debugFolder):
-    #     os.makedirs(debugFolder)
-    #     logging.debug("Created folder " + debugFolder + " for debug output files")
-
-    # Log image types and sizes
-    for i, img in enumerate(images):
-        logging.debug("Image %d: type=%s, shape=%s, series=%d",
-                     i, img.data.dtype,
-                     img.data.shape, img.image_series_index)
-
-    # Note: The MRD Image class stores data as [cha z y x]
-
-    # Extract image data into a 5D array of size [img cha z y x]
-    logging.info("Extracting image data into 5D array")
-    data = np.stack([img.data for img in images])
     head = [img.getHead() for img in images]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+    det, mask, summary = run_seedseg(images, k, folds, device, mirror)
+    flag = det['count_flag']
+    desc = f"SeedSeg {len(det['markers'])}of{k}" + ("_CHECK" if flag else "")
+    logging.info("SeedSeg: %s, %d candidates, %s, %.1f s", desc, det['n_candidates'], summary, time.time() - t0)
 
-    # Diagnostic info
-    matrix = np.array(head[0].matrix_size[:]) 
-    fov = np.array(head[0].field_of_view[:])
-    voxelsize = fov/matrix
-    read_dir = np.array(images[0].read_dir)
-    phase_dir = np.array(images[0].phase_dir)
-    slice_dir = np.array(images[0].slice_dir)
-    
-    logging.info(f'MRD computed matrix [x y z] : {matrix}')
-    logging.info(f'MRD computed fov     [x y z] : {fov}')
-    logging.info(f'MRD computed voxel   [x y z] : {voxelsize}')
-    logging.info(f'MRD read_dir         [x y z] : {read_dir}')
-    logging.info(f'MRD phase_dir        [x y z] : {phase_dir}')
-    logging.info(f'MRD slice_dir        [x y z] : {slice_dir}')
-
-    # (Slice, 1, 1, Row, Col)
-    logging.debug("Original image data before transposing is %s", data.shape) 
-
-    # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
-    # data = data.transpose((3, 4, 2, 1, 0))
-    # t1.h5 is 40 x 1 x 1 x 320 x 320
-    # data = data.transpose((3, 4, 0, 1, 2))
-    # after resorting it should be: 320 x 320 x 40 x 1 x 1
-
-    # (Row, Col, 1, 1, Slice)
-    logging.info("Transposing data from (Slice, 1, 1, Row, Col) to (Row, Col, 1, 1, Slice)")
-    data = data.transpose((3, 4, 2, 1, 0))
-    
-    # Display MetaAttributes for first image
-    # logging.debug("MetaAttributes[0]: %s", ismrmrd.Meta.serialize(meta[0]))
-
-    # Optional serialization of ICE MiniHeader
-    # if 'IceMiniHead' in meta[0]:
-    #     logging.debug("IceMiniHead[0]: %s", base64.b64decode(meta[0]['IceMiniHead']).decode('utf-8'))
-
-    logging.debug("Image data after transposing is %s", data.shape)
-
-    # convert data to nifti using nibabel
-    # prostatefiducialseg needs 3D data:
-    # data = np.squeeze(data)
-    logging.info("Squeezing to 3D data for segmentation")
-    original_5d_shape = data.shape
-    data = data[:,:,0,0,:]
-    logging.info("Squeezed from %s to %s", original_5d_shape, data.shape)
-
-    # (Row, Col, Slice)
-    logging.debug("Final 3D shape: %s", data.shape)
-
-    logging.info("Config: \n%s", config)
-
-    # Run segmentation
-    logging.info("Starting segmentation process")
-    data = do_segmentation(data)
-
-    # Transpose from (Row,Col,Slice) to (Row,Col,Slice,1,1)
-    logging.info("Reshaping data back to 5D format")
-    data = data[:, :, :, None, None]
-    # Transpose from (Row,Col,Slice,1,1) to (Row,Col,1,1,Slice)
-    data = data.transpose((0, 1, 3, 4, 2))
-    logging.debug("Final 5D shape for output: %s", data.shape)
-
-    # ===== ISMRMRD PREPARATION =====
-    # Data MUST BE (Row, Col, 1, 1, Slice) at this point
-
-    # Determine max value (12 or 16 bit)
+    outline = marker_outline(mask)
     BitsStored = 12
-    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
-    logging.info("Using %d-bit storage, max value: %d", BitsStored, maxVal)
+    maxVal = 2 ** BitsStored - 1
+    data = np.stack([np.asarray(img.data, np.float64).reshape(img.data.shape[-2:]) for img in images])
+    data *= maxVal / max(data.max(), 1e-12)
+    data[outline] = maxVal
+    data = np.around(data).astype(np.int16)
 
-    # Normalize Data and convert to int16
-    logging.info("Normalizing and converting data to int16")
-    data_min_before = data.min()
-    data_max_before = data.max()
-    data = data.astype(np.float64)
-    data *= maxVal/data.max()
-    data = np.around(data)
-    data = data.astype(np.int16)
-    logging.info("Data range before normalization: [%.2f, %.2f]", data_min_before, data_max_before)
-    logging.info("Data range after normalization: [%d, %d]", data.min(), data.max())
-
-    currentSeries = 0
-
-    # Re-slice image data back into 2D images
-    logging.info("Creating %d output MRD images", data.shape[-1])
-    imagesOut = [None] * data.shape[-1]
-    
-    for iImg in range(data.shape[-1]):
-        logging.debug("Processing output image %d/%d", iImg + 1, data.shape[-1])
-        
-        # Create new MRD instance for the final image
-        # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
-        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-        # with this option, can take input as: [cha z y x], [z y x], or [y x]
-        imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-
-        # Create a copy of the original fixed header and update the data_type
-        # (we changed it to int16 from all other types)
-        oldHeader = head[iImg]
-        oldHeader.data_type = imagesOut[iImg].data_type
-
-        # Unused example, as images are grouped by series before being passed into this function now
-        # oldHeader.image_series_index = currentSeries+1
-
-        # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
-        if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
-            if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
-                currentSeries += 1
-                logging.debug("Incremented series number to %d based on ICE MiniHead", currentSeries)
-
-        imagesOut[iImg].setHead(oldHeader)
-
-        # Create a copy of the original ISMRMRD Meta attributes and update
-        tmpMeta = meta[iImg]
+    info = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary))
+    comment = desc + ': ' + '; '.join(f"#{s['rank']} p={s['mean_prob']:.3f}" for s in summary)
+    imagesOut = []
+    for i in range(len(images)):
+        im = ismrmrd.Image.from_array(data[i][None, None], transpose=False)  # [cha z y x]
+        oldHeader = head[i]
+        oldHeader.data_type = im.data_type
+        im.setHead(oldHeader)
+        tmpMeta = meta[i]
         tmpMeta['DataRole'] = 'Image'
-        tmpMeta['ImageProcessingHistory'] = ['PYTHON', 'PROSTATEFIDUCIALSEG']
-        tmpMeta['WindowCenter'] = str((maxVal+1)/2)
-        tmpMeta['WindowWidth'] = str((maxVal+1))
-        tmpMeta['SequenceDescriptionAdditional'] = 'OpenRecon'
+        tmpMeta['ImageProcessingHistory'] = ['PYTHON', 'SEEDSEG']
+        tmpMeta['WindowCenter'] = str((maxVal + 1) / 2)
+        tmpMeta['WindowWidth'] = str(maxVal + 1)
+        tmpMeta['SequenceDescriptionAdditional'] = desc
+        tmpMeta['ImageComments'] = comment
+        tmpMeta['SeedSegMarkers'] = base64.b64encode(info.encode()).decode()
         tmpMeta['Keep_image_geometry'] = 1
-
-        # Example for sending ROIs
-        logging.debug("Creating example ROI for image %d", iImg)
-        tmpMeta['ROI_example'] = create_example_roi(data.shape)
-
-        # Add image orientation directions to MetaAttributes if not already present
         if tmpMeta.get('ImageRowDir') is None:
-            tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
-
+            tmpMeta['ImageRowDir'] = ["{:.18f}".format(v) for v in oldHeader.read_dir]
         if tmpMeta.get('ImageColumnDir') is None:
-            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
-
-        metaXml = tmpMeta.serialize()
-        logging.debug("Image %d data has %d elements", iImg, imagesOut[iImg].data.size)
-
-        imagesOut[iImg].attribute_string = metaXml
-
-    logging.info("Successfully created %d output images", len(imagesOut))
-    
+            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(v) for v in oldHeader.phase_dir]
+        im.attribute_string = tmpMeta.serialize()
+        imagesOut.append(im)
     return imagesOut
-
-
-# Create an example ROI <3
-def create_example_roi(img_size):
-    logging.debug("Creating example ROI for image size: %s", img_size)
-    
-    t = np.linspace(0, 2*np.pi)
-    x = 16*np.power(np.sin(t), 3)
-    y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
-
-    # Place ROI in bottom right of image, offset and scaled to 10% of the image size
-    x = (x-np.min(x)) / (np.max(x) - np.min(x))
-    y = (y-np.min(y)) / (np.max(y) - np.min(y))
-    x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
-    y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
-
-    rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
-    thickness = 1  # Line thickness
-    style = 0      # Line style (0 = solid, 1 = dashed)
-    visibility = 1 # Line visibility (0 = false, 1 = true)
-
-    logging.debug("ROI parameters: color=%s, thickness=%d, style=%d, visibility=%d", rgb, thickness, style, visibility)
-
-    roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
-    logging.debug("Successfully created ROI with %d points", len(x))
-    
-    return roi

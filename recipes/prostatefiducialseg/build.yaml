@@ -1,5 +1,5 @@
 name: prostatefiducialseg
-version: "7.1.0"
+version: "8.0.0"
 architectures:
     - x86_64
 
@@ -10,7 +10,7 @@ variables:
     openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
     openrecon_ismrmrd_version: "1.14.2"
-    upstream_commit: "3354f6cc3cf750ada5bd3e25bd0ab6e1712662ab"
+    upstream_commit: "29af83782cf54e482acf8174a70d05f7cd2ce5b5"
     onnxruntime_gpu_version: "1.23.2"
     conda_version: "25.5.1-0"
     conda_download_url: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
@@ -23,18 +23,26 @@ files:
       filename: predict3.py
     - name: miniconda.sh
       url: "{{ context.conda_download_url }}"
-    - name: seedseg-model-seed456.onnx
-      url: https://osf.io/download/kqw4n/
-      sha256: 2aa00094e01e978f3d85a882a97f9a1ef59da32341db4aaaf46c0c5388424ae7
-    - name: seedseg-model-seed789.onnx
-      url: https://osf.io/download/uf8z7/
-      sha256: e0cf5de01f36b1507e99910a92071bb888166aff4c5c90b902f04105ad8956c5
-    - name: seedseg-model-seed42.onnx
-      url: https://osf.io/download/gp7jh/
-      sha256: 7dc1ef1875b7027c56950cc3c35f1ffa8d67f7190a49df49811105cd639b784d
-    - name: seedseg-model-seed123.onnx
-      url: https://osf.io/download/svmjp/
-      sha256: bfe4fe9140383e87a6c0c4cb2a6e9a84c3435f1413fd3644273bd9f1a0c3bdee
+    # SeedSeg v2 nnU-Net folds (ONNX, fp32) and their description (patch size, spacing,
+    # mirroring axes, file digests). URLs: TODO, set once the files are uploaded (sha256 below are final).
+    - name: seedseg-v2.json
+      url: https://TODO-model-host.invalid/seedseg-v2.json
+      sha256: d4bb1adec2bfa153769395c7113191616b760bfaf1e31fb5aa4e2dad0a2dcda6
+    - name: seedseg-v2_fold0.onnx
+      url: https://TODO-model-host.invalid/seedseg-v2_fold0.onnx
+      sha256: a39969d56053d43b3d76dcea184cc1d5bd7ed95d7306d4ad92c76fb84b7c246f
+    - name: seedseg-v2_fold1.onnx
+      url: https://TODO-model-host.invalid/seedseg-v2_fold1.onnx
+      sha256: bccbf6c373d01b1b9c5f06ffb61d139b3af064616e1c92158c34ff873b89d6f4
+    - name: seedseg-v2_fold2.onnx
+      url: https://TODO-model-host.invalid/seedseg-v2_fold2.onnx
+      sha256: d30700090480f64391e38bb8df03ff1f1a121042cc4f8c01a8dfa3ec6e487998
+    - name: seedseg-v2_fold3.onnx
+      url: https://TODO-model-host.invalid/seedseg-v2_fold3.onnx
+      sha256: ee319bb26726642ce8e8bff89e538a03af0ddba9852094f56b8727d95c5af71e
+    - name: seedseg-v2_fold4.onnx
+      url: https://TODO-model-host.invalid/seedseg-v2_fold4.onnx
+      sha256: 7c6b80a183e0ef500903734bfbfe91169ec3441de264a130cb54e8676c6aa0c0
 
 auto_update:
   container_version: false
@@ -75,26 +83,36 @@ auto_update:
     ref: fix/ismrmrd-compatibility
     target:
       variable: openrecon_server_commit
-  - id: seedseg-model-seed456
+  - id: seedseg-v2-json
     method: http_digest
-    url: https://osf.io/download/kqw4n/
+    url: https://TODO-model-host.invalid/seedseg-v2.json
     target:
-      file: seedseg-model-seed456.onnx
-  - id: seedseg-model-seed789
+      file: seedseg-v2.json
+  - id: seedseg-v2_fold0
     method: http_digest
-    url: https://osf.io/download/uf8z7/
+    url: https://TODO-model-host.invalid/seedseg-v2_fold0.onnx
     target:
-      file: seedseg-model-seed789.onnx
-  - id: seedseg-model-seed42
+      file: seedseg-v2_fold0.onnx
+  - id: seedseg-v2_fold1
     method: http_digest
-    url: https://osf.io/download/gp7jh/
+    url: https://TODO-model-host.invalid/seedseg-v2_fold1.onnx
     target:
-      file: seedseg-model-seed42.onnx
-  - id: seedseg-model-seed123
+      file: seedseg-v2_fold1.onnx
+  - id: seedseg-v2_fold2
     method: http_digest
-    url: https://osf.io/download/svmjp/
+    url: https://TODO-model-host.invalid/seedseg-v2_fold2.onnx
     target:
-      file: seedseg-model-seed123.onnx
+      file: seedseg-v2_fold2.onnx
+  - id: seedseg-v2_fold3
+    method: http_digest
+    url: https://TODO-model-host.invalid/seedseg-v2_fold3.onnx
+    target:
+      file: seedseg-v2_fold3.onnx
+  - id: seedseg-v2_fold4
+    method: http_digest
+    url: https://TODO-model-host.invalid/seedseg-v2_fold4.onnx
+    target:
+      file: seedseg-v2_fold4.onnx
   - id: onnxruntime_gpu
     dependency: true
     method: pypi
@@ -123,28 +141,28 @@ build:
               PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
         - run: python -c "import sys; assert sys.version_info[:2] == (3, 10)"
 
-        # install large pip packages
-        - run:
-              - pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-              - pip install torchio
-
         # install openrecon dependencies
         - include: macros/openrecon/neurodocker.yaml
 
         # install small pip packages
         - run:
-              - pip install SimpleITK nibabel pandas scikit-learn
+              - pip install SimpleITK nibabel
         # Python 3.10 wheels are available through ONNX Runtime 1.23.
         - run: pip install "onnxruntime-gpu=={{ context.onnxruntime_gpu_version }}"
 
-        # download model
+        # models
         - workdir: /opt
         - run:
               - mkdir -p /opt/models
-              - cp {{ get_file("seedseg-model-seed456.onnx") }} /opt/models/seedseg-model-seed456.onnx
-              - cp {{ get_file("seedseg-model-seed789.onnx") }} /opt/models/seedseg-model-seed789.onnx
-              - cp {{ get_file("seedseg-model-seed42.onnx") }} /opt/models/seedseg-model-seed42.onnx
-              - cp {{ get_file("seedseg-model-seed123.onnx") }} /opt/models/seedseg-model-seed123.onnx
+              - cp {{ get_file("seedseg-v2.json") }} /opt/models/seedseg-v2.json
+              - cp {{ get_file("seedseg-v2_fold0.onnx") }} /opt/models/seedseg-v2_fold0.onnx
+              - cp {{ get_file("seedseg-v2_fold1.onnx") }} /opt/models/seedseg-v2_fold1.onnx
+              - cp {{ get_file("seedseg-v2_fold2.onnx") }} /opt/models/seedseg-v2_fold2.onnx
+              - cp {{ get_file("seedseg-v2_fold3.onnx") }} /opt/models/seedseg-v2_fold3.onnx
+              - cp {{ get_file("seedseg-v2_fold4.onnx") }} /opt/models/seedseg-v2_fold4.onnx
+        - environment:
+              SEEDSEG_MODELS: /opt/models
+              SEEDSEG_SRC: /opt/seedseg/scripts/deploy
 
         # clone prostate segmentation repository
         - workdir: /opt

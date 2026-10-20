@@ -1,55 +1,50 @@
 name: prostatefiducialseg
-version: "7.1.0"
-upstream_commit: 3354f6cc3cf750ada5bd3e25bd0ab6e1712662ab
+version: "8.0.0"
+upstream_commit: 29af83782cf54e482acf8174a70d05f7cd2ce5b5
 tests:
 - name: prediction launcher
   command: predict3.py --help
-  expected_output_contains: Published ONNX model
+  expected_output_contains: seedseg-v2.json
 - name: installed SeedSeg source
   command: git -C /opt/seedseg rev-parse HEAD
   expected_output_contains: ${upstream_commit}
-- name: published model ensemble inference
-  description: Run all four published models and check OpenRecon outputs on an odd-sized volume.
+- name: model files match their description
   command: |
     python - <<'PY'
-    import glob
-    import pathlib
-    import subprocess
-    import tempfile
+    import hashlib, json, pathlib
+    root = pathlib.Path('/opt/models')
+    meta = json.loads((root / 'seedseg-v2.json').read_text())
+    for fold, files in meta['folds'].items():
+        e = files['fp32']
+        data = (root / e['file']).read_bytes()
+        assert len(data) == e['bytes'] and hashlib.sha256(data).hexdigest() == e['sha256'], e['file']
+    print(f"{len(meta['folds'])} SeedSeg folds verified")
+    PY
+  expected_output_contains: 5 SeedSeg folds verified
+- name: one-fold inference on a small volume
+  description: Run fold 0 without mirroring on an odd-sized random volume and check the outputs.
+  command: |
+    python - <<'PY'
+    import json, pathlib, subprocess, tempfile
     import nibabel as nib
     import numpy as np
-    import torchio as tio
-
     with tempfile.TemporaryDirectory() as directory:
         root = pathlib.Path(directory)
         source = root / 'input.nii.gz'
         data = np.random.default_rng(7).normal(100, 20, (29, 30, 31)).astype(np.float32)
         affine = np.diag([1.2, 1.3, 1.4, 1.])
         nib.save(nib.Nifti1Image(data, affine), source)
-        padded = tio.CropOrPad((32, 32, 32))(tio.ScalarImage(source))
-        restored = tio.CropOrPad(data.shape)(padded)
-        np.testing.assert_array_equal(restored.data[0].numpy(), data)
-        np.testing.assert_allclose(restored.affine, affine)
-        models = sorted(glob.glob('/opt/models/*.onnx'))
-        assert len(models) == 4, models
-        subprocess.run(['predict3.py', '-i', str(source), '-m', *models,
-                        '-o', str(root), '--device', 'cpu', '--threads', '2'], check=True)
-        probabilities = []
-        for index in range(3):
-            image = nib.load(root / f'consensus_prob_class{index}.nii.gz')
-            assert image.shape == data.shape
-            np.testing.assert_allclose(image.affine, affine)
-            probability = image.get_fdata()
-            assert np.isfinite(probability).all()
-            assert probability.min() >= 0 and probability.max() <= 1
-            probabilities.append(probability)
-        np.testing.assert_allclose(sum(probabilities), 1, atol=1e-5)
-        for name, labels in [('consensus_top3_seeds.nii.gz', [0, 1]),
-                             ('consensus_argmax_segmentation.nii.gz', [0, 1, 2])]:
-            image = nib.load(root / name)
-            assert image.shape == data.shape
-            np.testing.assert_allclose(image.affine, affine)
-            assert np.isin(image.get_fdata(), labels).all()
-        print('Four published models produced valid OpenRecon segmentations')
+        subprocess.run(['predict3.py', '-i', str(source), '-o', str(root), '--folds', '0', '--no-mirror',
+                        '--no-n4', '--device', 'cpu', '--threads', '2'], check=True)
+        prob = nib.load(root / 'marker_prob.nii.gz')
+        assert prob.shape == data.shape
+        np.testing.assert_allclose(prob.affine, affine)
+        p = prob.get_fdata()
+        assert np.isfinite(p).all() and p.min() >= 0 and p.max() <= 1
+        markers = nib.load(root / 'top3_markers.nii.gz')
+        assert markers.shape == data.shape and np.isin(markers.get_fdata(), [0, 1, 2, 3]).all()
+        det = json.loads((root / 'detections.json').read_text())
+        assert det['k'] == 3 and det['count_flag'] == (det['n_candidates'] < 3)
+        print('SeedSeg produced valid outputs')
     PY
-  expected_output_contains: Four published models produced valid OpenRecon segmentations
+  expected_output_contains: SeedSeg produced valid outputs
