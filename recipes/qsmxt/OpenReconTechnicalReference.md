@@ -72,6 +72,26 @@ setting changes logging only; reconstruction and output validation are unchanged
 The EPI driver writes uncompressed averaged NIfTIs for its internal handoff;
 the transient BIDS inputs above remain compressed.
 
+Bulk scanner phase conversion uses a bounded lookup for finite nonnegative
+integer counts within the uint16 range. The lookup evaluates the same float32
+complex exponential and angle expression as the full-array conversion. Other
+inputs retain the existing behavior, including fractional-count precision,
+already-radian detection and rejection of spans wider than one configured cycle.
+
+The container builds QSMxT 10.0.0 from pinned source with a small runner patch.
+For a single echo, masking can consume the owned, full-precision corrected
+magnitude from the preceding RSS stage. Reuse requires that the raw working
+magnitude and its RSS result match bit for bit. Cached magnitude stages,
+original-source fallbacks, custom masks, multiple echoes and nonidentical RSS
+inputs retain the existing masking path. The saved combined image remains
+float32; the handoff avoids its precision loss by keeping the float64 result.
+
+`/opt/qsmxt/native-build.json` records the source, patch, build script, compiler,
+Cargo lockfile, QSM.rs source and installed binary identities. The build checks
+the pinned patch, script and QSM.rs commit, runs the handoff tests, and removes
+the temporary Rust toolchain, Cargo cache and build tree. Runtime verification
+checks the expected provenance and installed binary digest.
+
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 compatible QSMxT derivatives that exist after the run. Below three selected
 echoes, All omits implicit T2*/R2* requests and logs the count. GRE uses aligned
