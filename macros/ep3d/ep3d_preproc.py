@@ -95,20 +95,12 @@ def preprocess(
     work_dir.mkdir(parents=True, exist_ok=True)
     motion_path = work_dir / "motion.1D"
     environment = dict(os.environ, OMP_NUM_THREADS=str(n_procs))
-    with TemporaryDirectory(prefix="motion-", dir=work_dir) as temporary:
-        temporary_dir = Path(temporary)
-        real_path = temporary_dir / "real.nii"
-        imag_path = temporary_dir / "imag.nii"
-        real_corrected_path = temporary_dir / "real_mc.nii"
-        imag_corrected_path = temporary_dir / "imag_mc.nii"
-        signal = magnitude * np.exp(1j * phase)
-        with ThreadPoolExecutor(max_workers=min(n_procs, 2)) as executor:
-            real_save = executor.submit(_save, signal.real, magnitude_image, real_path)
-            imag_save = executor.submit(_save, signal.imag, magnitude_image, imag_path)
-            real_save.result()
-            imag_save.result()
-        del magnitude, phase, signal
+    preparation_workers = min(2, max(1, n_procs // 2))
+    motion_environment = dict(
+        environment, OMP_NUM_THREADS=str(max(1, n_procs - preparation_workers))
+    )
 
+    def estimate_motion() -> None:
         subprocess.run(
             [
                 "niimath",
@@ -120,8 +112,30 @@ def preprocess(
                 str(motion_path),
             ],
             check=True,
-            env=environment,
+            env=motion_environment,
         )
+
+    with TemporaryDirectory(prefix="motion-", dir=work_dir) as temporary:
+        temporary_dir = Path(temporary)
+        real_path = temporary_dir / "real.nii"
+        imag_path = temporary_dir / "imag.nii"
+        real_corrected_path = temporary_dir / "real_mc.nii"
+        imag_corrected_path = temporary_dir / "imag_mc.nii"
+        with ThreadPoolExecutor(max_workers=1) as motion_executor:
+            motion = (
+                motion_executor.submit(estimate_motion) if n_procs > 1 else None
+            )
+            signal = magnitude * np.exp(1j * phase)
+            with ThreadPoolExecutor(max_workers=preparation_workers) as executor:
+                real_save = executor.submit(_save, signal.real, magnitude_image, real_path)
+                imag_save = executor.submit(_save, signal.imag, magnitude_image, imag_path)
+                real_save.result()
+                imag_save.result()
+            del magnitude, phase, signal
+            if motion is None:
+                estimate_motion()
+            else:
+                motion.result()
         resample_workers = min(n_procs, 2)
         resample_environment = dict(
             environment, OMP_NUM_THREADS=str(max(1, n_procs // resample_workers))

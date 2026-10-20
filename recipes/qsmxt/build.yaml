@@ -22,8 +22,9 @@ variables:
   upstream_version: "10.0.0"
   qsmxt_source_sha256: 6a839d0c617426c48f48f4e4a2c67a4283e3e814912a1aa21a1537170a8d6a00
   qsm_core_commit: "42ab620190ad315c9dcf7aa8ec4a036402002b7e"
+  qsm_core_patch_sha256: a714c9e2c6b7f730cd5337c77da1d5657c9dee302e61f8df3b05f2048b169053
   native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
-  native_build_script_sha256: 40d351b00991238f78cc9560558ab77146ddb3bbac15cf81b3ab63a64ca009ed
+  native_build_script_sha256: 30f4ea2bad991cc00e067f47efe16bcd71e4509e25f0bc5ff0f152de42367b99
   rust_version: "1.98.0"
   rust_x86_64_sha256: ed8ee2df70909c88cbaf87a6cfa3920dac00b537de12a6abe6906641e0f5952f
   qsmxt_x86_64_sha256: 16ca20256672da4b5234791973de3ba83289650add2bcbd13c584c7a8cb15605
@@ -210,7 +211,7 @@ build:
         - python3 -m pip install --break-system-packages --no-cache-dir antspyx=={{ context.antspyx_version }}
 
     - run:
-        - bash {{ get_file("build-native.sh") }} {{ get_file("qsmxt_source") }} {{ get_file("rust_toolchain") }} {{ get_file("reuse-single-echo-magnitude.patch") }} {{ context.upstream_version }} {{ context.rust_version }} {{ context.qsm_core_commit }} {{ context.native_patch_sha256 }} {{ context.native_build_script_sha256 }}
+        - bash {{ get_file("build-native.sh") }} {{ get_file("qsmxt_source") }} {{ get_file("rust_toolchain") }} {{ get_file("reuse-single-echo-magnitude.patch") }} {{ context.upstream_version }} {{ context.rust_version }} {{ context.qsm_core_commit }} {{ context.native_patch_sha256 }} {{ context.native_build_script_sha256 }} {{ get_file("parallel-native-kernels.patch") }} {{ context.qsm_core_patch_sha256 }}
 
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
@@ -351,6 +352,8 @@ files:
     filename: build-native.sh
   - name: reuse-single-echo-magnitude.patch
     filename: reuse-single-echo-magnitude.patch
+  - name: parallel-native-kernels.patch
+    filename: parallel-native-kernels.patch
   - name: qsmxt_source
     url: https://github.com/QSMxT/QSMxT/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
     sha256: "{{ context.qsmxt_source_sha256 }}"

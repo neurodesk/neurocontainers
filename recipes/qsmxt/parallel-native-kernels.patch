@@ -1,0 +1,289 @@
+--- a/src/utils/bias_correction.rs
++++ b/src/utils/bias_correction.rs
+@@ -30,6 +30,8 @@
+ }
+ 
+ use std::collections::VecDeque;
++#[cfg(feature = "parallel")]
++use rayon::prelude::*;
+ use crate::Grid;
+ use crate::utils::morphology::fill_holes;
+ 
+@@ -311,9 +313,16 @@
+     data: &[f64],
+     sigma: [f64; 3],
+     mask: Option<&[u8]>,
+-    mut weight: Option<&mut [f64]>,
++    weight: Option<&mut [f64]>,
+     nbox: usize,
+     grid: &Grid,
++) -> Vec<f64> {
++    gaussian_smooth_3d_impl(data, sigma, mask, weight, nbox, grid, true)
++}
++
++fn gaussian_smooth_3d_impl(
++    data: &[f64], sigma: [f64; 3], mask: Option<&[u8]>,
++    mut weight: Option<&mut [f64]>, nbox: usize, grid: &Grid, parallel: bool,
+ ) -> Vec<f64> {
+     let (nx, ny, nz) = grid.dims;
+     let n_total = check_volume("gaussian_smooth_3d: data", data.len(), grid);
+@@ -341,8 +350,17 @@
+         }
+     }
+ 
++    #[cfg(not(feature = "parallel"))]
++    let _ = parallel;
+     // Apply box filters for each pass and dimension
+     for ibox in 0..nbox {
++        #[cfg(feature = "parallel")]
++        if parallel {
++            gaussian_smooth_pass_parallel(&mut result, weight.as_deref_mut(),
++                [boxsizes[0][ibox], boxsizes[1][ibox], boxsizes[2][ibox]],
++                mask.is_some(), mask.is_some() && ibox % 2 == 1, grid);
++            continue;
++        }
+         // X direction
+         let bsize_x = boxsizes[0][ibox];
+         if nx > 1 && bsize_x >= 3 {
+@@ -1612,3 +1630,128 @@
+         assert_eq!(out.len(), n * n * n);
+     }
+ }
++#[cfg(feature = "parallel")]
++fn filter_line_parallel(
++    line: &mut [f64], weight: Option<&mut [f64]>, size: usize,
++    masked: bool, reverse: bool,
++) {
++    if reverse { line.reverse(); }
++    if masked {
++        nan_box_filter_line(line, size);
++    } else if let Some(weight) = weight {
++        box_filter_line_weighted(line, weight, size);
++    } else {
++        box_filter_line(line, size);
++    }
++    if reverse { line.reverse(); }
++}
++
++#[cfg(feature = "parallel")]
++fn filter_columns_parallel(
++    mut rows: Vec<&mut [f64]>, mut weights: Option<Vec<&mut [f64]>>,
++    size: usize, masked: bool, reverse: bool,
++) {
++    let mut line = vec![0.0; rows.len()];
++    let mut weight_line = weights.as_ref().map(|_| vec![0.0; rows.len()]);
++    for i in 0..rows[0].len() {
++        for (k, row) in rows.iter().enumerate() { line[k] = row[i]; }
++        if let (Some(rows), Some(line)) = (&weights, &mut weight_line) {
++            for (k, row) in rows.iter().enumerate() { line[k] = row[i]; }
++        }
++        filter_line_parallel(&mut line, weight_line.as_deref_mut(), size, masked, reverse);
++        for (k, row) in rows.iter_mut().enumerate() { row[i] = line[k]; }
++        if let (Some(rows), Some(line)) = (&mut weights, &weight_line) {
++            for (k, row) in rows.iter_mut().enumerate() { row[i] = line[k]; }
++        }
++    }
++}
++
++#[cfg(feature = "parallel")]
++fn z_rows(data: &mut [f64], nx: usize, ny: usize, nz: usize) -> Vec<Vec<&mut [f64]>> {
++    let mut groups: Vec<Vec<&mut [f64]>> = (0..ny).map(|_| Vec::with_capacity(nz)).collect();
++    // Each mutable x row belongs to exactly one y group. No voxel buffer is copied.
++    for (index, row) in data.chunks_mut(nx).enumerate() {
++        groups[index % ny].push(row);
++    }
++    groups
++}
++
++#[cfg(feature = "parallel")]
++fn gaussian_smooth_pass_parallel(
++    data: &mut [f64], mut weight: Option<&mut [f64]>, sizes: [usize; 3],
++    masked: bool, reverse: bool, grid: &Grid,
++) {
++    let (nx, ny, nz) = grid.dims;
++    if data.is_empty() { return; }
++    // Masked smoothing ignores weights, just as in the serial implementation.
++    if masked { weight = None; }
++    if nx > 1 && sizes[0] >= 3 {
++        if let Some(w) = weight.as_deref_mut() {
++            data.par_chunks_mut(nx).zip(w.par_chunks_mut(nx)).for_each(|(line, w)| {
++                filter_line_parallel(line, Some(w), sizes[0], masked, reverse);
++            });
++        } else {
++            data.par_chunks_mut(nx).for_each(|line| {
++                filter_line_parallel(line, None, sizes[0], masked, reverse);
++            });
++        }
++    }
++    if ny > 1 && sizes[1] >= 3 {
++        if let Some(w) = weight.as_deref_mut() {
++            data.par_chunks_mut(nx * ny).zip(w.par_chunks_mut(nx * ny)).for_each(|(plane, w)| {
++                filter_columns_parallel(plane.chunks_mut(nx).collect(), Some(w.chunks_mut(nx).collect()), sizes[1], masked, reverse);
++            });
++        } else {
++            data.par_chunks_mut(nx * ny).for_each(|plane| {
++                filter_columns_parallel(plane.chunks_mut(nx).collect(), None, sizes[1], masked, reverse);
++            });
++        }
++    }
++    if nz > 1 && sizes[2] >= 3 {
++        let rows = z_rows(data, nx, ny, nz);
++        if let Some(w) = weight {
++            rows.into_par_iter().zip(z_rows(w, nx, ny, nz)).for_each(|(rows, w)| {
++                filter_columns_parallel(rows, Some(w), sizes[2], masked, reverse);
++            });
++        } else {
++            rows.into_par_iter().for_each(|rows| {
++                filter_columns_parallel(rows, None, sizes[2], masked, reverse);
++            });
++        }
++    }
++}
++
++#[cfg(all(test, feature = "parallel"))]
++mod parallel_filter_tests {
++    use super::*;
++
++    #[test]
++    fn parallel_smoothing_preserves_serial_values_and_weights() {
++        for threads in [1, 4] {
++        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
++        pool.install(|| {
++        for dims in [(0, 7, 9), (1, 7, 9), (9, 1, 11), (11, 7, 1), (21, 18, 17), (16, 32, 12)] {
++            let grid = Grid::new(dims.0, dims.1, dims.2, 0.4, 0.5, 0.6);
++            let n = grid.n_total();
++            let data: Vec<f64> = (0..n).map(|i| ((i * 37 % 101) as f64) / 17.0).collect();
++            let mask: Vec<u8> = (0..n).map(|i| u8::from(i % 13 != 0)).collect();
++            for masked in [false, true] {
++                for weighted in [false, true] {
++                    for nbox in [0, 1, 3, 4, 8] {
++                        let m = masked.then_some(mask.as_slice());
++                        let mut wa: Vec<f64> = (0..n).map(|i| 0.2 + (i % 7) as f64).collect();
++                        let mut wb = wa.clone();
++                        let a = gaussian_smooth_3d_impl(&data, [1.1, 1.7, 2.3], m,
++                            weighted.then_some(wa.as_mut_slice()), nbox, &grid, false);
++                        let b = gaussian_smooth_3d_impl(&data, [1.1, 1.7, 2.3], m,
++                            weighted.then_some(wb.as_mut_slice()), nbox, &grid, true);
++                        assert!(a.iter().zip(&b).all(|(x, y)| x.to_bits() == y.to_bits()));
++                        assert!(wa.iter().zip(&wb).all(|(x, y)| x.to_bits() == y.to_bits()));
++                    }
++                }
++            }
++        }
++        });
++        }
++    }
++}
+--- a/src/bgremove/vsharp.rs
++++ b/src/bgremove/vsharp.rs
+@@ -48,8 +48,12 @@
+ 
+ use num_complex::Complex64;
+ use crate::Grid;
++use crate::fft::Fft3dWorkspace;
++#[cfg(test)]
+ use crate::fft::{fft3d, ifft3d};
+-use crate::kernels::smv::{smv_kernel, erode_mask_smv};
++use crate::kernels::smv::smv_kernel;
++#[cfg(test)]
++use crate::kernels::smv::erode_mask_smv;
+ 
+ /// Zero margin (native voxels per side) around the mask's bounding box when V-SHARP runs on an
+ /// isotropic working grid. See the [module docs](self).
+@@ -407,8 +411,13 @@
+     let mut field_complex: Vec<Complex64> = field.iter()
+         .map(|&x| Complex64::new(x, 0.0))
+         .collect();
+-    fft3d(&mut field_complex, nx, ny, nz);
+-    let field_fft = field_complex.clone();
++    let mut fft = Fft3dWorkspace::new(nx, ny, nz);
++    fft.fft3d(&mut field_complex);
++    let field_fft = field_complex;
++    let mut mask_fft: Vec<Complex64> = mask.iter()
++        .map(|&m| Complex64::new(m as f64, 0.0)).collect();
++    fft.fft3d(&mut mask_fft);
++    let mut buffer = vec![Complex64::new(0.0, 0.0); n_total];
+ 
+     // Track which voxels have been processed and final mask
+     let mut processed = vec![false; n_total];
+@@ -426,11 +435,12 @@
+         let s_kernel = smv_kernel(grid, radius);
+ 
+         // FFT of SMV kernel
+-        let mut s_complex: Vec<Complex64> = s_kernel.iter()
+-            .map(|&x| Complex64::new(x, 0.0))
+-            .collect();
+-        fft3d(&mut s_complex, nx, ny, nz);
+-        let s_fft: Vec<f64> = s_complex.iter().map(|c| c.re).collect();
++        for (dst, &value) in buffer.iter_mut().zip(&s_kernel) {
++            *dst = Complex64::new(value, 0.0);
++        }
++        drop(s_kernel);
++        fft.fft3d(&mut buffer);
++        let s_fft: Vec<f64> = buffer.iter().map(|c| c.re).collect();
+ 
+         // Store inverse of first (largest) kernel
+         if let (0, Some(threshold)) = (idx, deconvolve) {
+@@ -445,20 +455,24 @@
+         }
+ 
+         // Erode mask for this radius
+-        let eroded = erode_mask_smv(mask, &s_fft, grid, delta);
+-        let current_mask: Vec<bool> = eroded.iter().map(|&m| m == 1).collect();
++        buffer.copy_from_slice(&mask_fft);
++        for i in 0..n_total {
++            buffer[i] *= s_fft[i];
++        }
++        fft.ifft3d(&mut buffer);
++        let current_mask: Vec<bool> = buffer.iter().map(|c| c.re > delta).collect();
+ 
+         // Apply high-pass filter
+-        let mut filtered = field_fft.clone();
++        buffer.copy_from_slice(&field_fft);
+         for i in 0..n_total {
+-            filtered[i] *= 1.0 - s_fft[i];
+-        }
+-
+-        ifft3d(&mut filtered, nx, ny, nz);
++            buffer[i] *= 1.0 - s_fft[i];
++        }
++
++        fft.ifft3d(&mut buffer);
+ 
+         for i in 0..n_total {
+             if current_mask[i] && !processed[i] {
+-                local_field[i] = filtered[i].re;
++                local_field[i] = buffer[i].re;
+                 processed[i] = true;
+                 final_mask[i] = 1;
+             }
+@@ -467,20 +481,19 @@
+ 
+     // Deconvolution (only built when `deconvolve` is set)
+     if let Some(inv_kernel) = inverse_kernel {
+-        let mut local_complex: Vec<Complex64> = local_field.iter()
+-            .map(|&x| Complex64::new(x, 0.0))
+-            .collect();
+-
+-        fft3d(&mut local_complex, nx, ny, nz);
++        for (dst, &value) in buffer.iter_mut().zip(&local_field) {
++            *dst = Complex64::new(value, 0.0);
++        }
++        fft.fft3d(&mut buffer);
+ 
+         for i in 0..n_total {
+-            local_complex[i] *= inv_kernel[i];
+-        }
+-
+-        ifft3d(&mut local_complex, nx, ny, nz);
++            buffer[i] *= inv_kernel[i];
++        }
++
++        fft.ifft3d(&mut buffer);
+ 
+         for i in 0..n_total {
+-            local_field[i] = if final_mask[i] == 1 { local_complex[i].re } else { 0.0 };
++            local_field[i] = if final_mask[i] == 1 { buffer[i].re } else { 0.0 };
+         }
+     }
+ 
