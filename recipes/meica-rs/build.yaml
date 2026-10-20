@@ -1,0 +1,161 @@
+name: meica-rs
+version: 0.1.20261018
+
+copyright:
+  - license: LGPL-2.1-only
+    url: https://github.com/niivue/meica-rs/blob/{{ context.meica_rs_commit }}/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: 0.1.20261018
+  meica_rs_commit: 1582ce4733a91ceec8b77e8436170a976e7a2913
+  niimath_version: 1.0.20261016
+  rustup_version: 1.29.1
+  rust_version: 1.88.0
+
+auto_update:
+  method: sources
+  container_version: {variable: upstream_version}
+  sources:
+    - id: meica_rs
+      method: github_commit
+      repo: niivue/meica-rs
+      ref: main
+      version_file: Cargo.toml
+      version_regex: '(?m)^version = "(?P<version>[0-9.]+)"$'
+      target:
+        variable: meica_rs_commit
+        fulltest_variable: meica_rs_commit
+        variables:
+          upstream_version: version
+    - id: niimath
+      dependency: true
+      method: github_release
+      repo: rordenlab/niimath
+      target:
+        variable: niimath_version
+        value: version
+        fulltest_variable: niimath_version
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/meica-rs/bin:$PATH
+
+    # Installed and purged in one layer; meica and the static niimath need no build tools at runtime.
+    - run:
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends build-essential zlib1g-dev
+        - mkdir -p /opt/meica-rs/bin /tmp/build/meica-rs /tmp/build/niimath
+        - tar -xzf {{ get_file("niimath_source") }} -C /tmp/build/niimath --strip-components=1
+        - make -C /tmp/build/niimath/src static -j{{ parallel_jobs }}
+        - install -m 0755 /tmp/build/niimath/src/niimath /opt/meica-rs/bin/niimath
+        - tar -xzf {{ get_file("meica_rs_source") }} -C /tmp/build/meica-rs --strip-components=1
+        - export RUSTUP_HOME=/tmp/build/rustup CARGO_HOME=/tmp/build/cargo
+        - '{{ get_file("rustup_init") }} -y --no-modify-path --default-toolchain {{ context.rust_version }} --profile minimal'
+        - /tmp/build/cargo/bin/cargo build --manifest-path /tmp/build/meica-rs/Cargo.toml --release --locked -p meica
+        - install -m 0755 /tmp/build/meica-rs/target/release/meica /opt/meica-rs/bin/meica
+        - rm -rf /tmp/build
+        - apt-get purge -y -q --auto-remove build-essential zlib1g-dev
+        - rm -rf /var/lib/apt/lists/*
+
+deploy:
+  path:
+    - /opt/meica-rs/bin
+
+files:
+  - name: meica_rs_source
+    url: https://github.com/niivue/meica-rs/archive/{{ context.meica_rs_commit }}.tar.gz
+  - name: niimath_source
+    url: https://github.com/rordenlab/niimath/archive/refs/tags/v{{ context.niimath_version }}.tar.gz
+  - name: rustup_init
+    condition: arch=="x86_64"
+    url: https://static.rust-lang.org/rustup/archive/{{ context.rustup_version }}/x86_64-unknown-linux-gnu/rustup-init
+    sha256: dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+    executable: true
+  - name: rustup_init
+    condition: arch=="aarch64"
+    url: https://static.rust-lang.org/rustup/archive/{{ context.rustup_version }}/aarch64-unknown-linux-gnu/rustup-init
+    sha256: 15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433
+    executable: true
+
+categories:
+  - functional imaging
+  - quality control
+
+readme: |-
+  ----------------------------------
+  ## meica-rs/{{ context.version }} ##
+
+  meica is a Rust port of [tedana](https://tedana.readthedocs.io/en/stable/) multi-echo
+  independent component analysis (ME-ICA) denoising for multi-echo fMRI. It ports tedana's
+  workflow (commit e07066c) and its dimensionality estimate, mapca 0.0.8. It needs neither
+  Python nor Matlab, and its results match tedana's to floating-point rounding with identical
+  component classifications.
+
+  This container is distinct from the `meica` container, which packages the original ME-ICA v3
+  (`meica.py`) by Kundu et al.
+
+  The container provides two programs in /opt/meica-rs/bin:
+  - `meica`: the ME-ICA command line tool (source commit {{ context.meica_rs_commit }})
+  - `niimath` {{ context.niimath_version }}: used by `meica --moco` for motion correction
+
+  Usage:
+
+  The flags are tedana's (`meica --help`). Denoise a three-echo run with tedana's default
+  decision tree, then with a tree that also rejects motion-related components:
+  ```
+  E="sub-01_task-motor_echo-1_bold.nii.gz sub-01_task-motor_echo-2_bold.nii.gz sub-01_task-motor_echo-3_bold.nii.gz"
+  meica -d $E -e 15.2 35.32 55.42 --out-dir out
+  meica -d $E -e 15.2 35.32 55.42 --tree motion_aroma \
+    --external sub-01_task-motor_desc-confounds_timeseries.tsv --out-dir out_aroma
+  ```
+
+  `out/desc-denoised_bold.nii.gz` is the denoised series and `desc-tedana_metrics.tsv` lists
+  each component's metrics and classification. Outputs use tedana's BIDS names, without its
+  HTML report and figures. TEs are given in seconds (< 1) or milliseconds.
+
+  The example data (three echoes, 100 volumes) is published on Hugging Face in the
+  `neurodeskorg/webapps` dataset under `me-ica/motor-3echo/example` and
+  `me-ica/motor-3echo-moco/example`.
+
+  Decision trees (`--tree`): tedana's `tedana_orig` (default), `meica`, `minimal` and its
+  three `demo_external_*` trees, plus `motion_aroma` and `motion_f`, which apply tedana's demo
+  AROMA and F-test trees to fMRIPrep's `trans_*`/`rot_*` confound columns. `--tree` also takes
+  a JSON file. `--mask FILE` replaces the EPI mask and `--dummy-scans N` drops the first N
+  volumes, as in tedana. Options that select tedana code not ported here (for example
+  `--fittype curvefit`, `--ica-method robustica`) stop with an error rather than being ignored.
+
+  `--moco` (not a tedana flag) motion-corrects the raw echoes first. niimath builds echo 1's
+  BOLD reference, detects dummy volumes, estimates head motion, resamples every echo once and
+  writes fMRIPrep-named confounds (`desc-mocoConfounds_timeseries.tsv`). Upstream masks the
+  reference with brainchop-mindgrab, which is not included in this container, so `--moco`
+  needs `--mask FILE` here:
+  ```
+  meica -d $E -e 15.2 35.32 55.42 --moco --mask brain_mask.nii.gz --out-dir out_moco
+  ```
+
+  More documentation can be found here: https://github.com/niivue/meica-rs
+
+  To run applications outside of this container: ml meica-rs/{{ context.version }}
+
+  Citation:
+  ```
+  DuPre, E. M., Salo, T., Ahmed, Z., Bandettini, P. A., Bottenhorn, K. L., Caballero-Gaudes, C., Dowdle, L. T., Gonzalez-Castillo, J., Heunis, S., Kundu, P., Laird, A. R., Markello, R., Markiewicz, C. J., Moia, S., Staden, I., Teves, J. B., Urunuela, E., Vaziri-Pashkam, M., Whitaker, K., & Handwerker, D. A. (2021). TE-dependent analysis of multi-echo fMRI with tedana. Journal of Open Source Software, 6(66), 3669. https://doi.org/10.21105/joss.03669
+
+  Kundu, P., Inati, S. J., Evans, J. W., Luh, W. M., & Bandettini, P. A. (2012). Differentiating BOLD and non-BOLD signals in fMRI time series using multi-echo EPI. NeuroImage, 60(3), 1759-1770. https://doi.org/10.1016/j.neuroimage.2011.12.028
+
+  Li, Y. O., Adali, T., & Calhoun, V. D. (2007). Estimating the number of independent components for functional magnetic resonance imaging data. Human Brain Mapping, 28(11), 1251-1266. https://doi.org/10.1002/hbm.20359
+  ```
+
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAQmElEQVR42uWbeXRV13XGf/uc++6bpKcBWUISiElgjAy44AnPxPM8J06KEzdN0vSPNO1qsrqSlaRp7DhplpOmdZbTunHitM7opMaxcWygeAAzxCQGAhghMQiDEEIghIan9969Z/ePJ2EsNDqOA/SsddfSWrrvvbu/8+29v73vPsIJ624LT4YAlbOuqnEBHxJ0IUIdUIUqgHByLkUEoBlliyIvGo8f79+6fM9A2/qXDGZ8Wc2llV7c/wpwp4gtAUXV0Wf8yb9EEDGAoBq2A78M0tkvte1ZuX8gCDLQ+MppV1yr1j5urDfeuQDUhfn7RE7inT+RCfndUsRYYzxcGLRIGN63f8dLLxwPgj3e+PLpCz9uPP9nghZoGAZ9hptTzHje2jAxgKpzoRhJYSOLEiU1zd2Hl6zP27xV5ZjxtZddbb3YUnVBCNr/4dNoqQNRMZ4Ng95rWhtfWQZ3WwGkfMr7yk2ETYicgTo9/Yw/DgQxgupBl2NO664VrQZQE3EPGhspx2k40HjT7/2nxRKD09DYSLmJuAcBlerayyeEYreKkQIdkOKMQE8GPAu+B05PDxqICOq0y2o4yzjMIrFeoapzA43v7IVza5UJ45R09rRhgqg6J9YrdJhFxokuHJjfjYHuXrj0LOX5rwfcf48jF55OrgCo4kQXGkHmqjqO931V8CNQv09oaIIbrgz54CVKRxdYc3rEAlWHIHMNYirg7b6vCrEI7DioPP2cj7GGuy4OTy0lMKJOUBBTYQbTt1agI6PcWevxVwVFuNVJFsx21I6H3uzp5AqqZjCF5xR8C/VHoVdyyE6fwmyE+WeGpLP5ADmW1Z9KRfLx5eTKi4MLaeLWsOXAUZ5404BJok0+F85UXChjYoARSGfzzMnmoKv35GKQNzgshnS6hwU33srmRR9m6c5VXLv/u5w7xZKMK2E4ui+3Bo72wPXzHH9+udLZCzuahW8sNhQnIXQnKQB50ejIpdOUVlazwl7HJXue46z4bmqqLE37hJg/vDAykt/18mJ46KOOiTUKQZ4F63cIKzYJJYUQhH9aAMxQxvvJAnauWkrLyt/QUVHE2rLLiPVkmVEjZHKjcAOBXAifuSVk4izHE0sMn/0Pi1+ifOH9IYUJCIKxJxYjeWb1X38UAPqbChqGNG9cS8TAtrLZ0BVn9gRHMIIosgY6e+Cimconb3e0Nwn/8ozlkecNv1tnOP9Cx9/d7GjvBmvH8LAmH0/au/JXR89bwfVdB0Cdw/oxWra8jh4J2T3+bDRXwbzKABsZuTkUhHDPJQ4tUH71qqGhGSIWHnraQla466KQshTkRskCY6ArDXUTlc+93/FPH3TcfoGSzoBz7xwEbzipaH2fjuY9pPfuw02pYZ9Oo9bfTSweww0RAEQgG0DVuHzwky7hx68augKlNCms3ibs3C5MnaFccbayeK1QXDB8QDQG0hmYUQ2/+lJAyQSFEOgW/nup4VPfsySi77YLAGItuZ5ODjduhgRsidcxNaZUlCrZ3OCoG8k/7NzJSvkE2NIAO940fGBahJlFhqaDytOvCcSU6+e5UVWYQh6ghz4cUFIFTz5tWfQlj/Z2uPeukC/c6Tjcma9a31UA8kQQWrdtxCg0pM7ESJTaSkcmkEEFkfQFvwumK/hKR6vHj85L8pOrkqy6roDHLk2wZosl1wFXz3VUluYZMxSFPZv39/fNUS5foGzfIvz1o5afrDLc/FWPg3uE+64PuXKOcrRn7IHRjFQxGc/jyN7dSBpaUpOQXClzKsMhq0PnIObDxWc66IX5PQkuqPZ4qiHL2paQj86Psqg4zpYGobwGFpyp9PQyJJi9WaguhYfuC8HAd5ZY0hmYWgFr64UfPG8pm6B87o7wWB3zrgGgqniRKB379pBpbuXwuHF0uMmcV5FFPDnhx/r9v7II6modutcn2u7T2Blw3+oebn25m8aWgBsrogQtPmodN83TId3Amrxy/MS1jml1joatwlNrhFQi36g5IwU/fNHQtlu4eL5y1dyxs2BEBohnyXQeoXPfLlwS9tpJTE84/OiJQqhf/NRNcRTHDOH6JHjwnfosYgw9Dr6zLYONwZldMaRbOH+Gozh5oiASgUwOKkvg3stCyArfWmLYe1hxAjkHaVW27lMeX26RpPLpG0OMGRsLRsZKBBeGHGrcgvXg9wWzmRyzlBVrXsjIAP8PhAV1DpqjeF0+a9tCHt/ejZ/rJuGy/LQpYNPhgMLuKEFjjMnTQuZNUXoyb985I9DTm9cSFZPg9a2weoPlB1fGWXJ5kl8vTPLExUlunRrh4ReE1l3CZeeNnQUj36aKGENb4xuYAPYkJxOPJJhWHp6gCPP+r1w4BWiKoRHH9zcfwRSXUzX7PEomTOZob5Yvb+iGiOC2JDAZjxsvcHk9ICeWah++3IGvHNju8/j8JPedE+PcMsu8UstNtT6Lr0/yxakJHltmIKn87Y3hmDSBN7L9ivV8OprfxLVn2F88kbB1AnPKG1npLAZw/f6fg8ozlFkFHrozwsGuHg5e9zfcc9nVJEtS5NI59q59hee/dT+LGzu4bVIJbIpzcV03yag9VmT1B7+p5XDxOSFa73NddwomwBMbMjzSkKU947h3qs/Hp/t87ByfvR1FhNs7ufSCHDf8mfLMb4VxhfmM9AczwPo+Xa3NdL25m3TKp01qOKcsIDwO6rz/C2dPdhTnYsjRTjbNvovqu+8kFkuxZ916Mp09zLj+Sm7+1vd5tLeWrnQ72pRkZsoyY5Ie6zVYA91p4Y5LQpKeIbcmBZ7hE2sy/MWaHrYeynCw1/HA5iwLXujhpzsCJhRFcGtSuMMeX/9kjnHFSleGEWWmLRg35csjhgFrCdLdjJ81l4K66VTub2aWrOOHm6PYvkhoJR+xF11uuFiV3dE5/HDhZwkPdbDigc+w6WePsuuVF7DRYuquPJ/0tEsp27uZad0t2KIY7Ylelq23JOP5IsmPwjfvdZRuLcFLGz6/ppV/3XiEqgKPZHEREgREc9109GT4RUMnVTE494wY7E5QUgUlSXj5DYNvIdChcfBG6yuqSusbG6i++Xq2FM7monSMqlJHy37w+0pjPw4LygQ6E/xy9j3krPK77z3MvtdXkyyrINvTyeqHv4KGIWfdeTNLb36AWSs+T3V9I3fU+Xy71KEBdPcKV50PZx5NQFOanx+O8Kuqa7nhiumUnTmX1IRJdLUeJN3eQubIIVp+/1s+v20bm7oO8o/THaVL4b6ocM8thg+tVpYfcKQiQqjvFADnsJEobY3b4GhIU1Etpq2CGWUtNO31iRulNwMV5cK5Xi+/K7uV+hnzCOp3sWvN/xIvKSPM5bARH2M91n73a2guw6Q77uK/zvs0f//CZ5na1skVsx0/XRkhlsjxxWlZdHcRq2dcwrKqW7lu1lTiMeg+BOkjXaSqaqioq0EM1N1xPZd2wPaGJh5q28KCeBulRw9Tre1kXtsA2oFi3zkDtC8OHG3ZS3rfPoKJNRyK1DKvfA9LXBQrSjonXDY+JGaKeXbq7cQjhvXP/4Iw04v1o8cqTESIxBOsfuRrxIvGEb1pId/OfZVFmx7mU+P38JtYO3fMKMKbfgv3T7yN5uoplPjQtnkHbzz3JG31m0l3tBNNFpI8owIvlqR81lzKZ85l2rSZ9M6ZxK8FJIBYFA6s+SKRncvQaGH+/eg7dQGxlmznEQ43bKZ8Zg0Nfh2XVy7nq35eeOSMcFNVD9tLbmNP9QT8PYdoWvcSXiyRN/z4nrsI0VQRr/771zi/t5vw5pt4aOJ3KW/dx8cu2U8uVcUjlVV5/922g5XP/pzdq5aT7erERqMY65Hr7qRjXxOo0vTqMrxYnERZOWdMO4uSiZPA+njxOJmuo1jPG1IdeWPRzapC6xsbqb7pBjYUzuP94wooLwrpPWooiIecW1HEc5W3E49B/YvPkj5yiGiqGB3QRFRVRAwuyLHy3+6nrWErtdfdgpk6ndzEamIhhA0NvPbML9m1ahnZ7k78ZCHRomJwDgWMtX3MknyX3zl62lrZ2bwXF4aINaBgIxFsNIb+oQCoc3jRKC1bX0fbs+wsnk4yWc28qt0saUmwcHoXfvVCGkomos1HqH/hf4gM3P2BIBhLtCBF/dKn2LbsGS46v5Lbrh3Pug1HeHbpXjLd3fjJ5DEQjwdSB6l8bMTH+lFEjqtTtG+85w/NAqhiIz5dB1vo3LWd3Oyz2Rc/hztnbmPxawmumerx2uQPoEmh8cnFdLU2Ey0qOWH3B36nokQSBagqK9e1sHbdmwRq8WNRYqki3ADDR4pV+e98N2uBAa2ZoDfN3tdewffh5dRVXDq1gJLCo1SdtYCNZXNxze3UL32KSDw55O4Pxi5USSR8bKKAeDKOGHDhH79lPCYA1Dm8WILdq1+EQ71sKjubhEzhGzf1sHPmIsKksHPZ03S1NmN8f8zFuXMKzuGcg/doFmFUSvBtiHkePe1txBIFlFx4DrYtpLZuBi9PuYV0fRPrvvfNY5H+lHhLOn7G+8aGdV+73ItGufbB/yQ1bSJhAJGjB1n8D5+ms7kJL54YNf3/1GvMDKAvBWW7u2hv2kGqvIbMwWbWP/YwB+o3E0kWnDLGvyMGiND3al0Ic7ljfVsXhkRisT61d+oMlXpj/UAu6PsjVEQifbFKkUiEbM69rZ93KoQBb6y7X1p4fGmpbzXujxcbkp8xygUnPwjeaA3PBVBaAMu/nCNVCDqEcU7BROEjD3ms2JTv4IbuNGNAshAIhui2KBCDyBD1x2gJoSdzDNBgBAYEQwfB3Cgts/LezGSNGQA5bnB+MACEof1egFJfRjZMoDun5PSPD4L3XtBM+na+1BeWX5kk5eertcGMcwrGEz6yqocVLbkTW1mjjaqjzMNen7vJewVEqS8kfRnayRWICJEhbtEgGFX8MGZUeVi9/F3vnWrJ9Z3lGJYBOsQTieAXppCRHlkg15vOgzUsCCIe6g70TYu+J0w4/uiJjPD/t9UfQUC0IMXVDzyKX1CAhoM/rqojEjO8/M9foHnjb/ATg5bl+WpN3QFP0Y1GzDWqgQMZccSgr2IddgcZppp1mr+G/fxwDEgWEi1IokOkYXVKJC6ItcPEAXUi1joNN3pG5UVErmGUkxoFMTDxoXWA6dMBnjnRCAEKPMFEhqaw6YsB3hC3mIiP9cGZoQAQrJ+fdRwpnRmVF4c9MDEwqEY8mD9N86MoOowQMrC5SY6Nragei23MH2fxRgpOApvbQw5n9S0g+oY1xtXO6tvdoX9fDLTvbiTT2YHYExTZ2w5MCMD4GVc8Zmz0oy7IBcgww5MK3ZnjjNchaKIQj57IAgW6g1FQTSHuDcICVYJMelQZzotGEeOd+JBKYLyI58LM91u2v/SXYz40Ndr37kN1tewow6wbIg7IKKet+xukAx1kkENTd5vWXSsOOBcsErECooO+Qumvgt3orqE2KdTRXTpMX3I016DGIypixblgUeuuFQfgbmNhq8LdtvvwrxsTJTXNxkZuFRCUAOFUOzA5uEMpoRhjxXgmDHOfaG18+cn+85J9aa8fhCXrC4smrlUxVxkvklJUQMPjsvapdnTWIcYYGzHqXIsEwV0HGl/6+SBHZ98Coav9uYZYcsKPxZMiYIoYLyFiTi0miIgYK5J/P9au6n4U9Gbvad39yoZhDk/3r/9fx+f/D6c/4VbMpbQ3AAAAAElFTkSuQmCC

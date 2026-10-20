@@ -1,0 +1,85 @@
+# meica-rs container tests
+#
+# The host setup downloads upstream's pinned 3-echo motor example (51x68x46x100) from
+# the neurodeskorg/webapps Hugging Face dataset. Upstream's DEVELOPMENT.md records 7
+# accepted and 6 rejected components for tedana's default tree on it.
+
+name: meica-rs
+version: 0.1.20261018
+upstream_version: 0.1.20261018
+meica_rs_commit: 1582ce4733a91ceec8b77e8436170a976e7a2913
+niimath_version: 1.0.20261016
+default_timeout: 1800
+
+test_data:
+  output_dir: test_output/meica-rs
+  echo1: test_output/meica-rs/sub-01_task-motor_echo-1_bold.nii.gz
+  echo2: test_output/meica-rs/sub-01_task-motor_echo-2_bold.nii.gz
+  echo3: test_output/meica-rs/sub-01_task-motor_echo-3_bold.nii.gz
+
+setup:
+  host_script: |
+    set -e
+    mkdir -p "${output_dir}"
+    base=https://huggingface.co/datasets/neurodeskorg/webapps/resolve/121b25dde5caffc8f880eec87cca29b4e569b7a9/me-ica/motor-3echo/example
+    for i in 1 2 3; do
+      curl -fsSL -o "${output_dir}/sub-01_task-motor_echo-${i}_bold.nii.gz" "${base}/sub-01_task-motor_echo-${i}_bold.nii.gz"
+    done
+    sha256sum -c - <<EOF
+    5681230e0cc3388f04547f457440ad5e9d3075158e3a501ebe395ee4790ed123  ${echo1}
+    891ec11d19ddb3270d0a464bb1d81e2d237c361bc2ea2982d42f1c885a29bb6f  ${echo2}
+    f523bf5ef8c543c54cb51107b45dcea1d27841cb12d55ff082a6afd88b7010e0  ${echo3}
+    EOF
+
+tests:
+  - name: meica reports its version
+    description: Verify the meica binary is on PATH and was built from the pinned upstream workspace version.
+    command: meica --version
+    expected_output_contains: "meica ${upstream_version}"
+
+  - name: meica exposes tedana options
+    description: Verify the help lists tedana's inputs, decision trees and PCA criteria.
+    command: meica --help
+    expected_output_contains:
+      - "-d FILE [FILE ...] -e TE [TE ...]"
+      - "--tree tedana_orig|meica|minimal"
+      - "--tedpca aic|kic|mdl"
+      - "--moco"
+
+  - name: niimath installed next to meica
+    description: meica --moco looks for niimath beside its own executable first, so the pinned niimath must live in /opt/meica-rs/bin and support -boldref.
+    command: |
+      set -e
+      test "$(command -v niimath)" = /opt/meica-rs/bin/niimath
+      test -x "$(dirname "$(command -v meica)")/niimath"
+      niimath 2>&1 | head -n 1
+      niimath 2>&1 | grep -c -- "-boldref"
+    expected_output_contains:
+      - "${niimath_version}"
+
+  - name: default tree reproduces tedana on the motor example
+    description: Denoise the 3-echo example with tedana's default tree and check the outputs and the 7 accepted / 6 rejected classification upstream records.
+    command: |
+      set -e
+      rm -rf "${output_dir}/out"
+      meica -d "${echo1}" "${echo2}" "${echo3}" -e 15.2 35.32 55.42 --out-dir "${output_dir}/out" --quiet
+      test -s "${output_dir}/out/desc-denoised_bold.nii.gz"
+      test -s "${output_dir}/out/desc-tedana_metrics.tsv"
+      awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "classification") c = i; next }
+        { n[$c]++ } END { printf "accepted=%d rejected=%d\n", n["accepted"], n["rejected"] }' \
+        "${output_dir}/out/desc-tedana_metrics.tsv"
+    expected_output_contains: "accepted=7 rejected=6"
+
+  - name: moco with an external mask runs through niimath
+    description: Motion-correct the echoes with the bundled niimath, masked by a thresholded mean of echo 1 because mindgrab is not shipped, and check the confounds and denoised series.
+    command: |
+      set -e
+      rm -rf "${output_dir}/moco"
+      niimath "${echo1}" -Tmean -thrP 30 -bin "${output_dir}/moco_mask.nii.gz"
+      meica -d "${echo1}" "${echo2}" "${echo3}" -e 15.2 35.32 55.42 --moco \
+        --mask "${output_dir}/moco_mask.nii.gz" --out-dir "${output_dir}/moco" --quiet
+      test -s "${output_dir}/moco/desc-denoised_bold.nii.gz"
+      head -n 1 "${output_dir}/moco/desc-mocoConfounds_timeseries.tsv"
+    expected_output_contains:
+      - "trans_x"
+      - "rot_z"
