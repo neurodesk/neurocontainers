@@ -302,8 +302,9 @@ additional swap, no network and `HOME=/nonexistent`. The shared machine has
 
 All arms received an excluded validated full replay before scoring; the A
 replay also supplied the excluded native/Python profile. The order was ABC,
-BCA, CAB, CBA, BAC. No scored run was discarded. Two chat interruptions stopped
-the host controller after the C01 and A02 containers had completed normally.
+BCA, CAB, CBA, BAC. No scored run was discarded. The host controller was
+interrupted before C01 and A02 had been validated. Both data containers
+completed normally.
 Their original timings and resource samples were retained; their post-run
 hashes and scientific validation were collected on resumption. There were
 unplanned gaps between triplets 1/2 and 2/3. A Docker controller then completed
