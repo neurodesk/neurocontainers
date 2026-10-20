@@ -843,15 +843,37 @@ def _phase_to_radians(phase_volume, phase_wrap):
     its scale.
     """
     phase = np.asarray(phase_volume, dtype=np.float32)
-    finite = phase[np.isfinite(phase)]
-    if finite.size == 0 or (-np.pi <= finite.min() and finite.max() <= np.pi):
+    if phase.size == 0:
         return phase
-    span = float(finite.max() - finite.min())
+    data_min, data_max = phase.min(), phase.max()
+    all_finite = np.isfinite(data_min) and np.isfinite(data_max)
+    if not all_finite:
+        finite = phase[np.isfinite(phase)]
+        if finite.size == 0:
+            return phase
+        data_min, data_max = finite.min(), finite.max()
+        del finite
+    if -np.pi <= data_min and data_max <= np.pi:
+        return phase
+    span = float(data_max - data_min)
     if span > phase_wrap:
         raise ValueError(
             f"Phase spans {span:.6g} counts, more than one {phase_wrap:.6g}-count "
             "cycle; set phasewrap to the scanner's counts per 2*pi"
         )
+    if (
+        all_finite
+        and 0 <= data_min
+        and data_max <= np.iinfo(np.uint16).max
+        and phase.size > int(data_max) + 1
+    ):
+        indices = phase.astype(np.uint16)
+        if np.array_equal(phase, indices):
+            counts = np.arange(int(data_max) + 1, dtype=np.float32)
+            lookup = np.angle(
+                np.exp(1j * counts * (2.0 * np.pi / phase_wrap))
+            ).astype(np.float32)
+            return lookup[indices]
     return np.angle(np.exp(1j * phase * (2.0 * np.pi / phase_wrap))).astype(np.float32)
 
 

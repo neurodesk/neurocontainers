@@ -1,6 +1,11 @@
 name: qsmxt
 version: "10.0.0"
 upstream_version: "10.0.0"
+qsmxt_source_sha256: 6a839d0c617426c48f48f4e4a2c67a4283e3e814912a1aa21a1537170a8d6a00
+rust_version: "1.98.0"
+native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
+native_build_script_sha256: 40d351b00991238f78cc9560558ab77146ddb3bbac15cf81b3ab63a64ca009ed
+qsm_core_commit: "42ab620190ad315c9dcf7aa8ec4a036402002b7e"
 niimath_version: "1.0.20261016"
 
 test_data:
@@ -82,7 +87,27 @@ tests:
     expected_output_contains: "${niimath_version}"
 
   - name: QSMxT release version
-    command: qsmxt --version
+    script: |
+      set -euo pipefail
+      qsmxt --version
+      python3 - <<'PY'
+      import hashlib
+      import json
+      from pathlib import Path
+
+      info = json.loads(Path('/opt/qsmxt/native-build.json').read_text())
+      assert info['upstream_version'] == '${upstream_version}'
+      assert info['source_sha256'] == '${qsmxt_source_sha256}'
+      assert info['rustc'].startswith('rustc ${rust_version} ')
+      with Path('/opt/qsmxt/qsmxt').open('rb') as stream:
+          assert info['binary_sha256'] == hashlib.file_digest(stream, 'sha256').hexdigest()
+      assert info['patch_sha256'] == '${native_patch_sha256}'
+      assert info['build_script_sha256'] == '${native_build_script_sha256}'
+      assert info['qsm_core_source'].endswith('#${qsm_core_commit}')
+      assert len(info['cargo_lock_sha256']) == 64
+      PY
+      ! command -v rustc
+      ! command -v cargo
     expected_output_contains: "${upstream_version}"
 
   - name: T2 star fitting and scanner display

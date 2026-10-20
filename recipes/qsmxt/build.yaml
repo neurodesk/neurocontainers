@@ -20,6 +20,12 @@ variables:
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
   upstream_version: "10.0.0"
+  qsmxt_source_sha256: 6a839d0c617426c48f48f4e4a2c67a4283e3e814912a1aa21a1537170a8d6a00
+  qsm_core_commit: "42ab620190ad315c9dcf7aa8ec4a036402002b7e"
+  native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
+  native_build_script_sha256: 40d351b00991238f78cc9560558ab77146ddb3bbac15cf81b3ab63a64ca009ed
+  rust_version: "1.98.0"
+  rust_x86_64_sha256: ed8ee2df70909c88cbaf87a6cfa3920dac00b537de12a6abe6906641e0f5952f
   qsmxt_x86_64_sha256: 16ca20256672da4b5234791973de3ba83289650add2bcbd13c584c7a8cb15605
   qsmxt_aarch64_url: https://github.com/QSMxT/QSMxT/releases/download/v10.0.0/qsmxt-v10.0.0-aarch64-unknown-linux-gnu.tar.gz
   qsmxt_aarch64_sha256: 7e8a644330cade07632f9b7fba7b8d14fbb83e88e75cacb796f9920e99e48b60
@@ -60,6 +66,27 @@ auto_update:
       variable: qsmxt_aarch64_url
       variables:
         qsmxt_aarch64_sha256: sha256
+  - id: qsmxt_source
+    dependency: true
+    method: http_digest
+    url: https://github.com/QSMxT/QSMxT/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
+    target:
+      variable: qsmxt_source_sha256
+      fulltest_variable: qsmxt_source_sha256
+  - id: rust
+    dependency: true
+    method: github_tags
+    repo: rust-lang/rust
+    version_regex: (?P<version>\d+\.\d+\.\d+)
+    target:
+      variable: rust_version
+      fulltest_variable: rust_version
+  - id: rust_toolchain
+    dependency: true
+    method: http_digest
+    url: https://static.rust-lang.org/dist/rust-{{ context.rust_version }}-x86_64-unknown-linux-gnu.tar.xz
+    target:
+      variable: rust_x86_64_sha256
   - id: openrecon_ismrmrd
     dependency: true
     method: github_release
@@ -179,6 +206,9 @@ build:
         - install -m 755 /tmp/niimath/niimath /opt/qsmxt/niimath
         - rm -rf /tmp/niimath
         - python3 -m pip install --break-system-packages --no-cache-dir antspyx=={{ context.antspyx_version }}
+
+    - run:
+        - bash {{ get_file("build-native.sh") }} {{ get_file("qsmxt_source") }} {{ get_file("rust_toolchain") }} {{ get_file("reuse-single-echo-magnitude.patch") }} {{ context.upstream_version }} {{ context.rust_version }} {{ context.qsm_core_commit }} {{ context.native_patch_sha256 }} {{ context.native_build_script_sha256 }}
 
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
@@ -316,6 +346,16 @@ readme: |-
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
 
 files:
+  - name: build-native.sh
+    filename: build-native.sh
+  - name: reuse-single-echo-magnitude.patch
+    filename: reuse-single-echo-magnitude.patch
+  - name: qsmxt_source
+    url: https://github.com/QSMxT/QSMxT/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
+    sha256: "{{ context.qsmxt_source_sha256 }}"
+  - name: rust_toolchain
+    url: https://static.rust-lang.org/dist/rust-{{ context.rust_version }}-x86_64-unknown-linux-gnu.tar.xz
+    sha256: "{{ context.rust_x86_64_sha256 }}"
   - name: verify_ep3d_runtime.py
     filename: verify_ep3d_runtime.py
   - name: verify_output_echoes.py

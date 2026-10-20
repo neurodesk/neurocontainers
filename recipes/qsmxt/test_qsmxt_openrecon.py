@@ -2525,6 +2525,60 @@ def test_phase_to_radians_rejects_phase_wider_than_one_cycle():
         qsmxt._phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
 
 
+@pytest.mark.parametrize("dtype", [np.uint16, np.float32])
+def test_phase_to_radians_bulk_scanner_counts_preserve_wrap_boundary(dtype):
+    unique_counts = np.array([0, 1024, 2048, 3072, 4095], dtype=dtype)
+    expected = qsmxt._phase_to_radians(unique_counts, 4096.0)
+    counts = np.tile(unique_counts, 2048)
+    original = counts.copy()
+
+    radians = qsmxt._phase_to_radians(counts, 4096.0)
+
+    assert radians.dtype == np.float32
+    np.testing.assert_array_equal(
+        radians.view(np.uint32), np.tile(expected, 2048).view(np.uint32)
+    )
+    np.testing.assert_allclose(
+        radians,
+        np.tile([0.0, np.pi / 2, -np.pi, -np.pi / 2, -2 * np.pi / 4096], 2048),
+        rtol=0,
+        atol=3e-7,
+    )
+    np.testing.assert_array_equal(counts, original)
+
+
+@pytest.mark.parametrize("counts_per_cycle", [4096, 65536])
+def test_phase_to_radians_preserves_every_scanner_count_when_repeated(counts_per_cycle):
+    counts = np.arange(counts_per_cycle, dtype=np.uint16)
+    expected = qsmxt._phase_to_radians(counts, float(counts_per_cycle))
+    repeated = qsmxt._phase_to_radians(np.tile(counts, 3), float(counts_per_cycle))
+
+    np.testing.assert_array_equal(
+        repeated.view(np.uint32), np.tile(expected, 3).view(np.uint32)
+    )
+
+
+def test_phase_to_radians_bulk_fractional_counts_keep_sub_count_precision():
+    unique_counts = np.array([1024.5, 2048.5, 3072.5], dtype=np.float32)
+    expected = qsmxt._phase_to_radians(unique_counts, 4096.0)
+    counts = np.tile(unique_counts, 2048)
+    actual = qsmxt._phase_to_radians(counts, 4096.0)
+
+    np.testing.assert_array_equal(
+        actual.view(np.uint32), np.tile(expected, 2048).view(np.uint32)
+    )
+    np.testing.assert_allclose(
+        actual,
+        np.tile([
+            np.pi / 2 + np.pi / 4096,
+            -np.pi + np.pi / 4096,
+            -np.pi / 2 + np.pi / 4096,
+        ], 2048),
+        rtol=0,
+        atol=3e-7,
+    )
+
+
 @pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_gre_motion"])
 @pytest.mark.parametrize("shape", ["bare", "nested", "json"])
 @pytest.mark.parametrize("motion,reference", [(None, None), (False, "last"), (True, "2")])

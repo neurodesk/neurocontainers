@@ -1,0 +1,208 @@
+--- a/src/pipeline/runner.rs
++++ b/src/pipeline/runner.rs
+@@ -123,6 +123,9 @@
+         algorithm, &serde_json::json!({ "params": params, "config": consumed }))
+ }
+ 
++/// Owned, full-precision result for an identical single-echo masking input.
++struct CorrectedSingleEchoMagnitude(Vec<f64>);
++
+ /// Bundles references needed by every pipeline stage.
+ struct StageContext<'a> {
+     run: &'a QsmRun,
+@@ -444,11 +447,13 @@
+     };
+ 
+     stage_scale_phase(&mut ctx, progress)?;
+-    stage_magnitude(&mut ctx, progress)?;
++    let corrected_magnitude = stage_magnitude(&mut ctx, progress)?;
+ 
+     let brain_mask_path = output.mask_path(&qsm_run.key);
+     if needs_mask {
+-        stage_mask(&mut ctx, &brain_mask_path, progress)?;
++        stage_mask(&mut ctx, &brain_mask_path, corrected_magnitude, progress)?;
++    } else {
++        drop(corrected_magnitude);
+     }
+     // Every stage after this reads the motion-corrected echoes (when on) and the mask every echo
+     // still covers; the published brain mask stays the one masking made.
+@@ -1645,7 +1650,9 @@
+     Ok(qsm_core::utils::makehomogeneous(data, &grid, homogeneity.sigma_mm, homogeneity.nbox))
+ }
+ 
+-fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
++fn stage_magnitude(
++    ctx: &mut StageContext, progress: &dyn Fn(&str),
++) -> crate::Result<Option<CorrectedSingleEchoMagnitude>> {
+     let mag_params = serde_json::json!({
+         "inhomogeneity_correction": ctx.config.masking.inhomogeneity_correction,
+         "homogeneity_sigma_mm": ctx.config.homogeneity.sigma_mm,
+@@ -1653,21 +1660,23 @@
+     });
+     if ctx.is_cached_with_params("magnitude", Some("rss"), &mag_params) {
+         log::info!("Skipping magnitude (cached)");
+-        return Ok(());
++        return Ok(None);
+     }
+     if !ctx.run.has_magnitude {
+-        return Ok(());
++        return Ok(None);
+     }
+     let t = Instant::now();
+     progress("Computing RSS-combined magnitude");
+ 
+     // Load raw per-echo magnitudes
+     let mut mag_slices: Vec<Vec<f64>> = Vec::new();
++    let mut loaded_working_magnitudes = true;
+     for i in 0..ctx.meta.n_echoes {
+         let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+         if m_path.exists() {
+             mag_slices.push(load_volume(&m_path)?);
+         } else if let Some(ref src) = ctx.run.echoes[i].magnitude_nifti {
++            loaded_working_magnitudes = false;
+             let nifti = io::read_nifti_file(src)
+                 .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
+             mag_slices.push(nifti.data);
+@@ -1677,6 +1686,11 @@
+     if !mag_slices.is_empty() {
+         let refs: Vec<&[f64]> = mag_slices.iter().map(|v| v.as_slice()).collect();
+         let mut combined = phase::rss_combine(&refs)?;
++        let reusable_for_mask = ctx.config.masking.inhomogeneity_correction
++            && ctx.config.masking.custom_mask_tool.is_none()
++            && loaded_working_magnitudes
++            && ctx.meta.n_echoes == 1 && refs.len() == 1
++            && refs[0].iter().zip(&combined).all(|(a, b)| a.to_bits() == b.to_bits());
+ 
+         // Apply homogeneity correction to the combined result
+         if ctx.config.masking.inhomogeneity_correction {
+@@ -1692,9 +1706,11 @@
+         let mag_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.output.mag_path(&ctx.run.key, i + 1)).collect();
+         let input_refs: Vec<&Path> = mag_inputs.iter().map(|p| p.as_path()).collect();
+         ctx.complete_step("magnitude", Some("rss"), mag_params, &input_refs, vec![combined_path], t)?;
++        log_step_done("RSS magnitude", t);
++        return Ok(reusable_for_mask.then_some(CorrectedSingleEchoMagnitude(combined)));
+     }
+     log_step_done("RSS magnitude", t);
+-    Ok(())
++    Ok(None)
+ }
+ 
+ /// Locate a bring-your-own derivative under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/<glob>`
+@@ -1764,7 +1780,10 @@
+     find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_", "_desc-r2prime_"])
+ }
+ 
+-fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
++fn stage_mask(
++    ctx: &mut StageContext, mask_path: &Path,
++    corrected_magnitude: Option<CorrectedSingleEchoMagnitude>, progress: &dyn Fn(&str),
++) -> crate::Result<()> {
+     let mask_params = serde_json::json!({
+         "sections": ctx.config.masking.sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
+         "combine": format!("{}", ctx.config.masking.combine),
+@@ -1814,7 +1833,7 @@
+     log::info!("Creating mask ({} section(s), combined with {})",
+                ctx.config.masking.sections.len(), ctx.config.masking.combine);
+ 
+-    let working_mask = build_mask_from_sections(ctx, &ctx.config.masking.sections.clone())?;
++    let working_mask = build_mask_from_sections(ctx, &ctx.config.masking.sections.clone(), corrected_magnitude)?;
+     save_mask(mask_path, &working_mask, ctx.meta)?;
+     let mag_paths: Vec<PathBuf> = (1..=ctx.meta.n_echoes).map(|e| ctx.output.mag_path(&ctx.run.key, e))
+         .filter(|p| p.exists()).collect();
+@@ -1829,6 +1848,7 @@
+ /// images and honour the same folding rules.
+ fn build_mask_from_sections(
+     ctx: &mut StageContext, sections: &[MaskSection],
++    corrected_magnitude: Option<CorrectedSingleEchoMagnitude>,
+ ) -> crate::Result<Vec<u8>> {
+     // Load phases (needed for PhaseQuality masking input)
+     let mut phases: Vec<Vec<f64>> = Vec::new();
+@@ -1842,7 +1862,13 @@
+     // Every echo's magnitude: each section builds the magnitude it asks for (echo 1, the RSS, the
+     // last echo) from these in qsm-core, so all sections see the same, consistently corrected,
+     // echoes (QSM.rs#173).
+-    let magnitudes = mask_echo_magnitudes(ctx)?;
++    let magnitudes = match corrected_magnitude {
++        Some(magnitude) => {
++            log::info!("Reusing the full-precision single-echo magnitude for masking");
++            vec![magnitude.0]
++        }
++        None => mask_echo_magnitudes(ctx)?,
++    };
+ 
+     // Convert config masking sections to qsm-core types
+     let core_sections = crate::pipeline::config::to_mask_sections(sections, &ctx.config.bet);
+@@ -1910,7 +1936,7 @@
+     progress("Creating the reliable-phase mask");
+     log::info!("Creating the reliable-phase mask ({} section(s))", sections.len());
+ 
+-    let reliable = build_mask_from_sections(ctx, &sections)?;
++    let reliable = build_mask_from_sections(ctx, &sections, None)?;
+     let main = load_mask(main_mask)?;
+     let restricted = qsm_core::pipeline::restrict_reliable_mask(&reliable, &main)
+         .map_err(|e| QsmxtError::Config(format!("reliable mask: {}", e)))?;
+@@ -5434,6 +5460,64 @@
+     }
+ 
+     #[test]
++    fn single_echo_handoff_preserves_masking_precision_and_cache_behavior() {
++        use super::*;
++        let dir = tempfile::tempdir().unwrap();
++        let run = run_with_echoes(vec![(dir.path().join("phase.nii"), None)]);
++        let output = crate::bids::derivatives::DerivativeOutputs::new(dir.path());
++        let meta = meta_4x4x4();
++        let mut cfg = PipelineConfig::default();
++        cfg.masking.inhomogeneity_correction = true;
++        cfg.homogeneity.sigma_mm = 1.0;
++        let mut state = PipelineState::new(&cfg, &run.key);
++        let state_path = dir.path().join("state.json");
++        let mut ctx = StageContext { run: &run, config: &cfg, output: &output,
++            meta: &meta, state: &mut state, state_path: &state_path };
++        let raw: Vec<f64> = (0..64).map(|i| 100.0 + (i * 17 % 31) as f64).collect();
++        save_volume(&output.mag_path(&run.key, 1), &raw, &meta).unwrap();
++        let expected = mask_echo_magnitudes(&ctx).unwrap().remove(0);
++        let reused = stage_magnitude(&mut ctx, &|_| {}).unwrap().unwrap().0;
++        assert_eq!(reused.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
++                   expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
++        let disk = load_volume(&output.magnitude_path(&run.key)).unwrap();
++        assert!(reused.iter().zip(disk).any(|(a, b)| a.to_bits() != b.to_bits()),
++                "the handoff must keep precision lost by the saved float32 image");
++        assert!(stage_magnitude(&mut ctx, &|_| {}).unwrap().is_none(),
++                "a cached stage has no in-memory value to hand off");
++    }
++
++    #[test]
++    fn single_echo_handoff_requires_the_same_working_input_and_config() {
++        use super::*;
++        for case in ["original-only", "custom-mask", "negative", "disabled", "multi-echo"] {
++            let dir = tempfile::tempdir().unwrap();
++            let original = dir.path().join("original.nii");
++            let n = if case == "multi-echo" { 2 } else { 1 };
++            let run = run_with_echoes((0..n).map(|_| (
++                dir.path().join("phase.nii"), Some(original.clone()))).collect());
++            let output = crate::bids::derivatives::DerivativeOutputs::new(&dir.path().join("out"));
++            let mut meta = meta_4x4x4();
++            meta.n_echoes = n;
++            let mut cfg = PipelineConfig::default();
++            cfg.masking.inhomogeneity_correction = case != "disabled";
++            cfg.homogeneity.sigma_mm = 1.0;
++            if case == "custom-mask" { cfg.masking.custom_mask_tool = Some("external".into()); }
++            let mut state = PipelineState::new(&cfg, &run.key);
++            let state_path = dir.path().join("state.json");
++            let mut ctx = StageContext { run: &run, config: &cfg, output: &output,
++                meta: &meta, state: &mut state, state_path: &state_path };
++            let raw = vec![if case == "negative" { -10.0 } else { 10.0 }; 64];
++            save_volume(&original, &raw, &meta).unwrap();
++            if case != "original-only" {
++                for echo in 1..=n { save_volume(&output.mag_path(&run.key, echo), &raw, &meta).unwrap(); }
++            } else {
++                assert!(mask_echo_magnitudes(&ctx).unwrap().is_empty());
++            }
++            assert!(stage_magnitude(&mut ctx, &|_| {}).unwrap().is_none(), "case: {}", case);
++        }
++    }
++
++    #[test]
+     fn test_homogeneity_correct_rejects_size_mismatch() {
+         // The guard must report the mismatch rather than let qsm-core index past the volume.
+         let cfg = crate::pipeline::config::HomogeneityConfig::default();
