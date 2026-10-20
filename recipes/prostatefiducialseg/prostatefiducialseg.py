@@ -8,7 +8,9 @@ detected markers drawn in. Per-marker mean probability, position and the count f
 series description.
 
 Parameters (OpenReconLabel.json): ``markers`` (implant count K, default 3),
-``ensemble`` ("5" folds or "1" fold) and ``mirroring`` (test-time mirroring).
+``ensemble`` ("all" = 5-network ensemble, default, or one network "0".."4") and
+``mirroring`` (test-time mirroring, default off: the ensemble without mirroring gave the
+same top-3 as mirrored nnU-Net on 34/34 parity cases).
 Environment overrides: SEEDSEG_DEVICE (cpu|cuda), SEEDSEG_MIRROR (0|1), SEEDSEG_MODELS,
 SEEDSEG_SRC.
 """
@@ -134,7 +136,7 @@ def marker_outline(mask):
     return find_boundaries(m, mode='outer')
 
 
-def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirror=True):
+def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirror=False):
     """Detection on one series. Returns (det, mask [image,row,col] with value = rank, summary)."""
     vol, order, spacing = to_volume(images)
     logging.info("Volume (z,y,x) %s, spacing %s mm", vol.shape, np.round(spacing, 4))
@@ -160,9 +162,9 @@ def process_image(images, connection, config, metadata):
         return []
     t0 = time.time()
     k = mrdhelper.get_json_config_param(config, 'markers', default=3, type='int')
-    ens = mrdhelper.get_json_config_param(config, 'ensemble', default='5', type='str')
-    folds = ['0'] if ens == '1' else ['0', '1', '2', '3', '4']
-    mirror = mrdhelper.get_json_config_param(config, 'mirroring', default=True, type='bool')
+    ens = mrdhelper.get_json_config_param(config, 'ensemble', default='all', type='str')
+    folds = [ens] if ens in ('0', '1', '2', '3', '4') else ['0', '1', '2', '3', '4']
+    mirror = mrdhelper.get_json_config_param(config, 'mirroring', default=False, type='bool')
     if os.environ.get('SEEDSEG_MIRROR') is not None:
         mirror = os.environ['SEEDSEG_MIRROR'] == '1'
     device = os.environ.get('SEEDSEG_DEVICE') or default_device()
