@@ -1,5 +1,5 @@
 name: xcpd
-version: 0.10.7
+version: 26.2.0
 default_timeout: 120
 tests:
 - name: Test xcpd
