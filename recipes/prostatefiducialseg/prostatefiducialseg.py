@@ -86,7 +86,20 @@ def host_available_mib():
                 vals.append(int(line.split()[1]) // 1024)
     except OSError:
         pass
-    for f in ('/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes'):
+    paths = ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']
+    try:  # this process's own cgroup (nested under Slurm, Kubernetes, ...)
+        for line in open('/proc/self/cgroup'):
+            hier, ctrl, path = line.strip().split(':', 2)
+            parts = path.strip('/').split('/') if path.strip('/') else []
+            for i in range(len(parts), 0, -1):  # the limit may be set on any ancestor
+                sub = '/' + '/'.join(parts[:i])
+                if hier == '0':
+                    paths.append(f'/sys/fs/cgroup{sub}/memory.max')
+                elif 'memory' in ctrl.split(','):
+                    paths.append(f'/sys/fs/cgroup/memory{sub}/memory.limit_in_bytes')
+    except (OSError, ValueError):
+        pass
+    for f in paths:
         try:
             v = open(f).read().strip()
             if v.isdigit() and int(v) < 2 ** 60:
@@ -103,13 +116,14 @@ def choose_device(n_networks):
         return os.environ['SEEDSEG_DEVICE'], False, 'SEEDSEG_DEVICE'
     free = gpu_free_mib()
     if free is None:
-        return 'cpu', False, 'no usable GPU'
+        # on CPU too, one network loaded at a time: all 5 at once need more than 10 GB of memory
+        return 'cpu', n_networks > 1, 'no usable GPU'
     if n_networks > 1 and free >= GPU_MIB_ALL_LOADED:
         return 'cuda', False, f'GPU {free} MiB free'
     if free >= GPU_MIB_ONE_LOADED:
         lazy = n_networks > 1
         return 'cuda', lazy, f'GPU {free} MiB free' + (', one network loaded at a time' if lazy else '')
-    return 'cpu', False, f'GPU has only {free} MiB free (needs {GPU_MIB_ONE_LOADED})'
+    return 'cpu', n_networks > 1, f'GPU has only {free} MiB free (needs {GPU_MIB_ONE_LOADED})'
 
 
 def process(connection, config, metadata):
@@ -227,11 +241,12 @@ def process_image(images, connection, config, metadata):
     if device == 'cuda' and 'CUDAExecutionProvider' not in get_model(folds, device, mirror, lazy).providers:
         logging.warning("SeedSeg: a GPU was found but ONNX Runtime could not use it (CUDA/cuDNN libraries); "
                         "running on CPU")
-        device, lazy, reason = 'cpu', False, 'CUDA provider failed'
+        device, lazy, reason = 'cpu', len(folds) > 1, 'CUDA provider failed'
     if device == 'cpu' and len(folds) > 1 and mrdhelper.get_json_config_param(
             config, 'cpuonenetwork', default=True, type='bool'):
         logging.info("SeedSeg: no GPU; using only network %d of the %d selected", int(folds[0]) + 1, len(folds))
         folds = folds[:1]
+        lazy = False
     logging.info("SeedSeg: %d images, K=%d, folds=%s, mirroring=%s, device=%s", len(images), k, folds, mirror, device)
 
     head = [img.getHead() for img in images]
