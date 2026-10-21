@@ -43,7 +43,9 @@ def get_model(folds, device, mirror):
     key = (tuple(folds), device, mirror)
     if key not in _model_cache:
         _model_cache.clear()
-        _model_cache[key] = seedseg_onnx.SeedSegONNX(MODEL_DIR, folds, mirror=mirror, device=device, log=logging.info)
+        # one window per run: batching the 8 mirrored copies needs several GB more GPU memory
+        _model_cache[key] = seedseg_onnx.SeedSegONNX(MODEL_DIR, folds, mirror=mirror, device=device, batch_size=1,
+                                                     log=logging.info)
     return _model_cache[key]
 
 
