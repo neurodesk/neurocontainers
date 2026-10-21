@@ -10,7 +10,7 @@ variables:
     openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
     openrecon_ismrmrd_version: "1.14.2"
-    upstream_commit: "8d3340718c9e0d45761eb5f1c8dcf7d9d62efd5c"
+    upstream_commit: "c9b328a2e0bc1768c0b75640f5532e2853e7ef31"
     onnxruntime_gpu_version: "1.23.2"
     conda_version: "25.5.1-0"
     conda_download_url: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
