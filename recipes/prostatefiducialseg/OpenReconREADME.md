@@ -21,7 +21,8 @@ K most probable are outlined.
 Device: before each run the free GPU memory is checked. With at least 13 GB free all selected
 networks are kept on the GPU; with at least 3.5 GB they are loaded one at a time (same result,
 about 2 s slower); otherwise, or without a usable GPU, the CPU is used, with only the first
-selected network by default (`cpuonenetwork`). The device and the reason are logged and
+selected network by default (`cpuonenetwork`). On the CPU, several networks are also loaded one at a
+time (about 3 GB of memory; all five at once would need more than 10 GB). The device and the reason are logged and
 written to `SeedSegMarkers`.
 
 ## UI Parameters

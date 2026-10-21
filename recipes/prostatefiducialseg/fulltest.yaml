@@ -1,5 +1,5 @@
 name: prostatefiducialseg
-version: "8.0.2"
+version: "8.0.3"
 upstream_commit: c9b328a2e0bc1768c0b75640f5532e2853e7ef31
 tests:
 - name: prediction launcher
