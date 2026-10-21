@@ -9,7 +9,10 @@ rust_version=$5
 core_commit=$6
 patch_sha256=$7
 script_sha256=$8
-printf '%s  %s\n%s  %s\n' "$patch_sha256" "$source_patch" "$script_sha256" "$0" | sha256sum -c -
+core_patch=$9
+core_patch_sha256=${10}
+printf '%s  %s\n' "$patch_sha256" "$source_patch" "$script_sha256" "$0" \
+    "$core_patch_sha256" "$core_patch" | sha256sum -c -
 build_root=$(mktemp -d /tmp/qsmxt-build.XXXXXX)
 trap 'rm -rf "$build_root"' EXIT
 
@@ -48,10 +51,31 @@ for name in ("qsmxt", "qsmxt-config"):
 path.write_text(text)
 PY
 
+# Patch only the pinned checkout inside this build's private Cargo directory.
+# Keeping its git source identity retains the complete upstream lockfile.
+cargo fetch --locked
+core_source=$(python3 - "$core_commit" <<'PYCORE'
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+metadata = json.loads(subprocess.check_output(
+    ["cargo", "metadata", "--locked", "--format-version", "1"], text=True))
+core = next(p for p in metadata["packages"] if p["name"] == "qsm-core")
+assert core["source"].endswith("#" + sys.argv[1]), core["source"]
+source = Path(core["manifest_path"]).parent
+assert subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip() == sys.argv[1]
+subprocess.run(["git", "-C", str(source), "diff", "--exit-code"], check=True, stdout=subprocess.DEVNULL)
+print(source)
+PYCORE
+)
+patch --batch --fuzz=0 -p1 -d "$core_source" < "$core_patch"
+cargo test --manifest-path "$core_source/Cargo.toml" --release --locked --jobs 4 --features parallel --lib
 cargo test --release --locked --jobs 4 --bin qsmxt single_echo_handoff
 cargo build --release --locked --jobs 4 --bin qsmxt
 install -m 755 "$CARGO_TARGET_DIR/release/qsmxt" /opt/qsmxt/qsmxt
-python3 - "$source_archive" "$source_patch" "$upstream_version" "$0" "$core_commit" <<'PY'
+python3 - "$source_archive" "$source_patch" "$upstream_version" "$0" "$core_commit" "$core_patch" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -62,7 +86,7 @@ import tomllib
 def sha256(path):
     return hashlib.file_digest(Path(path).open("rb"), "sha256").hexdigest()
 
-source, patch, version, build_script, core_commit = sys.argv[1:]
+source, patch, version, build_script, core_commit, core_patch = sys.argv[1:]
 lock = tomllib.loads(Path("Cargo.lock").read_text())
 core = next(p for p in lock["package"] if p["name"] == "qsm-core")
 assert core["source"].endswith("#" + core_commit), core["source"]
@@ -75,6 +99,8 @@ info = {
     "rustc": subprocess.check_output(["rustc", "-Vv"], text=True),
     "qsm_core_version": core["version"],
     "qsm_core_source": core["source"],
+    "qsm_core_patch_sha256": sha256(core_patch),
+    "qsm_core_patched": True,
     "binary_sha256": sha256("/opt/qsmxt/qsmxt"),
     "handoff_tests_passed": 2,
 }

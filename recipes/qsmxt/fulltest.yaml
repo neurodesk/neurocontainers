@@ -4,7 +4,8 @@ upstream_version: "10.0.0"
 qsmxt_source_sha256: 6a839d0c617426c48f48f4e4a2c67a4283e3e814912a1aa21a1537170a8d6a00
 rust_version: "1.98.0"
 native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
-native_build_script_sha256: 40d351b00991238f78cc9560558ab77146ddb3bbac15cf81b3ab63a64ca009ed
+native_build_script_sha256: 30f4ea2bad991cc00e067f47efe16bcd71e4509e25f0bc5ff0f152de42367b99
+qsm_core_patch_sha256: a714c9e2c6b7f730cd5337c77da1d5657c9dee302e61f8df3b05f2048b169053
 qsm_core_commit: "42ab620190ad315c9dcf7aa8ec4a036402002b7e"
 niimath_version: "1.0.20261016"
 
@@ -104,6 +105,8 @@ tests:
       assert info['patch_sha256'] == '${native_patch_sha256}'
       assert info['build_script_sha256'] == '${native_build_script_sha256}'
       assert info['qsm_core_source'].endswith('#${qsm_core_commit}')
+      assert info['qsm_core_patched'] is True
+      assert info['qsm_core_patch_sha256'] == '${qsm_core_patch_sha256}'
       assert len(info['cargo_lock_sha256']) == 64
       PY
       ! command -v rustc

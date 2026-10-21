@@ -78,7 +78,8 @@ complex exponential and angle expression as the full-array conversion. Other
 inputs retain the existing behavior, including fractional-count precision,
 already-radian detection and rejection of spans wider than one configured cycle.
 
-The container builds QSMxT 10.0.0 from pinned source with a small runner patch.
+The container builds QSMxT 10.0.0 from pinned source with a runner patch and a
+patch to the pinned QSM.rs numerical library.
 For a single echo, masking can consume the owned, full-precision corrected
 magnitude from the preceding RSS stage. Reuse requires that the raw working
 magnitude and its RSS result match bit for bit. Cached magnitude stages,
@@ -86,11 +87,21 @@ original-source fallbacks, custom masks, multiple echoes and nonidentical RSS
 inputs retain the existing masking path. The saved combined image remains
 float32; the handoff avoids its precision loss by keeping the float64 result.
 
+Native bias correction schedules independent lines along all three axes on
+the existing Rayon pool. Data and weights share the same disjoint partitions,
+and each line retains its arithmetic order. Strided Z-axis work groups mutable
+row references without copying another voxel volume. V-SHARP reuses
+FFT plans and a complex work buffer across kernel radii, and transforms its
+unchanged mask once. Kernel radii, erosion thresholds, deconvolution and working
+resolution retain their configured values.
+
 `/opt/qsmxt/native-build.json` records the source, patch, build script, compiler,
-Cargo lockfile, QSM.rs source and installed binary identities. The build checks
-the pinned patch, script and QSM.rs commit, runs the handoff tests, and removes
-the temporary Rust toolchain, Cargo cache and build tree. Runtime verification
-checks the expected provenance and installed binary digest.
+Cargo lockfile, QSM.rs source, numerical patch and installed binary identities.
+The build checks the pinned patches, script and QSM.rs commit, runs the core and
+handoff tests, and removes the temporary Rust toolchain, Cargo cache and build
+tree. The core patch applies inside that build's private Cargo checkout while
+the native executable retains the upstream dependency lockfile. Runtime
+verification checks the expected provenance and installed binary digest.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 compatible QSMxT derivatives that exist after the run. Below three selected
@@ -556,6 +567,10 @@ The driver calls niimath directly and uses NumPy, SciPy, and NiBabel for the
 remaining operations.
 
 Temporary Cartesian volumes use uncompressed NIfTI files. Real and imaginary
+preparation overlaps magnitude-based motion estimation when at least two CPUs
+are available. Preparation reserves up to two workers and niimath receives the
+remaining CPU budget. Both tasks finish before Cartesian resampling starts.
+With one CPU, preparation and motion estimation run sequentially. Real and imaginary
 resampling run concurrently, splitting the available thread budget between them.
 The two Gaussian phase filters and the final magnitude/phase writes also run
 concurrently. These scheduling and I/O changes preserve the niimath motion model,

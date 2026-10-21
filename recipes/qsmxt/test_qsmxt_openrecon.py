@@ -2477,6 +2477,62 @@ def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeyp
     np.testing.assert_allclose(magnitude.get_fdata()[0, 0, :], [1150, 1151])
 
 
+def test_ep3d_bids_preserves_oblique_mrd_geometry(tmp_path, monkeypatch):
+    angle = np.deg2rad(1.5)
+    cosine, sine = np.cos(angle), np.sin(angle)
+    images = []
+    for series, sequence, image_type, base in (
+        (1, "ep3d", ismrmrd.IMTYPE_MAGNITUDE, 1000.0),
+        (2, "ep3d_Pha", ismrmrd.IMTYPE_PHASE, 0.0),
+    ):
+        for repetition in range(2):
+            image = _image(
+                series, repetition + 1, sequence,
+                np.full((2, 5, 5), base + repetition),
+                image_type=image_type,
+                meta_values={"EchoNumber": "1"},
+                header_values={"repetition": repetition},
+            )
+            header = image.getHead()
+            _set_header_vector(header, "field_of_view", [2.0, 2.0, 0.8])
+            image.setHead(header)
+            _set_image_orientation(
+                image, [1, 0, 0], [0, cosine, sine], [0, -sine, cosine],
+            )
+            images.append(image)
+    _, reference_affine = qsmxt._images_to_nifti_volume(
+        [images[0]], kind="magnitude",
+    )
+    expected = {}
+
+    def average(magnitude_path, phase_path, work_dir, **kwargs):
+        outputs = {}
+        for kind, path in (("magnitude", magnitude_path), ("phase", phase_path)):
+            source = nib.load(path)
+            values = source.get_fdata(dtype=np.float32).mean(axis=-1)
+            expected[kind] = values
+            destination = work_dir / f"average_{kind}.nii"
+            nib.save(nib.Nifti1Image(values, source.affine), destination)
+            outputs[kind] = str(destination)
+        return outputs
+
+    monkeypatch.setattr(qsmxt.ep3d_mrd, "run_preprocessing", average)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"ep3ddualpolarity": True}}, FakeMetadata(),
+    )
+    result = qsmxt.write_bids_dataset(
+        images, FakeMetadata(), tmp_path / "bids", settings,
+    )
+    for kind in ("magnitude", "phase"):
+        path = result[f"{kind}_paths"][0]
+        image = nib.load(path)
+        np.testing.assert_array_equal(image.get_fdata(dtype=np.float32), expected[kind])
+        np.testing.assert_array_equal(image.header.get_zooms(), np.full(3, np.float32(0.4)))
+        np.testing.assert_array_equal(image.affine, reference_affine.astype(np.float32))
+        sidecar = json.loads(path.with_name(path.name.removesuffix(".nii.gz") + ".json").read_text())
+        assert sidecar["B0_dir"] == list(qsmxt._b0_dir_from_affine(reference_affine))
+
+
 def test_ep3d_dual_polarity_rejects_a_single_repetition(tmp_path):
     settings = qsmxt._settings_from_config(
         {"parameters": {"ep3ddualpolarity": "true"}},
