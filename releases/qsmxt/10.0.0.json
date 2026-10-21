@@ -1,7 +1,7 @@
 {
   "apps": {
     "qsmxt 10.0.0": {
-      "version": "20261020",
+      "version": "20261021",
       "exec": "",
       "apptainer_args": []
     }
