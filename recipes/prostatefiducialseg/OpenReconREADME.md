@@ -13,11 +13,16 @@ The model was trained on 2D T1-weighted FLASH images of the prostate (2 mm slice
 ## Processing
 
 SeedSeg v2: N4 bias field correction, then an nnU-Net (residual encoder) 5-fold
-ensemble run with ONNX Runtime (on the GPU when available, otherwise on the CPU with one
-network by default), with nnU-Net's
+ensemble run with ONNX Runtime, with nnU-Net's
 sliding-window inference and optional test-time mirroring. Marker candidates are the
 connected regions of marker probability above 0.1, ranked by mean probability; the
 K most probable are outlined.
+
+Device: before each run the free GPU memory is checked. With at least 13 GB free all selected
+networks are kept on the GPU; with at least 3.5 GB they are loaded one at a time (same result,
+about 2 s slower); otherwise, or without a usable GPU, the CPU is used, with only the first
+selected network by default (`cpuonenetwork`). The device and the reason are logged and
+written to `SeedSegMarkers`.
 
 ## UI Parameters
 
