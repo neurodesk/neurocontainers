@@ -1,5 +1,5 @@
 name: prostatefiducialseg
-version: "8.0.1"
+version: "8.0.2"
 architectures:
     - x86_64
 
@@ -148,7 +148,7 @@ build:
         - run:
               - pip install SimpleITK nibabel
         # Python 3.10 wheels are available through ONNX Runtime 1.23.
-        - run: pip install "onnxruntime-gpu=={{ context.onnxruntime_gpu_version }}"
+        - run: pip install "onnxruntime-gpu[cuda,cudnn]=={{ context.onnxruntime_gpu_version }}"
 
         # models
         - workdir: /opt

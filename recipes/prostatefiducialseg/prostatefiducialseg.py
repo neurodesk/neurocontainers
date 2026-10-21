@@ -10,8 +10,9 @@ series description.
 Parameters (OpenReconLabel.json): ``markers`` (implant count K, default 3),
 ``network1``..``network5`` (which of the 5 networks to use; the probability maps of the
 selected networks are averaged; default all 5, the configuration evaluated on independent
-patients) and ``mirroring`` (test-time mirroring, default off: the ensemble without
-mirroring gave the same top-3 as mirrored nnU-Net on 34/34 parity cases).
+patients), ``mirroring`` (test-time mirroring, default off: the ensemble without
+mirroring gave the same top-3 as mirrored nnU-Net on 34/34 parity cases) and
+``cpuonenetwork`` (default on: without a usable GPU only the first selected network runs).
 Environment overrides: SEEDSEG_DEVICE (cpu|cuda), SEEDSEG_MIRROR (0|1), SEEDSEG_MODELS,
 SEEDSEG_SRC.
 """
@@ -172,6 +173,14 @@ def process_image(images, connection, config, metadata):
     if os.environ.get('SEEDSEG_MIRROR') is not None:
         mirror = os.environ['SEEDSEG_MIRROR'] == '1'
     device = os.environ.get('SEEDSEG_DEVICE') or default_device()
+    if device == 'cuda' and 'CUDAExecutionProvider' not in get_model(folds, device, mirror).providers:
+        logging.warning("SeedSeg: a GPU was found but ONNX Runtime could not use it (CUDA/cuDNN libraries); "
+                        "running on CPU")
+        device = 'cpu'
+    if device == 'cpu' and len(folds) > 1 and mrdhelper.get_json_config_param(
+            config, 'cpuonenetwork', default=True, type='bool'):
+        logging.info("SeedSeg: no GPU; using only network %d of the %d selected", int(folds[0]) + 1, len(folds))
+        folds = folds[:1]
     logging.info("SeedSeg: %d images, K=%d, folds=%s, mirroring=%s, device=%s", len(images), k, folds, mirror, device)
 
     head = [img.getHead() for img in images]
@@ -189,7 +198,8 @@ def process_image(images, connection, config, metadata):
     data[outline] = maxVal
     data = np.around(data).astype(np.int16)
 
-    info = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary))
+    info = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary,
+                           device=device, networks=[int(f) + 1 for f in folds], mirroring=bool(mirror)))
     comment = desc + ': ' + '; '.join(f"#{s['rank']} p={s['mean_prob']:.3f}" for s in summary)
     imagesOut = []
     for i in range(len(images)):
