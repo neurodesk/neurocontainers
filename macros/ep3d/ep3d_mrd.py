@@ -20,8 +20,11 @@ import ep3d_preproc
 
 @dataclass(frozen=True)
 class PreprocessedSeries:
+    """Corrected voxel files with MRD geometry retained before NIfTI rounding."""
+
     magnitude_path: Path
     phase_path: Path
+    reference_affine: np.ndarray
     magnitude_reference: list[ismrmrd.Image]
     phase_reference: list[ismrmrd.Image]
 
@@ -188,6 +191,7 @@ def preprocess_images(
     return PreprocessedSeries(
         Path(averaged["magnitude"]),
         Path(averaged["phase"]),
+        reference_affine,
         next(iter(magnitude_groups.values())),
         next(iter(phase_groups.values())),
     )

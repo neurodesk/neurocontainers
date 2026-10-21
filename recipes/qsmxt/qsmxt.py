@@ -485,7 +485,7 @@ def write_bids_dataset(
         preprocessed_volume = (
             magnitude_nifti.get_fdata(dtype=np.float32),
             nib.load(preprocessed.phase_path).get_fdata(dtype=np.float32),
-            magnitude_nifti.affine,
+            preprocessed.reference_affine,
         )
     else:
         magnitude_echo_groups = _echo_image_groups(magnitude_group["images"])
