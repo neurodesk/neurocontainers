@@ -1,5 +1,5 @@
 name: whitematterlesions
-version: "0.3.20261015"
+version: "0.5.20261020"
 
 copyright:
   - license: Apache-2.0
@@ -16,9 +16,9 @@ variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-  openrecon_ismrmrd_version: "1.14.2"
-  flames_version: "0.3.20261015"
-  pillow_version: "12.3.0"
+  openrecon_ismrmrd_version: "1.15.0"
+  flames_version: "0.5.20261020"
+  pillow_version: "13.0.0"
 
 auto_update:
   container_version: flames
@@ -118,8 +118,8 @@ deploy:
 
 files:
   - name: flames_archive
-    url: https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.3.20261015/flames-0.3.20261015-linux-x64.tar.gz
-    sha256: 5d24b1783006928d4e21a44b9fd25d61dbb169e1d0832c516febefb989129d0b
+    url: "https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.5.20261020/flames-0.5.20261020-linux-x64.tar.gz"
+    sha256: "a2e37dca2d43304155647bcf8acbbfbde9a68caf1062bb66981c32dc5e9388dc"
   - name: whitematterlesions.py
     filename: whitematterlesions.py
   - name: test_whitematterlesions_openrecon.py
