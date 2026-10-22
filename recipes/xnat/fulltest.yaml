@@ -14,7 +14,7 @@
 # initialization capabilities.
 
 name: xnat
-version: 1.9.2.1
+version: 1.10.0
 
 required_files:
   - dataset: ds000001
