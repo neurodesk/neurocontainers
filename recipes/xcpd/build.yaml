@@ -1,5 +1,5 @@
 name: xcpd
-version: 0.10.7
+version: 26.2.0
 architectures:
   - x86_64
 structured_readme:
@@ -24,14 +24,15 @@ build:
   add-default-template: false
   add-tzdata: false
   directives:
+    - environment:
+        TEMPLATEFLOW_HOME: /opt/xcp-d/templateflow
     - run:
         - |
-          rm -rf /tmp/libpng12
-          mkdir -p /tmp/libpng12
-          dpkg-deb -x {{ get_file("libpng12_deb") }} /tmp/libpng12
-          rm -f /usr/lib/x86_64-linux-gnu/libpng12.so.0
-          cp -a /tmp/libpng12/lib/x86_64-linux-gnu/libpng12.so.0* /usr/lib/x86_64-linux-gnu/
-          rm -rf /tmp/libpng12 /root/.cache/pip /home/xcp_d/.cache/pip /usr/local/miniconda/pkgs/* /var/lib/apt/lists/* /var/cache/apt/* /var/log/dpkg.log /var/log/apt
+          mkdir -p /opt/xcp-d
+          mv /home/xcp_d/.cache/templateflow /opt/xcp-d/templateflow
+          mv /home/xcp_d/.cache/xcp_d /opt/xcp-d/atlases
+          python3 -c 'from pathlib import Path; import xcp_d.cli.parser; path = Path(xcp_d.cli.parser.__file__); source = path.read_text(); assert source.count("/home/xcp_d/.cache/xcp_d") == 2; path.write_text(source.replace("/home/xcp_d/.cache/xcp_d", "/opt/xcp-d/atlases"))'
+          rm -rf /root/.cache/pip /home/xcp_d/.cache/pip /var/lib/apt/lists/* /var/cache/apt/* /var/log/dpkg.log /var/log/apt
     - deploy:
         path: []
         bins:
@@ -42,7 +43,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 
 readme: |-
   ----------------------------------
-  ## xcpd/0.10.7 ##
+  ## xcpd/{{ context.version }} ##
 
   An fMRI post-processing BIDS App designed to prepare fMRI data for resting-state functional connectivity analyses.
 
@@ -62,12 +63,9 @@ readme: |-
   Mehta, K., Salo, T., Madison, T. J., Adebimpe, A., Bassett, D. S., Bertolero, M., ... & Satterthwaite, T. D. (2024). XCP-D: A Robust Pipeline for the post-processing of fMRI data. Imaging Neuroscience, 2, 1-26. doi:10.1162/imag_a_00257.
   ```
 
-  To run container outside of this environment: ml xcpd/0.10.7
+  To run container outside of this environment: ml xcpd/{{ context.version }}
 
   ----------------------------------
 copyright:
   - license: BSD-3-Clause
     url: https://github.com/PennLINC/xcp_d?tab=BSD-3-Clause-1-ov-file#readme
-files:
-  - name: libpng12_deb
-    url: https://snapshot.debian.org/archive/debian-security/20160113T213056Z/pool/updates/main/libp/libpng/libpng12-0_1.2.49-1%2Bdeb7u2_amd64.deb
