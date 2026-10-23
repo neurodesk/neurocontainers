@@ -1,14 +1,53 @@
 name: xnat
-version: 1.9.2.1
+version: 1.10.0
 
 architectures:
   - x86_64
   - aarch64
 
+variables:
+  upstream_version: 1.10.0
+  xnat_sha256: 1fc24f5d8f74f62b767d5f64f2fcae81f48d4843d67f399f73f7702e3269cf04
+  java_release: 21.0.9+10
+  java_x86_64_sha256: aeab55d064a1a27a3744b0880b9b414077b4ed2b1790817eea3df60aec946431
+  java_aarch64_sha256: 1d041073c65e834bdb4da732485a54ff829859dcd1549e7992f15bd73341be29
+
 auto_update:
-  method: webpage
-  url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads?pagelen=100
-  version_regex: xnat-web-(?P<version>\d+(?:\.\d+)+)\.war
+  method: sources
+  container_version: xnat
+  sources:
+    - id: xnat
+      method: webpage
+      url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads?pagelen=100
+      version_regex: xnat-web-(?P<version>\d+(?:\.\d+)+)\.war
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: xnat_digest
+      method: http_digest
+      url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads/xnat-web-{{ context.upstream_version }}.war
+      target:
+        variable: xnat_sha256
+    - id: java
+      method: github_release
+      repo: adoptium/temurin21-binaries
+      version_regex: jdk-(?P<version>21\.\d+\.\d+\+\d+)
+      dependency: true
+      target:
+        variable: java_release
+        fulltest_variable: java_release
+    - id: java_x86_64_digest
+      method: http_digest
+      url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-{{ context.java_release | replace('+', '%2B') }}/OpenJDK21U-jre_x64_linux_hotspot_{{ context.java_release | replace('+', '_') }}.tar.gz
+      dependency: true
+      target:
+        variable: java_x86_64_sha256
+    - id: java_aarch64_digest
+      method: http_digest
+      url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-{{ context.java_release | replace('+', '%2B') }}/OpenJDK21U-jre_aarch64_linux_hotspot_{{ context.java_release | replace('+', '_') }}.tar.gz
+      dependency: true
+      target:
+        variable: java_aarch64_sha256
 
 build:
   kind: neurodocker
@@ -17,9 +56,13 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: tomcat9 postgresql openjdk-8-jre-headless wget sudo python3
+    - install: tomcat9 postgresql ca-certificates libasound2 libfontconfig1 wget sudo python3
 
-    - run: ln -sfn "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" /opt/java
+    - run:
+        - mkdir -p /opt/java
+        - tar -xzf {{ get_file("java-" + arch + ".tar.gz") }} -C /opt/java --strip-components=1
+        - ln -sfn /opt/java/bin/java /usr/bin/java
+        - ln -sfn /opt/java/bin/keytool /usr/bin/keytool
 
     - environment:
         JAVA_HOME: /opt/java
@@ -259,7 +302,8 @@ build:
     - group:
         - file:
             name: xnat-web.war
-            url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads/xnat-web-{{ context.version }}.war
+            url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads/xnat-web-{{ context.upstream_version }}.war
+            sha256: "{{ context.xnat_sha256 }}"
 
         - run:
             - mkdir -p /opt/xnat-webapp
@@ -342,7 +386,7 @@ build:
               set -e
 
               # Set all environment variables
-              export XNAT_VERSION="{{ context.version }}"
+              export XNAT_VERSION="{{ context.upstream_version }}"
               export CATALINA_HOME=/usr/share/tomcat9
               export CATALINA_BASE="${PWD}/xnat-runtime/tomcat"
               export XNAT_HOME="${PWD}/xnat-runtime/xnat-home"
@@ -445,6 +489,14 @@ build:
         - deploy:
             bins:
               - xnat
+
+files:
+  - name: java-x86_64.tar.gz
+    url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-{{ context.java_release | replace('+', '%2B') }}/OpenJDK21U-jre_x64_linux_hotspot_{{ context.java_release | replace('+', '_') }}.tar.gz
+    sha256: "{{ context.java_x86_64_sha256 }}"
+  - name: java-aarch64.tar.gz
+    url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-{{ context.java_release | replace('+', '%2B') }}/OpenJDK21U-jre_aarch64_linux_hotspot_{{ context.java_release | replace('+', '_') }}.tar.gz
+    sha256: "{{ context.java_aarch64_sha256 }}"
 
 categories:
   - data organisation
