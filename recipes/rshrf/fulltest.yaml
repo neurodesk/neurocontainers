@@ -1,5 +1,6 @@
 name: rshrf
-version: 1.7.0
+version: 1.8.0
+upstream_version: "1.8.0"
 tests:
   - name: rsHRF help
     command: rsHRF --help
@@ -8,7 +9,7 @@ tests:
     command: |-
       set -euo pipefail
       rsHRF --version
-    expected_output_contains: rsHRF version ${version}
+    expected_output_contains: rsHRF version ${upstream_version}
   - name: rsHRF analytical response and actual two-model deconvolution
     description: Independently verify the double-gamma response, then process240 deterministic BOLD samples through actual
       canon2dd and Hanning CLI estimators; require finite nonzero13-sample HRFs,240-sample deconvolution, positive events/height
