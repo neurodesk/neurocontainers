@@ -1,7 +1,7 @@
 {
   "apps": {
     "mne 1.13.2": {
-      "version": "20261017",
+      "version": "20261022",
       "exec": "",
       "apptainer_args": []
     }
