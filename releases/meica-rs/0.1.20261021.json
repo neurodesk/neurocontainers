@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "meica-rs 0.1.20261021": {
+      "version": "20261023",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "quality control"
+  ]
+}
