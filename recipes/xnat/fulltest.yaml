@@ -1,12 +1,12 @@
 # XNAT container test suite
-# Tests for XNAT v1.9.2.1 - Neuroimaging data management platform
+# Tests for XNAT - Neuroimaging data management platform
 #
 # XNAT is a web-based imaging informatics platform for managing
 # neuroimaging and related data. This container provides:
 #   - Apache Tomcat 9.0.31 (web application server)
 #   - PostgreSQL 12.22 (database backend)
-#   - OpenJDK 1.8 (Java runtime)
-#   - XNAT 1.9.2.1 web application
+#   - OpenJDK 21 (Java runtime)
+#   - XNAT web application
 #
 # Note: This is primarily a service container that runs a full XNAT server
 # rather than providing CLI tools for neuroimaging analysis. Tests focus on
@@ -15,6 +15,8 @@
 
 name: xnat
 version: 1.10.0
+upstream_version: 1.10.0
+java_release: 21.0.9+10
 
 required_files:
   - dataset: ds000001
@@ -46,7 +48,7 @@ tests:
   - name: Java version check
     description: Verify the Java runtime matches the shipped image
     command: java -version 2>&1
-    expected_output_contains: "1.8.0_452"
+    expected_output_contains: "${java_release}"
 
   - name: Java OpenJDK verification
     description: Verify OpenJDK is the Java provider
@@ -147,6 +149,11 @@ tests:
   # ==========================================================================
   # XNAT APPLICATION VERIFICATION
   # ==========================================================================
+  - name: XNAT application version
+    description: Verify the installed web application matches the upstream release.
+    command: grep '^Implementation-Version:' /opt/xnat-webapp/META-INF/MANIFEST.MF
+    expected_output_contains: "Implementation-Version: ${upstream_version}"
+
   - name: XNAT webapp directory
     description: Verify XNAT webapp directory exists
     command: test -d /opt/xnat-webapp && echo "xnat-webapp exists"
@@ -268,8 +275,8 @@ tests:
 
   - name: XNAT version in entrypoint
     description: Verify XNAT version is set in entrypoint script
-    command: grep 'XNAT_VERSION="${version}"' /usr/bin/xnat && echo "version found"
-    expected_output_contains: 'XNAT_VERSION="${version}"'
+    command: grep 'XNAT_VERSION="${upstream_version}"' /usr/bin/xnat && echo "version found"
+    expected_output_contains: 'XNAT_VERSION="${upstream_version}"'
 
   # ==========================================================================
   # SYSTEM UTILITIES VERIFICATION
@@ -496,7 +503,7 @@ tests:
   - name: JAVA_HOME selects the bundled runtime
     description: Verify Tomcat uses the installed Java runtime on either architecture.
     command: test -x "$JAVA_HOME/bin/java" && "$JAVA_HOME/bin/java" -version
-    expected_output_contains: 'openjdk version "1.8'
+    expected_output_contains: "${java_release}"
 
   # ==========================================================================
   # NETWORK CONFIGURATION IN SERVER.XML
