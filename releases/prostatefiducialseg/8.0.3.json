@@ -1,7 +1,7 @@
 {
   "apps": {
     "prostatefiducialseg 8.0.3": {
-      "version": "20261021",
+      "version": "20261023",
       "exec": "",
       "apptainer_args": []
     }
