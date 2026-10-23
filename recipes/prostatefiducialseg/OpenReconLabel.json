@@ -34,9 +34,9 @@
     "can_process_adjustment_data": false,
     "can_use_gpu": true,
     "min_count_required_gpus": 0,
-    "min_required_gpu_memory": 8192,
+    "min_required_gpu_memory": 4096,
     "min_required_memory": 8192,
-    "min_count_required_cpu_cores": 1,
+    "min_count_required_cpu_cores": 8,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -136,6 +136,17 @@
       "default": false,
       "information": {
         "en": "Average predictions over mirrored copies of the image (8 times the compute)."
+      }
+    },
+    {
+      "id": "cpuonenetwork",
+      "label": {
+        "en": "One network without GPU"
+      },
+      "type": "boolean",
+      "default": true,
+      "information": {
+        "en": "When no GPU is available, run only the first selected network, which keeps the processing time on CPU short. With a GPU, all selected networks are used."
       }
     }
   ]

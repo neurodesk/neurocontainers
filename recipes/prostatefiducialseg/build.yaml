@@ -1,5 +1,5 @@
 name: prostatefiducialseg
-version: "8.0.1"
+version: "8.0.3"
 architectures:
     - x86_64
 
@@ -10,7 +10,7 @@ variables:
     openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
     openrecon_ismrmrd_version: "1.15.0"
-    upstream_commit: "27a604a2e76787d9c7c49352fd603c2110c3e1b8"
+    upstream_commit: "c9b328a2e0bc1768c0b75640f5532e2853e7ef31"
     onnxruntime_gpu_version: "1.23.2"
     conda_version: "25.5.1-0"
     conda_download_url: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
@@ -148,7 +148,7 @@ build:
         - run:
               - pip install SimpleITK nibabel
         # Python 3.10 wheels are available through ONNX Runtime 1.23.
-        - run: pip install "onnxruntime-gpu=={{ context.onnxruntime_gpu_version }}"
+        - run: pip install "onnxruntime-gpu[cuda,cudnn]=={{ context.onnxruntime_gpu_version }}"
 
         # models
         - workdir: /opt

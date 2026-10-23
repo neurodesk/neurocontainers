@@ -10,8 +10,9 @@ series description.
 Parameters (OpenReconLabel.json): ``markers`` (implant count K, default 3),
 ``network1``..``network5`` (which of the 5 networks to use; the probability maps of the
 selected networks are averaged; default all 5, the configuration evaluated on independent
-patients) and ``mirroring`` (test-time mirroring, default off: the ensemble without
-mirroring gave the same top-3 as mirrored nnU-Net on 34/34 parity cases).
+patients), ``mirroring`` (test-time mirroring, default off: the ensemble without
+mirroring gave the same top-3 as mirrored nnU-Net on 34/34 parity cases) and
+``cpuonenetwork`` (default on: without a usable GPU only the first selected network runs).
 Environment overrides: SEEDSEG_DEVICE (cpu|cuda), SEEDSEG_MIRROR (0|1), SEEDSEG_MODELS,
 SEEDSEG_SRC.
 """
@@ -38,30 +39,91 @@ MODEL_DIR = os.environ.get('SEEDSEG_MODELS', '/opt/models')
 _model_cache = {}
 
 
-def get_model(folds, device, mirror):
-    key = (tuple(folds), device, mirror)
+# Free GPU memory needed (MiB), measured peaks plus margin: all selected networks loaded at once
+# (5 networks: 11.4 GiB) or one network at a time (2.7 GiB, same output, about 2 s slower)
+GPU_MIB_ALL_LOADED = 13000
+GPU_MIB_ONE_LOADED = 3500
+
+
+def get_model(folds, device, mirror, lazy=False):
+    key = (tuple(folds), device, mirror, lazy)
     if key not in _model_cache:
         _model_cache.clear()
-        _model_cache[key] = seedseg_onnx.SeedSegONNX(MODEL_DIR, folds, mirror=mirror, device=device, log=logging.info)
+        # one window per run: batching the 8 mirrored copies needs several GB more GPU memory
+        _model_cache[key] = seedseg_onnx.SeedSegONNX(MODEL_DIR, folds, mirror=mirror, device=device, batch_size=1,
+                                                     lazy=lazy, log=logging.info)
     return _model_cache[key]
 
 
-def default_device():
-    """cuda when ONNX Runtime has the CUDA provider and a GPU is visible, else cpu."""
+def gpu_free_mib():
+    """Free memory (MiB) of the visible GPU, or None when ONNX Runtime cannot use CUDA or there is no GPU."""
     import onnxruntime as ort
     try:
         ort.preload_dlls()
     except Exception:
         pass
     if 'CUDAExecutionProvider' not in ort.get_available_providers():
-        return 'cpu'
+        return None
     try:
         import ctypes
-        n = ctypes.c_int()
-        ok = ctypes.CDLL('libcudart.so.12').cudaGetDeviceCount(ctypes.byref(n)) == 0 and n.value > 0
+        cudart = ctypes.CDLL('libcudart.so.12')
+        n, free, total = ctypes.c_int(), ctypes.c_size_t(), ctypes.c_size_t()
+        if cudart.cudaGetDeviceCount(ctypes.byref(n)) != 0 or n.value < 1:
+            return None
+        if cudart.cudaMemGetInfo(ctypes.byref(free), ctypes.byref(total)) != 0:
+            return None
+        return free.value // 2 ** 20
     except Exception:
-        ok = False
-    return 'cuda' if ok else 'cpu'
+        return None
+
+
+def host_available_mib():
+    """Memory available to this container (MiB): the smaller of MemAvailable and the cgroup limit."""
+    vals = []
+    try:
+        for line in open('/proc/meminfo'):
+            if line.startswith('MemAvailable:'):
+                vals.append(int(line.split()[1]) // 1024)
+    except OSError:
+        pass
+    paths = ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']
+    try:  # this process's own cgroup (nested under Slurm, Kubernetes, ...)
+        for line in open('/proc/self/cgroup'):
+            hier, ctrl, path = line.strip().split(':', 2)
+            parts = path.strip('/').split('/') if path.strip('/') else []
+            for i in range(len(parts), 0, -1):  # the limit may be set on any ancestor
+                sub = '/' + '/'.join(parts[:i])
+                if hier == '0':
+                    paths.append(f'/sys/fs/cgroup{sub}/memory.max')
+                elif 'memory' in ctrl.split(','):
+                    paths.append(f'/sys/fs/cgroup/memory{sub}/memory.limit_in_bytes')
+    except (OSError, ValueError):
+        pass
+    for f in paths:
+        try:
+            v = open(f).read().strip()
+            if v.isdigit() and int(v) < 2 ** 60:
+                vals.append(int(v) // 2 ** 20)
+        except OSError:
+            pass
+    return min(vals) if vals else None
+
+
+def choose_device(n_networks):
+    """(device, lazy, reason): GPU with all networks loaded when there is room, else one network at a
+    time, else CPU."""
+    if os.environ.get('SEEDSEG_DEVICE'):
+        return os.environ['SEEDSEG_DEVICE'], False, 'SEEDSEG_DEVICE'
+    free = gpu_free_mib()
+    if free is None:
+        # on CPU too, one network loaded at a time: all 5 at once need more than 10 GB of memory
+        return 'cpu', n_networks > 1, 'no usable GPU'
+    if n_networks > 1 and free >= GPU_MIB_ALL_LOADED:
+        return 'cuda', False, f'GPU {free} MiB free'
+    if free >= GPU_MIB_ONE_LOADED:
+        lazy = n_networks > 1
+        return 'cuda', lazy, f'GPU {free} MiB free' + (', one network loaded at a time' if lazy else '')
+    return 'cpu', n_networks > 1, f'GPU has only {free} MiB free (needs {GPU_MIB_ONE_LOADED})'
 
 
 def process(connection, config, metadata):
@@ -137,12 +199,12 @@ def marker_outline(mask):
     return find_boundaries(m, mode='outer')
 
 
-def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirror=False):
+def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirror=False, lazy=False):
     """Detection on one series. Returns (det, mask [image,row,col] with value = rank, summary)."""
     vol, order, spacing = to_volume(images)
     logging.info("Volume (z,y,x) %s, spacing %s mm", vol.shape, np.round(spacing, 4))
     xyz = seedseg_onnx.n4_correct_xyz(vol.T)  # N4 on the NIfTI-order array, as for training
-    model = get_model(folds, device, mirror)
+    model = get_model(folds, device, mirror, lazy)
     probs = model.predict(xyz.T, spacing_zyx=spacing)
     thr = model.meta['candidates']['threshold']
     p = probs[model.meta['marker_class']]  # (z, y, x)
@@ -171,12 +233,25 @@ def process_image(images, connection, config, metadata):
     mirror = mrdhelper.get_json_config_param(config, 'mirroring', default=False, type='bool')
     if os.environ.get('SEEDSEG_MIRROR') is not None:
         mirror = os.environ['SEEDSEG_MIRROR'] == '1'
-    device = os.environ.get('SEEDSEG_DEVICE') or default_device()
+    host = host_available_mib()
+    if host is not None and host < 4000:
+        logging.warning("SeedSeg: only %d MiB of memory available; at least 4000 MiB is recommended", host)
+    device, lazy, reason = choose_device(len(folds))
+    logging.info("SeedSeg: device %s (%s); host memory available %s MiB", device, reason, host)
+    if device == 'cuda' and 'CUDAExecutionProvider' not in get_model(folds, device, mirror, lazy).providers:
+        logging.warning("SeedSeg: a GPU was found but ONNX Runtime could not use it (CUDA/cuDNN libraries); "
+                        "running on CPU")
+        device, lazy, reason = 'cpu', len(folds) > 1, 'CUDA provider failed'
+    if device == 'cpu' and len(folds) > 1 and mrdhelper.get_json_config_param(
+            config, 'cpuonenetwork', default=True, type='bool'):
+        logging.info("SeedSeg: no GPU; using only network %d of the %d selected", int(folds[0]) + 1, len(folds))
+        folds = folds[:1]
+        lazy = False
     logging.info("SeedSeg: %d images, K=%d, folds=%s, mirroring=%s, device=%s", len(images), k, folds, mirror, device)
 
     head = [img.getHead() for img in images]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
-    det, mask, summary = run_seedseg(images, k, folds, device, mirror)
+    det, mask, summary = run_seedseg(images, k, folds, device, mirror, lazy)
     flag = det['count_flag']
     desc = f"SeedSeg {len(det['markers'])}of{k}" + ("_CHECK" if flag else "")
     logging.info("SeedSeg: %s, %d candidates, %s, %.1f s", desc, det['n_candidates'], summary, time.time() - t0)
@@ -189,7 +264,9 @@ def process_image(images, connection, config, metadata):
     data[outline] = maxVal
     data = np.around(data).astype(np.int16)
 
-    info = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary))
+    info = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary,
+                           device=device, device_reason=reason, networks=[int(f) + 1 for f in folds],
+                           mirroring=bool(mirror)))
     comment = desc + ': ' + '; '.join(f"#{s['rank']} p={s['mean_prob']:.3f}" for s in summary)
     imagesOut = []
     for i in range(len(images)):

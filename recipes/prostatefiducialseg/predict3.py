@@ -40,8 +40,9 @@ def main() -> None:
     if device == 'auto':
         import onnxruntime as ort
         device = 'cuda' if 'CUDAExecutionProvider' in ort.get_available_providers() else 'cpu'
+    # one window per run and one network loaded at a time (about 3 GB of GPU or host memory)
     model = seedseg_onnx.SeedSegONNX(args.models, args.folds, mirror=args.mirror, device=device,
-                                     threads=args.threads)
+                                     threads=args.threads, batch_size=1, lazy=True)
     det, pm, img = seedseg_onnx.run_nifti(model, args.input, n4=not args.no_n4, k=args.n_markers,
                                           threshold=args.threshold)
     out = Path(args.output_dir)
