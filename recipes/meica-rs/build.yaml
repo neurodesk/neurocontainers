@@ -20,7 +20,7 @@ variables:
   node_aarch64_sha256: 6287aa46b6c375d816e63ae66d024fbbfd70404825aabdfdf898a970871d2f4b
   mindgrab_version: 0.1.20261008
   mindgrab_sha256: bb03c3bcf20975fd5cb0741d44c4f93f844b45a8822c8b312679258509f1bf3c
-  webapps_commit: 8951bb205b9442b7eecd55f204d250f321cfde1a
+  webapps_commit: df5f0a90104fda4f54fcafbd12abe6519861836f
 
 auto_update:
   method: sources
@@ -119,7 +119,7 @@ build:
         - tar -xJf {{ get_file("node_dist") }} -C /tmp/build/node --strip-components=1 --wildcards '*/bin/node' '*/LICENSE'
         - install -m 0755 /tmp/build/node/bin/node /opt/meica-rs/node/bin/node
         - install -D -m 0644 /tmp/build/node/LICENSE /opt/meica-rs/licenses/nodejs/LICENSE
-        - install -D -m 0644 {{ get_file("webapps_licenses") }} /opt/meica-rs/licenses/webapps-node-drivers/LICENSES.md
+        - install -D -m 0644 {{ get_file("node_drivers_license") }} /opt/meica-rs/licenses/webapps-node-drivers/LICENSE
         - tar -xzf {{ get_file("mindgrab_package") }} -C /opt/meica-rs/mindgrab/node_modules/@brainchop/mindgrab --strip-components=1
         - install -m 0755 {{ get_file("mindgrab_cli") }} /opt/meica-rs/mindgrab/bin/brainchop-mindgrab.js
         - install -m 0644 {{ get_file("mindgrab_cli_args") }} /opt/meica-rs/mindgrab/src/mindgrab-cli.js
@@ -151,8 +151,8 @@ files:
   - name: mindgrab_package
     url: https://registry.npmjs.org/@brainchop/mindgrab/-/mindgrab-{{ context.mindgrab_version }}.tgz
     sha256: "{{ context.mindgrab_sha256 }}"
-  - name: webapps_licenses
-    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/LICENSES.md
+  - name: node_drivers_license
+    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/LICENSE
   - name: mindgrab_cli
     url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/bin/brainchop-mindgrab.js
   - name: mindgrab_cli_args
