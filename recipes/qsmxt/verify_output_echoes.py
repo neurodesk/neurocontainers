@@ -77,7 +77,7 @@ def verify(binary, root):
         sequenceParameters=SimpleNamespace(TE=[6.0, 12.0, 18.0]),
     )
     compatible = {
-        "QSMxT QSM DC", "QSMxT mask DC", "QSMxT SWI DC",
+        "QSMxT QSM DC", "QSMxT mask DC", "QSMxT magnitude DC", "QSMxT SWI DC",
         "QSMxT SMWI paramagnetic DC", "QSMxT SMWI diamagnetic DC",
     }
     previous_root = qsmxt.OPENRECON_WORK_ROOT
@@ -103,6 +103,38 @@ def verify(binary, root):
                 assert np.isfinite(data).all() and np.any(data != 0), (count, name)
             print(f"{count} echo(s): returned {len(derived)} finite nonzero map series in "
                   f"{time.monotonic() - started:.2f}s: {', '.join(sorted(derived))}", flush=True)
+
+        connection = Connection(input_images(bids, 3))
+        qsmxt.process(connection, {"parameters": {
+            "qsmxtbinary": binary, "sendoutputs": "magnitude",
+            "inhomogeneitycorrection": "off",
+        }}, metadata)
+        assert connection.closed
+        assert not connection.errors, "\n".join(connection.errors)
+        magnitude_images = []
+        for image in connection.returned:
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            name = str(meta.get("SequenceDescription"))
+            if name.startswith("QSMxT "):
+                assert name == "QSMxT magnitude DC", name
+                magnitude_images.append(image)
+        echoes = np.stack([
+            nib.load(next(bids.rglob(f"*_echo-{echo}_part-mag_*.nii.gz"))).get_fdata()
+            for echo in (1, 2, 3)
+        ])
+        expected_magnitude = np.sqrt(np.sum(echoes ** 2, axis=0))
+        assert len(magnitude_images) == expected_magnitude.shape[2]
+        for z, image in enumerate(magnitude_images):
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            slope = float(meta["RescaleSlope"])
+            decoded = image.data[0, 0].astype(np.float64) * slope
+            decoded += float(meta["RescaleIntercept"])
+            np.testing.assert_allclose(
+                decoded, expected_magnitude[:, :, z].T,
+                rtol=1e-5, atol=slope / 2 + 1e-3,
+                err_msg=f"Combined magnitude differs from three-echo RSS at slice {z}",
+            )
+        print("Magnitude-only returns the three-echo RSS volume within MRD quantization", flush=True)
     finally:
         qsmxt.OPENRECON_WORK_ROOT = previous_root
     print("All returns compatible maps at one and two echoes and retains T2*/R2* at three echoes")
