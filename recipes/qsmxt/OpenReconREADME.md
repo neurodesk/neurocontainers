@@ -65,8 +65,8 @@ Use **Output maps** to select what returns to the scanner database:
 | Option | Result |
 | --- | --- |
 | QSM | Quantitative susceptibility map. This is the default. |
-| All available | Compatible maps from the run, including the brain mask. |
-| Magnitude | Combined magnitude image. Currently unavailable; see the note below. |
+| All available | Compatible maps from the run, including combined magnitude and the brain mask. |
+| Magnitude | Combined magnitude image from the root sum of squares across echoes. |
 | Mask | Brain mask used for reconstruction, useful for checking brain coverage. |
 | SWI | Susceptibility-weighted image. |
 | SMWI | Susceptibility map-weighted images: the magnitude weighted by the QSM map. Returns a paramagnetic and a diamagnetic series. |
@@ -75,7 +75,7 @@ Use **Output maps** to select what returns to the scanner database:
 
 **All available** omits T2* and R2* when a selected input pair has fewer than three echoes. Other compatible maps still return. GRE echo limits apply before this check, and EPI repetitions produce one averaged echo. Selecting T2* or R2* explicitly with fewer than three echoes stops that pair before reconstruction or EPI preprocessing.
 
-Combined magnitude is currently not returned by this adapter, including with **All available**. See [issue #3631](https://github.com/neurodesk/neurocontainers/issues/3631). Original magnitude and phase images are always returned before QSMxT runs, so the scanner keeps them when reconstruction fails.
+Original magnitude and phase images are always returned before QSMxT runs, so the scanner keeps them when reconstruction fails.
 
 **SMWI** returns **QSMxT SMWI paramagnetic**, which darkens paramagnetic sources such as veins,
 iron, and microbleeds, and **QSMxT SMWI diamagnetic**, which darkens diamagnetic sources such

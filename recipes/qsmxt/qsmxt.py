@@ -215,8 +215,8 @@ QSMXT_OUTPUTS = {
         "units": "binary",
     },
     "magnitude": {
-        "suffix": "CombinedMagnitude",
-        "fallback_suffixes": ("magnitude",),
+        "suffix": "part-mag_T2starw",
+        "fallback_suffixes": ("CombinedMagnitude", "magnitude"),
         "token": "OR_QSM_MAG",
         "series": "QSMxT magnitude",
         "units": "a.u.",
