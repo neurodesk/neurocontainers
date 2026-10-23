@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "globus 3.3.2": {
+      "version": "20261023",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "globusGUI-globus 3.3.2": {
+      "version": "20261023",
+      "exec": "globusconnectpersonal -gui",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
