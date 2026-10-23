@@ -2,53 +2,60 @@ name: xcpd
 version: 26.2.0
 default_timeout: 120
 tests:
-- name: Test xcpd
-  description: Verify the container runtime smoke test for this tool.
-  command: |
-    # Test xcpd installation and dependencies
-    xcp_d -h
+  - name: XCP-D version
+    command: xcp_d --version
+    expected_output_contains: "XCP-D v${version}"
 
-    # Test if libpng12 is properly installed
-    ldd $(which afni) | grep libpng
+  - name: XCP-D help
+    command: xcp_d --help
+    expected_output_contains: --mode
 
-    # Test Python dependencies
-    python3 -c "import nibabel; import nilearn; import pandas; import templateflow"
+  - name: Python dependencies
+    command: python3 -c "import nibabel; import nilearn; import pandas; import templateflow"
 
-    # Test ANTs (version 2.2.0 or higher)
-    antsRegistration --version | grep "ANTs Version"
+  - name: ANTs registration
+    command: antsRegistration --version
+    expected_output_contains: "ANTs Version"
 
-    # Test AFNI (version Debian-16.2.07)
-    afni --version
+  - name: AFNI processing commands
+    description: Check the AFNI subset shipped by XCP-D and its shared libraries.
+    command: |
+      set -euo pipefail
+      for tool in 3dDespike 3dReHo 3dFWHMx; do
+        executable=$(command -v "$tool")
+        libraries=$(ldd "$executable")
+        printf '%s\n' "$libraries"
+        if grep -q 'not found' <<< "$libraries"; then
+          exit 1
+        fi
+        "$tool" -help
+      done
 
-    # Test bids-validator (version 1.6.0)
-    bids-validator --version
+  - name: BIDS validator
+    command: bids-validator --version
 
-    # Test connectome-workbench (version Debian-1.3.2)
-    wb_command -version
+  - name: Connectome Workbench
+    command: wb_command -version
+    expected_output_contains: "Connectome Workbench"
 
-    # Basic functionality tests
-    echo "Testing basic tool functionality..."
-    if ! command -v antsRegistration &> /dev/null; then
-        echo "ERROR: ANTs not found"
-        exit 1
-    fi
+  - name: Bundled templates and atlases
+    description: Runtime resources must be available without the image home directory.
+    command: |
+      python3 - <<'PY'
+      import os
+      from pathlib import Path
+      from bids import BIDSLayout
+      from templateflow import api
+      from xcp_d import config
 
-    if ! command -v afni &> /dev/null; then
-        echo "ERROR: AFNI not found"
-        exit 1
-    fi
-
-    if ! command -v bids-validator &> /dev/null; then
-        echo "ERROR: bids-validator not found"
-        exit 1
-    fi
-
-    if ! command -v wb_command &> /dev/null; then
-        echo "ERROR: connectome-workbench not found"
-        exit 1
-    fi
-
-    echo "All dependency tests completed successfully"
-
-    # Basic pipeline test with minimal inputs
-    echo "XCP-D installation test completed"
+      root = Path(os.environ["TEMPLATEFLOW_HOME"])
+      assert root == Path("/opt/xcp-d/templateflow")
+      assert config.execution.templateflow_home == root
+      template = root / "tpl-MNI152NLin6Asym/tpl-MNI152NLin6Asym_res-01_T1w.nii.gz"
+      assert template.is_file() and template.stat().st_size > 0
+      assert api.get("MNI152NLin6Asym", resolution=1, desc=None, suffix="T1w") == template
+      for atlas in ("AtlasPack", "XCPDAtlases"):
+          dataset = Path("/opt/xcp-d/atlases") / atlas
+          layout = BIDSLayout(dataset, validate=False)
+          assert layout.get(extension=[".nii.gz", ".dlabel.nii"]), atlas
+      PY
