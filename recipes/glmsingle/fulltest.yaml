@@ -14,7 +14,7 @@
 name: glmsingle
 version: "1.2.0"
 upstream_version: '1.2'
-source_commit: 9b7f685100366fb79c222c37661924ea25d78743
+source_commit: "1ab54a65edd3ea41a6133d4b4ecb78a9c7296684"
 
 required_files:
   - dataset: ds000001
