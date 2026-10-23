@@ -56,7 +56,7 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: tomcat9 postgresql ca-certificates libasound2 libfontconfig1 sudo python3
+    - install: tomcat9 postgresql ca-certificates libasound2 libfontconfig1 wget sudo python3
 
     - run:
         - mkdir -p /opt/java
