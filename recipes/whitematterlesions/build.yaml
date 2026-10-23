@@ -1,5 +1,5 @@
 name: whitematterlesions
-version: "0.3.20261015"
+version: "0.5.20261022"
 
 copyright:
   - license: Apache-2.0
@@ -13,12 +13,13 @@ architectures:
   - x86_64
 
 variables:
+  openrecon_ubuntu_version: "24.04"
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-  openrecon_ismrmrd_version: "1.14.2"
-  flames_version: "0.3.20261015"
-  pillow_version: "12.3.0"
+  openrecon_ismrmrd_version: "1.15.0"
+  flames_version: "0.5.20261022"
+  pillow_version: "13.0.0"
 
 auto_update:
   container_version: flames
@@ -72,7 +73,7 @@ auto_update:
 
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -92,7 +93,7 @@ build:
     - include: macros/openrecon/neurodocker.yaml
 
     - run:
-        - python3 -m pip install --no-cache-dir Pillow=={{ context.pillow_version }}
+        - python3 -m pip install --break-system-packages --no-cache-dir Pillow=={{ context.pillow_version }}
 
     # The web app's standalone release: its own Node.js runtime, SynthStrip and
     # all five FLAMeS folds, so the scanner runs the browser's exact pipeline.
@@ -118,8 +119,8 @@ deploy:
 
 files:
   - name: flames_archive
-    url: https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.3.20261015/flames-0.3.20261015-linux-x64.tar.gz
-    sha256: 5d24b1783006928d4e21a44b9fd25d61dbb169e1d0832c516febefb989129d0b
+    url: "https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.5.20261022/flames-0.5.20261022-linux-x64.tar.gz"
+    sha256: "64132efb0ffe8ae30fb5b3d79e82811c15749a2587052699cb64d05ba93d1ef6"
   - name: whitematterlesions.py
     filename: whitematterlesions.py
   - name: test_whitematterlesions_openrecon.py
