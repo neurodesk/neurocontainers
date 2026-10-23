@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "bidsmanager 1.5.1": {
+      "version": "20261021",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "bids apps"
+  ]
+}
