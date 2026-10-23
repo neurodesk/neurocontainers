@@ -18,9 +18,22 @@ structured_readme:
   citation: 'Wu, G. R., Colenbier, N., Van Den Bossche, S., Clauw, K., Johri, A., Tandon, M., & Marinazzo, D. (2021). rsHRF:
     A toolbox for resting-state HRF estimation and deconvolution. NeuroImage, 244, 118591. doi:10.1016/j.neuroimage.2021.118591.'
 auto_update:
-  method: dockerhub
-  repo: bids/rshrf
-  version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+  method: sources
+  container_version: rshrf
+  sources:
+    - id: rshrf
+      method: dockerhub
+      repo: bids/rshrf
+      version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: source_archive
+      dependency: true
+      method: http_digest
+      url: https://github.com/bids-apps/rsHRF/archive/v{{ context.upstream_version }}.tar.gz
+      target:
+        variable: source_sha256
 build:
   kind: neurodocker
   base-image: '{{ context.base_image }}'
@@ -78,14 +91,16 @@ readme: |-
 
   ----------------------------------
 variables:
+  upstream_version: "1.8.0"
+  source_sha256: 86aaeaa8df7f6c54adcfba0afd2f8bd9d9f8004e0767a8703387809ad6855637
   base_image:
     try:
-      - value: bids/rshrf:v{{ context.version }}
+      - value: bids/rshrf:v{{ context.upstream_version }}
         condition: arch == "x86_64"
       - value: python:3.11-slim-bookworm
         condition: arch == "aarch64"
 files:
   - name: rshrf_source_tar_gz
-    url: https://github.com/bids-apps/rsHRF/archive/v{{ context.version }}.tar.gz
-    sha256: 0afda67cf84ac0219aad289393cfc65f93ee9ea2ff5f55745e68dee1e124b8f8
+    url: https://github.com/bids-apps/rsHRF/archive/v{{ context.upstream_version }}.tar.gz
+    sha256: "{{ context.source_sha256 }}"
     condition: arch == "aarch64"
