@@ -140,6 +140,7 @@ build:
     - environment:
         CONDA_DEFAULT_ENV: NCT_env
         PATH: /opt/miniconda/envs/NCT_env/bin:$PATH
+        CBIG_NETWORK_CORRESPONDENCE_DATA_DIR: /opt/nct-data
 
     - run:
         - echo "conda activate NCT_env" >> ~/.bashrc
@@ -150,11 +151,10 @@ build:
         - python3 -m pip install --no-cache-dir cbig_network_correspondence=={{ context.upstream_version }}
 
     - run:
-        - nct_dir=$(python3 -c 'import importlib.util,pathlib; print(pathlib.Path(importlib.util.find_spec("cbig_network_correspondence").origin).parent)')
-        - mkdir -p "$nct_dir/data"
-        - tar -xzf {{ get_file("nct_data") }} -C "$nct_dir/data" --strip-components=1
+        - mkdir -p "$CBIG_NETWORK_CORRESPONDENCE_DATA_DIR/core"
+        - tar -xzf {{ get_file("nct_data") }} -C "$CBIG_NETWORK_CORRESPONDENCE_DATA_DIR/core" --strip-components=1
         - python3 {{ get_file("prepare_data.py") }} {{ context.data_commit }}
-        - chmod -R a+rX "$nct_dir"
+        - chmod -R a+rX "$CBIG_NETWORK_CORRESPONDENCE_DATA_DIR"
 
     - deploy:
         bins:
