@@ -15,6 +15,9 @@ variables:
   niimath_version: 1.0.20261016
   rustup_version: 1.29.1
   rust_version: 1.88.0
+  node_version: 22.22.0
+  mindgrab_version: 0.1.20260925
+  webapps_commit: 05e189992dea08a23aca4a098b2df74daa9a4cd6
 
 auto_update:
   method: sources
@@ -39,6 +42,21 @@ auto_update:
         variable: niimath_version
         value: version
         fulltest_variable: niimath_version
+    - id: mindgrab
+      dependency: true
+      method: npm
+      package: "@brainchop/mindgrab"
+      target:
+        variable: mindgrab_version
+        value: version
+        fulltest_variable: mindgrab_version
+    - id: webapps
+      dependency: true
+      method: github_commit
+      repo: neurodesk/webapps
+      ref: main
+      target:
+        variable: webapps_commit
 
 build:
   kind: neurodocker
@@ -48,12 +66,12 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-        PATH: /opt/meica-rs/bin:$PATH
+        PATH: /opt/meica-rs/bin:/opt/meica-rs/node/bin:$PATH
 
-    # Installed and purged in one layer; meica and the static niimath need no build tools at runtime.
+    # Installed and purged in one layer; none of the binaries needs build tools at runtime.
     - run:
         - apt-get update -qq
-        - apt-get install -y -q --no-install-recommends build-essential zlib1g-dev
+        - apt-get install -y -q --no-install-recommends build-essential zlib1g-dev xz-utils
         - mkdir -p /opt/meica-rs/bin /tmp/build/meica-rs /tmp/build/niimath
         - tar -xzf {{ get_file("niimath_source") }} -C /tmp/build/niimath --strip-components=1
         - make -C /tmp/build/niimath/src static -j{{ parallel_jobs }}
@@ -63,8 +81,18 @@ build:
         - '{{ get_file("rustup_init") }} -y --no-modify-path --default-toolchain {{ context.rust_version }} --profile minimal'
         - /tmp/build/cargo/bin/cargo build --manifest-path /tmp/build/meica-rs/Cargo.toml --release --locked -p meica
         - install -m 0755 /tmp/build/meica-rs/target/release/meica /opt/meica-rs/bin/meica
+        - mkdir -p /opt/meica-rs/node/bin /opt/meica-rs/mindgrab/bin /opt/meica-rs/mindgrab/src /opt/meica-rs/mindgrab/node_modules/@brainchop/mindgrab
+        - tar -xJf {{ get_file("node_dist") }} -C /tmp/build --strip-components=2 --wildcards '*/bin/node'
+        - install -m 0755 /tmp/build/node /opt/meica-rs/node/bin/node
+        - tar -xzf {{ get_file("mindgrab_package") }} -C /opt/meica-rs/mindgrab/node_modules/@brainchop/mindgrab --strip-components=1
+        - install -m 0755 {{ get_file("mindgrab_cli") }} /opt/meica-rs/mindgrab/bin/brainchop-mindgrab.js
+        - install -m 0644 {{ get_file("mindgrab_cli_args") }} /opt/meica-rs/mindgrab/src/mindgrab-cli.js
+        - install -m 0644 {{ get_file("mindgrab_driver") }} /opt/meica-rs/mindgrab/src/mindgrab.js
+        - install -m 0644 {{ get_file("mindgrab_worker") }} /opt/meica-rs/mindgrab/src/mindgrab-worker.js
+        - 'echo ''{ "private": true, "type": "module" }'' > /opt/meica-rs/mindgrab/package.json'
+        - ln -s ../mindgrab/bin/brainchop-mindgrab.js /opt/meica-rs/bin/brainchop-mindgrab
         - rm -rf /tmp/build
-        - apt-get purge -y -q --auto-remove build-essential zlib1g-dev
+        - apt-get purge -y -q --auto-remove build-essential zlib1g-dev xz-utils
         - rm -rf /var/lib/apt/lists/*
 
 deploy:
@@ -76,6 +104,24 @@ files:
     url: https://github.com/niivue/meica-rs/archive/{{ context.meica_rs_commit }}.tar.gz
   - name: niimath_source
     url: https://github.com/rordenlab/niimath/archive/refs/tags/v{{ context.niimath_version }}.tar.gz
+  - name: node_dist
+    condition: arch=="x86_64"
+    url: https://nodejs.org/dist/v{{ context.node_version }}/node-v{{ context.node_version }}-linux-x64.tar.xz
+    sha256: 9aa8e9d2298ab68c600bd6fb86a6c13bce11a4eca1ba9b39d79fa021755d7c37
+  - name: node_dist
+    condition: arch=="aarch64"
+    url: https://nodejs.org/dist/v{{ context.node_version }}/node-v{{ context.node_version }}-linux-arm64.tar.xz
+    sha256: 1bf1eb9ee63ffc4e5d324c0b9b62cf4a289f44332dfef9607cea1a0d9596ba6f
+  - name: mindgrab_package
+    url: https://registry.npmjs.org/@brainchop/mindgrab/-/mindgrab-{{ context.mindgrab_version }}.tgz
+  - name: mindgrab_cli
+    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/bin/brainchop-mindgrab.js
+  - name: mindgrab_cli_args
+    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/src/mindgrab-cli.js
+  - name: mindgrab_driver
+    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/src/mindgrab.js
+  - name: mindgrab_worker
+    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/src/mindgrab-worker.js
   - name: rustup_init
     condition: arch=="x86_64"
     url: https://static.rust-lang.org/rustup/archive/{{ context.rustup_version }}/x86_64-unknown-linux-gnu/rustup-init
@@ -104,9 +150,13 @@ readme: |-
   This container is distinct from the `meica` container, which packages the original ME-ICA v3
   (`meica.py`) by Kundu et al.
 
-  The container provides two programs in /opt/meica-rs/bin:
+  The container provides three programs in /opt/meica-rs/bin:
   - `meica`: the ME-ICA command line tool (source commit {{ context.meica_rs_commit }})
   - `niimath` {{ context.niimath_version }}: used by `meica --moco` for motion correction
+  - `brainchop-mindgrab`: used by `meica --moco` to mask the BOLD reference. It is the
+    `@brainchop/mindgrab` {{ context.mindgrab_version }} CPU WebAssembly build, run by Node.js
+    {{ context.node_version }} through the neurodesk/webapps node-drivers command line. A run
+    takes about 40 s on 8 cores and about 2.4 GB of memory.
 
   Usage:
 
@@ -136,11 +186,10 @@ readme: |-
 
   `--moco` (not a tedana flag) motion-corrects the raw echoes first. niimath builds echo 1's
   BOLD reference, detects dummy volumes, estimates head motion, resamples every echo once and
-  writes fMRIPrep-named confounds (`desc-mocoConfounds_timeseries.tsv`). Upstream masks the
-  reference with brainchop-mindgrab, which is not included in this container, so `--moco`
-  needs `--mask FILE` here:
+  writes fMRIPrep-named confounds (`desc-mocoConfounds_timeseries.tsv`). brainchop-mindgrab
+  masks the reference unless `--mask FILE` is given:
   ```
-  meica -d $E -e 15.2 35.32 55.42 --moco --mask brain_mask.nii.gz --out-dir out_moco
+  meica -d $E -e 15.2 35.32 55.42 --moco --out-dir out_moco
   ```
 
   More documentation can be found here: https://github.com/niivue/meica-rs

@@ -9,6 +9,7 @@ version: 0.1.20261018
 upstream_version: 0.1.20261018
 meica_rs_commit: 1582ce4733a91ceec8b77e8436170a976e7a2913
 niimath_version: 1.0.20261016
+mindgrab_version: 0.1.20260925
 default_timeout: 1800
 
 test_data:
@@ -70,14 +71,24 @@ tests:
         "${output_dir}/out/desc-tedana_metrics.tsv"
     expected_output_contains: "accepted=7 rejected=6"
 
-  - name: moco with an external mask runs through niimath
-    description: Motion-correct the echoes with the bundled niimath, masked by a thresholded mean of echo 1 because mindgrab is not shipped, and check the confounds and denoised series.
+  - name: brainchop-mindgrab installed next to meica
+    description: meica --moco looks for brainchop-mindgrab beside its own executable first, and needs its --mask option.
+    command: |
+      set -e
+      test "$(command -v brainchop-mindgrab)" = /opt/meica-rs/bin/brainchop-mindgrab
+      brainchop-mindgrab --help 2>&1
+    expected_output_contains:
+      - "BrainChop mindgrab"
+      - "v${mindgrab_version}"
+      - "--mask"
+
+  - name: moco masks with mindgrab and corrects motion with niimath
+    description: Run --moco without --mask, so the bundled brainchop-mindgrab masks the BOLD reference and niimath motion-corrects the echoes, then check the confounds and denoised series.
     command: |
       set -e
       rm -rf "${output_dir}/moco"
-      niimath "${echo1}" -Tmean -thrP 30 -bin "${output_dir}/moco_mask.nii.gz"
       meica -d "${echo1}" "${echo2}" "${echo3}" -e 15.2 35.32 55.42 --moco \
-        --mask "${output_dir}/moco_mask.nii.gz" --out-dir "${output_dir}/moco" --quiet
+        --out-dir "${output_dir}/moco" --quiet
       test -s "${output_dir}/moco/desc-denoised_bold.nii.gz"
       head -n 1 "${output_dir}/moco/desc-mocoConfounds_timeseries.tsv"
     expected_output_contains:
