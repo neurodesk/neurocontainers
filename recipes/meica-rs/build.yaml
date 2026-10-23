@@ -1,5 +1,5 @@
 name: meica-rs
-version: 0.1.20261018
+version: 0.1.20261021
 
 copyright:
   - license: LGPL-2.1-only
@@ -10,14 +10,17 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: 0.1.20261018
-  meica_rs_commit: 1582ce4733a91ceec8b77e8436170a976e7a2913
+  upstream_version: 0.1.20261021
+  meica_rs_commit: edcb2c5be39a78d8bd4899480317ec2539e140a2
   niimath_version: 1.0.20261016
   rustup_version: 1.29.1
   rust_version: 1.88.0
-  node_version: 22.22.0
-  mindgrab_version: 0.1.20260925
-  webapps_commit: 05e189992dea08a23aca4a098b2df74daa9a4cd6
+  node_version: 22.23.4
+  node_x86_64_sha256: 1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
+  node_aarch64_sha256: 6287aa46b6c375d816e63ae66d024fbbfd70404825aabdfdf898a970871d2f4b
+  mindgrab_version: 0.1.20261008
+  mindgrab_sha256: bb03c3bcf20975fd5cb0741d44c4f93f844b45a8822c8b312679258509f1bf3c
+  webapps_commit: 8951bb205b9442b7eecd55f204d250f321cfde1a
 
 auto_update:
   method: sources
@@ -50,13 +53,39 @@ auto_update:
         variable: mindgrab_version
         value: version
         fulltest_variable: mindgrab_version
+    - id: mindgrab_digest
+      dependency: true
+      method: http_digest
+      url: https://registry.npmjs.org/@brainchop/mindgrab/-/mindgrab-{{ context.mindgrab_version }}.tgz
+      target:
+        variable: mindgrab_sha256
+    # Until neurodesk/webapps#559 merges, its branch is the only line holding the CLI; switch to main afterwards.
     - id: webapps
       dependency: true
       method: github_commit
       repo: neurodesk/webapps
-      ref: main
+      ref: node-drivers-mindgrab-cli
       target:
         variable: webapps_commit
+    - id: node
+      dependency: true
+      method: webpage
+      url: https://nodejs.org/dist/index.json
+      version_regex: '"version":"v(?P<version>22\.\d+\.\d+)"'
+      target:
+        variable: node_version
+    - id: node_x86_64_digest
+      dependency: true
+      method: http_digest
+      url: https://nodejs.org/dist/v{{ context.node_version }}/node-v{{ context.node_version }}-linux-x64.tar.xz
+      target:
+        variable: node_x86_64_sha256
+    - id: node_aarch64_digest
+      dependency: true
+      method: http_digest
+      url: https://nodejs.org/dist/v{{ context.node_version }}/node-v{{ context.node_version }}-linux-arm64.tar.xz
+      target:
+        variable: node_aarch64_sha256
 
 build:
   kind: neurodocker
@@ -76,14 +105,21 @@ build:
         - tar -xzf {{ get_file("niimath_source") }} -C /tmp/build/niimath --strip-components=1
         - make -C /tmp/build/niimath/src static -j{{ parallel_jobs }}
         - install -m 0755 /tmp/build/niimath/src/niimath /opt/meica-rs/bin/niimath
+        - install -D -m 0644 /tmp/build/niimath/LICENSE /opt/meica-rs/licenses/niimath/LICENSE
+        - install -m 0644 /tmp/build/niimath/src/license.txt /tmp/build/niimath/src/romeo.LICENSE /opt/meica-rs/licenses/niimath/
         - tar -xzf {{ get_file("meica_rs_source") }} -C /tmp/build/meica-rs --strip-components=1
         - export RUSTUP_HOME=/tmp/build/rustup CARGO_HOME=/tmp/build/cargo
         - '{{ get_file("rustup_init") }} -y --no-modify-path --default-toolchain {{ context.rust_version }} --profile minimal'
         - /tmp/build/cargo/bin/cargo build --manifest-path /tmp/build/meica-rs/Cargo.toml --release --locked -p meica
         - install -m 0755 /tmp/build/meica-rs/target/release/meica /opt/meica-rs/bin/meica
+        - install -D -m 0644 /tmp/build/meica-rs/LICENSE /opt/meica-rs/licenses/meica-rs/LICENSE
+        - install -m 0644 /tmp/build/meica-rs/NOTICE /opt/meica-rs/licenses/meica-rs/NOTICE
         - mkdir -p /opt/meica-rs/node/bin /opt/meica-rs/mindgrab/bin /opt/meica-rs/mindgrab/src /opt/meica-rs/mindgrab/node_modules/@brainchop/mindgrab
-        - tar -xJf {{ get_file("node_dist") }} -C /tmp/build --strip-components=2 --wildcards '*/bin/node'
-        - install -m 0755 /tmp/build/node /opt/meica-rs/node/bin/node
+        - mkdir -p /tmp/build/node
+        - tar -xJf {{ get_file("node_dist") }} -C /tmp/build/node --strip-components=1 --wildcards '*/bin/node' '*/LICENSE'
+        - install -m 0755 /tmp/build/node/bin/node /opt/meica-rs/node/bin/node
+        - install -D -m 0644 /tmp/build/node/LICENSE /opt/meica-rs/licenses/nodejs/LICENSE
+        - install -D -m 0644 {{ get_file("webapps_licenses") }} /opt/meica-rs/licenses/webapps-node-drivers/LICENSES.md
         - tar -xzf {{ get_file("mindgrab_package") }} -C /opt/meica-rs/mindgrab/node_modules/@brainchop/mindgrab --strip-components=1
         - install -m 0755 {{ get_file("mindgrab_cli") }} /opt/meica-rs/mindgrab/bin/brainchop-mindgrab.js
         - install -m 0644 {{ get_file("mindgrab_cli_args") }} /opt/meica-rs/mindgrab/src/mindgrab-cli.js
@@ -107,13 +143,16 @@ files:
   - name: node_dist
     condition: arch=="x86_64"
     url: https://nodejs.org/dist/v{{ context.node_version }}/node-v{{ context.node_version }}-linux-x64.tar.xz
-    sha256: 9aa8e9d2298ab68c600bd6fb86a6c13bce11a4eca1ba9b39d79fa021755d7c37
+    sha256: "{{ context.node_x86_64_sha256 }}"
   - name: node_dist
     condition: arch=="aarch64"
     url: https://nodejs.org/dist/v{{ context.node_version }}/node-v{{ context.node_version }}-linux-arm64.tar.xz
-    sha256: 1bf1eb9ee63ffc4e5d324c0b9b62cf4a289f44332dfef9607cea1a0d9596ba6f
+    sha256: "{{ context.node_aarch64_sha256 }}"
   - name: mindgrab_package
     url: https://registry.npmjs.org/@brainchop/mindgrab/-/mindgrab-{{ context.mindgrab_version }}.tgz
+    sha256: "{{ context.mindgrab_sha256 }}"
+  - name: webapps_licenses
+    url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/LICENSES.md
   - name: mindgrab_cli
     url: https://raw.githubusercontent.com/neurodesk/webapps/{{ context.webapps_commit }}/packages/node-drivers/bin/brainchop-mindgrab.js
   - name: mindgrab_cli_args

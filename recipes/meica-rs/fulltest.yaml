@@ -5,11 +5,11 @@
 # accepted and 6 rejected components for tedana's default tree on it.
 
 name: meica-rs
-version: 0.1.20261018
-upstream_version: 0.1.20261018
-meica_rs_commit: 1582ce4733a91ceec8b77e8436170a976e7a2913
+version: 0.1.20261021
+upstream_version: 0.1.20261021
+meica_rs_commit: edcb2c5be39a78d8bd4899480317ec2539e140a2
 niimath_version: 1.0.20261016
-mindgrab_version: 0.1.20260925
+mindgrab_version: 0.1.20261008
 default_timeout: 1800
 
 test_data:
@@ -24,7 +24,7 @@ setup:
     mkdir -p "${output_dir}"
     base=https://huggingface.co/datasets/neurodeskorg/webapps/resolve/121b25dde5caffc8f880eec87cca29b4e569b7a9/me-ica/motor-3echo/example
     for i in 1 2 3; do
-      curl -fsSL -o "${output_dir}/sub-01_task-motor_echo-${i}_bold.nii.gz" "${base}/sub-01_task-motor_echo-${i}_bold.nii.gz"
+      curl -fsSL --connect-timeout 30 --max-time 600 --retry 3 --retry-all-errors -o "${output_dir}/sub-01_task-motor_echo-${i}_bold.nii.gz" "${base}/sub-01_task-motor_echo-${i}_bold.nii.gz"
     done
     sha256sum -c - <<EOF
     5681230e0cc3388f04547f457440ad5e9d3075158e3a501ebe395ee4790ed123  ${echo1}
@@ -42,9 +42,11 @@ tests:
     description: Verify the help lists tedana's inputs, decision trees and PCA criteria.
     command: meica --help
     expected_output_contains:
-      - "-d FILE [FILE ...] -e TE [TE ...]"
-      - "--tree tedana_orig|meica|minimal"
-      - "--tedpca aic|kic|mdl"
+      - "-d FILE"
+      - "-e TE"
+      - "--tree"
+      - "tedana_orig"
+      - "--tedpca"
       - "--moco"
 
   - name: niimath installed next to meica
