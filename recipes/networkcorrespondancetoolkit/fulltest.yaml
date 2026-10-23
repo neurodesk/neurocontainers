@@ -14,9 +14,9 @@
 #   https://doi.org/10.1038/s41467-025-58176-9
 
 name: networkcorrespondancetoolkit
-version: "0.3.3"
-upstream_version: 0.3.3
-data_commit: 0675b0df7fedc98d95c06c90da58b754a3cbfd49
+version: "0.4.1"
+upstream_version: "0.4.1"
+data_commit: "326a23f66df2200376d73ff787923609446cacff"
 
 required_files:
   - dataset: ds000001
@@ -43,16 +43,19 @@ tests:
     command: |
       python3 - <<'PYTHON'
       from importlib.metadata import version
+      import os
       from pathlib import Path
+      from unittest.mock import patch
       import cbig_network_correspondence as nct
       assert version("cbig_network_correspondence") == "${upstream_version}"
-      data = Path(nct.__file__).parent / "data"
+      data = Path(os.environ["CBIG_NETWORK_CORRESPONDENCE_DATA_DIR"])
       assert (data / "source-revision").read_text().strip() == "${data_commit}"
-      for space in ("fs_LR_32k", "fsaverage6"):
-          model = data / "spin_rotations" / space / "1000_spin_permutations_state0.pkl"
-          assert model.stat().st_size > 0
-      assert Path(nct.load_example.example_config).is_file()
-      assert Path(nct.load_example.example_nii).is_file()
+      with patch("requests.sessions.Session.request", side_effect=AssertionError("NCT data must be available offline")):
+          nct.datasets.prefetch_all(include_spin=True)
+          for space in ("fs_LR_32k", "fsaverage6"):
+              assert Path(nct.datasets.fetch_spin_rotations(space)).stat().st_size > 0
+          assert Path(nct.load_example.example_config).is_file()
+          assert Path(nct.load_example.example_nii).is_file()
       print("Pinned NCT package, atlases and spin models are available")
       PYTHON
     expected_output_contains: "Pinned NCT package, atlases and spin models are available"
@@ -128,10 +131,10 @@ tests:
     command: python3 -c "import vtk; print('VTK version:', vtk.vtkVersion.GetVTKVersion())"
     expected_output_contains: "VTK version:"
 
-  - name: Import gitpython
-    description: Test that GitPython is importable (used for data download)
-    command: python3 -c "import git; print('GitPython version:', git.__version__)"
-    expected_output_contains: "GitPython version:"
+  - name: Import Pooch
+    description: Test that Pooch is importable for the NCT data cache
+    command: python3 -c "import pooch; print('Pooch version:', pooch.__version__)"
+    expected_output_contains: "Pooch version:"
 
   # ==========================================================================
   # NIBABEL - NIFTI IMAGE HANDLING TESTS
