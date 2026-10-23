@@ -13,6 +13,7 @@ architectures:
   - x86_64
 
 variables:
+  openrecon_ubuntu_version: "24.04"
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
@@ -72,7 +73,7 @@ auto_update:
 
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -92,7 +93,7 @@ build:
     - include: macros/openrecon/neurodocker.yaml
 
     - run:
-        - python3 -m pip install --no-cache-dir Pillow=={{ context.pillow_version }}
+        - python3 -m pip install --break-system-packages --no-cache-dir Pillow=={{ context.pillow_version }}
 
     # The web app's standalone release: its own Node.js runtime, SynthStrip and
     # all five FLAMeS folds, so the scanner runs the browser's exact pipeline.
