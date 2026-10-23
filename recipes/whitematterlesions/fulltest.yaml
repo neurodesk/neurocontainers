@@ -5,7 +5,7 @@
 # 90 s each with one fold on 8 CPU threads.
 
 name: whitematterlesions
-version: "0.3.20261015"
+version: "0.5.20261022"
 default_timeout: 1800
 
 test_data:
