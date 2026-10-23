@@ -2,7 +2,7 @@
 # Tests for BIDS Manager - raw-to-BIDS conversion, curation, metadata editing, and validation.
 
 name: bidsmanager
-version: 1.5.0
+version: 1.5.1
 
 test_data:
   output_dir: test_output
