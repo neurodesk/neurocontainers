@@ -10,7 +10,7 @@ index binding the SIF SHA-256 to the extracted descriptors.
 ```bash
 python3 -m pip install -e '.[boutiques]'
 sf-boutiques /data/qsmxt.sif --output ./qsmxt-descriptors \
-  --expected-version 9.22.0
+  --expected-version 10.0.0
 cat qsmxt-descriptors/index.json
 ```
 
@@ -60,7 +60,7 @@ extracted descriptor with `--no-container`. The module's launcher selects
 the installed NeuroContainer:
 
 ```bash
-ml qsmxt/9.22.0
+ml qsmxt/10.0.0
 bosh exec launch --skip-data-collection --no-container \
   qsmxt-descriptors/qsmxt.json '{"action":"--version"}'
 ```
@@ -69,12 +69,38 @@ MRIcron's descriptor accepts an optional image file and needs a graphical
 desktop. The undeclared `[OPTIONS]` placeholder has been removed. Descriptor
 validation does not test a GUI viewing session.
 
+## Verify a complete processing invocation
+
+From a repository checkout, install the host-side verifier dependencies and run
+both descriptors against a built SIF:
+
+```bash
+python3 -m pip install -e '.[boutiques]' nibabel scipy
+python3 -m workflows.verify_qsmxt_boutiques --image /data/qsmxt.sif \
+  --version 10.0.0 --output /data/qsmxt-descriptor-check
+```
+
+The output directory must be new. Choose a path without shell metacharacters or
+colons because Boutiques passes it as a container bind. The verifier extracts
+and validates the actual image descriptors, checks the installed version, then
+uses the default processing descriptor on a generated three-echo BIDS phantom.
+It checks that a finite, nonzero susceptibility image preserves the input voxel
+grid. It retains the phantom, results, Boutiques logs and `evidence.json` binding
+the image, descriptor and output hashes. This checks command execution and
+output geometry; it does not establish reconstruction accuracy on patient data.
+
+For an installed native QSMxT executable, use `--native-descriptors DIRECTORY`
+instead of `--image`. The directory must contain validated `qsmxt.json` and
+`qsmxt-run.json` descriptors for the requested version. This mode runs the same
+phantom and records `mode: native`; it supplies no evidence about SIF extraction
+or container bindings. A new SIF release still needs the image-mode check.
+
 ## Adoption status
 
 - QSMxT: version/help and default BIDS command descriptors, matched to the recipe's installed version.
 - MRIcron: existing viewer descriptor repaired and schema-validated.
 - Other recipes: add descriptors with a tested invocation and explicit input/output mapping.
-- Shared search/publishing and broader scientific processing acceptance remain follow-up work under #217.
+- Shared search/publishing, MRIcron GUI acceptance and further recipe adoption remain follow-up work under #217.
 
 See the [Boutiques executor documentation](https://boutiques.github.io/doc/_execute.html)
 for invocation, container selection and bind options.
