@@ -1,0 +1,13 @@
+builder: neurodocker
+
+# Runtime launchers must select /opt/vscode-extensions explicitly. Build-only
+# user data stays outside the home directory. Extra extensions are optional.
+directives:
+  - run:
+      - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
+      - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance
+      - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter
+      - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
+      - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+      - >-
+        {% for extension in context.vscode_extra_extensions | default([]) %}code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension {{ extension }} && {% endfor %}true

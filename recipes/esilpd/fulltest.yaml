@@ -18,6 +18,21 @@ setup:
     mkdir -p ${output_dir}
 
 tests:
+
+  - name: Editor launcher works without home
+    description: Verify CLI arguments and writable user data with no home directory.
+    command: HOME=/nonexistent /usr/local/sbin/code --no-sandbox --version
+    expected_exit_code: 0
+
+  - name: Python and Jupyter editor extensions
+    description: Verify shared extensions are installed outside home.
+    command: >-
+      /usr/bin/code --no-sandbox --user-data-dir="${output_dir}/vscode-test-data"
+      --extensions-dir=/opt/vscode-extensions --list-extensions
+      | grep -E '^(ms-python.python|ms-python.vscode-pylance|ms-toolsai.jupyter|ms-toolsai.jupyter-keymap|ms-toolsai.jupyter-renderers)$'
+      | sort -u | wc -l
+    expected_output_contains: "5"
+
   - name: VS Code wrapper is deployed
     description: Verify the deployed code wrapper and VS Code binary are present.
     command: |
