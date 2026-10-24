@@ -4,10 +4,15 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
+import shlex
 
 import jinja2
 
 from .staging import StagingPlan
+
+
+def _raise_template_error(message: str) -> None:
+    raise ValueError(message)
 
 
 class TemplateError(ValueError):
@@ -88,9 +93,31 @@ class RenderContext:
         return path
 
 
+def rewrite_legacy_self(source: str, environment: jinja2.Environment) -> str:
+    """Alias legacy method access inside Jinja without rewriting literal assets."""
+    tokens = list(environment.lex(source))
+    output = []
+    for index, (_, kind, value) in enumerate(tokens):
+        if kind == "name" and value == "self":
+            following = next(
+                (
+                    (next_kind, next_value)
+                    for _, next_kind, next_value in tokens[index + 1 :]
+                    if next_kind != "whitespace"
+                ),
+                None,
+            )
+            if following == ("operator", "."):
+                value = "template"
+        output.append(value)
+    return "".join(output)
+
+
 class TemplateRenderer:
     def __init__(self) -> None:
         self.env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+        self.env.filters["shellwords"] = shlex.split
+        self.builtin_method = None
 
     def make_namespace(self, context: RenderContext) -> dict[str, Any]:
         namespace = {
@@ -103,10 +130,25 @@ class TemplateRenderer:
             "get_local": context.get_local,
         }
         namespace.update(context.values)
+        if self.builtin_method is not None:
+            namespace["template"] = self.builtin_method
+            namespace["raise"] = _raise_template_error
         return namespace
 
     def render_string(self, value: str, context: RenderContext) -> str:
         try:
+            if self.builtin_method is not None:
+                value = rewrite_legacy_self(value, self.env)
+                for _ in range(20):
+                    rendered = (
+                        self.env.overlay(undefined=jinja2.Undefined)
+                        .from_string(value)
+                        .render(**self.make_namespace(context))
+                    )
+                    if "{{" not in rendered or rendered == value:
+                        return rendered
+                    value = rewrite_legacy_self(rendered, self.env)
+                raise TemplateError("template rendering exceeded 20 nested passes")
             return self.env.from_string(value).render(**self.make_namespace(context))
         except jinja2.TemplateError as exc:
             raise TemplateError(str(exc)) from exc

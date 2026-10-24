@@ -201,6 +201,8 @@ def plan_recipe_changes(
     base_recipes: Mapping[str, Mapping[str, object] | None],
     head_recipes: Mapping[str, Mapping[str, object] | None],
     retired: Mapping[str, str] | None = None,
+    *,
+    shared_dependencies: Mapping[str, SharedInputs] | None = None,
 ) -> ReleasePlan:
     """Classify recipe changes without rendering or executing head-authored data.
 
@@ -214,7 +216,11 @@ def plan_recipe_changes(
     affected = set(recipe_names_from_paths(changed_paths))
     shared_inputs = (
         {
-            name: SharedInputs.from_recipe(recipe)
+            name: (
+                shared_dependencies[name]
+                if shared_dependencies is not None
+                else SharedInputs.from_recipe(recipe)
+            )
             for name, recipe in head_recipes.items()
         }
         if changed_paths

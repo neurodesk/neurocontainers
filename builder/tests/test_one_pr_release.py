@@ -157,7 +157,7 @@ def test_detect_recipes_accepts_recipe_only_change(tmp_path: Path, monkeypatch) 
         lambda revision, recipe: base_recipe if revision == "base" else head_recipe,
     )
 
-    assert one_pr_release.detect_recipes("base", "head") == ["demo"]
+    assert one_pr_release.release_plan("base", "head").candidate_recipes == ["demo"]
 
 
 def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -> None:
@@ -170,7 +170,7 @@ def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -
         lambda base, head: ["builder/cli.py", "README.md"],
     )
 
-    assert one_pr_release.detect_recipes("base", "head") == []
+    assert one_pr_release.release_plan("base", "head").candidate_recipes == []
 
 
 def test_detect_from_git_preserves_metadata_only_release(
@@ -201,11 +201,11 @@ def test_detect_from_git_preserves_metadata_only_release(
     )
     path.write_text(yaml.safe_dump(recipe) + "# Clarified documentation\n")
     git("commit", "-am", "Update documentation and catalog")
-    assert one_pr_release.detect_recipes(base, "HEAD") == []
+    assert one_pr_release.release_plan(base, "HEAD").candidate_recipes == []
 
     helper.write_text("new runtime configuration")
     git("commit", "-am", "Update staged input")
-    assert one_pr_release.detect_recipes(base, "HEAD") == ["demo"]
+    assert one_pr_release.release_plan(base, "HEAD").candidate_recipes == ["demo"]
 
 
 def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
@@ -228,7 +228,7 @@ def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
     )
 
     try:
-        one_pr_release.detect_recipes("base", "head")
+        one_pr_release.release_plan("base", "head").candidate_recipes
     except RuntimeError as error:
         assert "recipe-only PR" in str(error)
     else:
@@ -256,7 +256,7 @@ def test_detect_recipes_requires_fulltest(tmp_path: Path, monkeypatch) -> None:
     )
 
     try:
-        one_pr_release.detect_recipes("base", "head")
+        one_pr_release.release_plan("base", "head").candidate_recipes
     except RuntimeError as error:
         assert "fulltest.yaml is required" in str(error)
     else:
@@ -278,7 +278,7 @@ def test_detect_recipes_catches_recipe_helper_without_build_yaml(
     data = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
     monkeypatch.setattr(one_pr_release, "load_recipe_at", lambda revision, recipe: data)
 
-    assert one_pr_release.detect_recipes("base", "head") == ["demo"]
+    assert one_pr_release.release_plan("base", "head").candidate_recipes == ["demo"]
 
 
 def test_inspect_recipe_rejects_missing_or_unsafe_version(
@@ -1019,7 +1019,7 @@ def test_retirement_manifest_gates_recipe_removal(tmp_path: Path, monkeypatch) -
     git("rm", "-r", "-q", "recipes/demo")
     git("commit", "-m", "Remove demo without a manifest")
     with pytest.raises(ValueError, match=one_pr_release.RETIREMENT_MANIFEST):
-        one_pr_release.detect_recipes(base, "HEAD")
+        one_pr_release.release_plan(base, "HEAD").candidate_recipes
 
     entry = [{"recipe": "demo", "superseded_by": "successor", "reason": "renamed"}]
     manifest.write_text(yaml.safe_dump({"retired": entry}), encoding="utf-8")
@@ -1028,7 +1028,7 @@ def test_retirement_manifest_gates_recipe_removal(tmp_path: Path, monkeypatch) -
     plan = one_pr_release.release_plan(base, "HEAD")
     assert plan.retired_recipes == ["demo"]
     assert plan.changed_recipes == []
-    assert one_pr_release.detect_recipes(base, "HEAD") == []
+    assert one_pr_release.release_plan(base, "HEAD").candidate_recipes == []
 
     # The manifest is a statement about the tree, not a free-form note.
     manifest.write_text(
@@ -1037,7 +1037,7 @@ def test_retirement_manifest_gates_recipe_removal(tmp_path: Path, monkeypatch) -
     )
     git("commit", "-am", "Claim a recipe that is still present")
     with pytest.raises(RuntimeError, match="still present"):
-        one_pr_release.detect_recipes(base, "HEAD")
+        one_pr_release.release_plan(base, "HEAD").candidate_recipes
 
     manifest.write_text(
         yaml.safe_dump(
@@ -1047,4 +1047,71 @@ def test_retirement_manifest_gates_recipe_removal(tmp_path: Path, monkeypatch) -
     )
     git("commit", "-am", "Point at a successor that does not exist")
     with pytest.raises(RuntimeError, match="does not exist"):
-        one_pr_release.detect_recipes(base, "HEAD")
+        one_pr_release.release_plan(base, "HEAD").candidate_recipes
+
+
+def test_template_revision_dependencies_control_candidates_fingerprints_and_dates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from builder.release import build_date_for_recipe
+
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    recipe_dir = write_recipe(tmp_path)
+    recipe_file = recipe_dir / "build.yaml"
+    recipe = yaml.safe_load(recipe_file.read_text())
+    recipe["build"]["directives"] = [{"group": [{"template": {"name": "example"}}]}]
+    recipe_file.write_text(yaml.safe_dump(recipe))
+    templates = tmp_path / "builder/templates"
+    templates.mkdir(parents=True)
+    template = templates / "example.yaml"
+    template.write_text("binaries:\n  directives:\n  - include: nested.yaml\n")
+    macros = tmp_path / "macros"
+    macros.mkdir()
+    (macros / "nested.yaml").write_text(
+        "directives:\n- file: {name: payload, filename: payload.txt}\n"
+    )
+    asset = macros / "payload.txt"
+    asset.write_text("initial")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2025-01-01T12:00:00Z")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2025-01-01T12:00:00Z")
+    git("add", ".")
+    git("commit", "-m", "Initial fragments")
+    base = git("rev-parse", "HEAD")
+    initial = one_pr_release.recipe_fingerprint("demo", base)
+    assert initial == one_pr_release.recipe_fingerprint("demo")
+    assert one_pr_release.build_date("demo", base) == "20250101"
+
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2025-01-02T12:00:00Z")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2025-01-02T12:00:00Z")
+    template.write_text(template.read_text() + "# Changed method\n")
+    git("commit", "-am", "Update template")
+    assert one_pr_release.release_plan(base, "HEAD").candidate_recipes == ["demo"]
+    assert one_pr_release.recipe_fingerprint("demo", "HEAD") != initial
+    assert one_pr_release.recipe_fingerprint("demo", base) == initial
+    assert one_pr_release.build_date("demo") == "20250102"
+    assert build_date_for_recipe(tmp_path, recipe_dir) == "20250102"
+
+    combined = git("rev-parse", "HEAD")
+    template.write_text(template.read_text() + "# Combined change\n")
+    recipe["readme"] = "Combined documentation"
+    recipe_file.write_text(yaml.safe_dump(recipe))
+    git("commit", "-am", "Template and recipe metadata")
+    assert one_pr_release.release_plan(combined, "HEAD").candidate_recipes == ["demo"]
+
+    merged = git("rev-parse", "HEAD")
+    recipe["readme"] = "New documentation"
+    recipe_file.write_text(yaml.safe_dump(recipe))
+    asset.write_text("changed runtime input")
+    git("commit", "-am", "Concurrent documentation and runtime asset")
+    assert not one_pr_release.recipe_changes_since_merge_are_source_only("demo", merged)
+    assert one_pr_release.release_plan(merged, "HEAD").candidate_recipes == ["demo"]
+
+    # Rename/deletion of a previous dependency still selects the original consumer.
+    previous = git("rev-parse", "HEAD")
+    template.unlink()
+    git("commit", "-am", "Delete template")
+    assert one_pr_release.release_plan(previous, "HEAD").candidate_recipes == ["demo"]

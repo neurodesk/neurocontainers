@@ -55,15 +55,8 @@ class Entrypoint:
     command: str
 
 
-@dataclass(frozen=True)
-class LiteralFile:
-    name: str
-    contents: str
-    executable: bool = False
-
-
 Directive = Union[
-    From, Env, Install, Run, RunWithMounts, Copy, Workdir, User, Entrypoint, LiteralFile
+    From, Env, Install, Run, RunWithMounts, Copy, Workdir, User, Entrypoint
 ]
 
 

@@ -14,7 +14,7 @@ from builder.dockerfile import render_directive, render_dockerfile
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
 from builder.staging import DeclaredFile
-from builder.template_backend import apply_builtin_template
+from builder.tests.template_helpers import apply_builtin_template
 
 
 def test_strict_context_rendering() -> None:
