@@ -26,7 +26,7 @@ setup:
 
 tests:
   - name: PalmettoBUG software version and launcher
-    description: Verify the selected upstream distribution exposes its GUI command.
+    description: Verify the distribution imports from the read-only image without creating package asset directories and exposes its GUI command.
     command: >-
       python3 -c 'import importlib.metadata as m; import palmettobug;
       d = m.distribution("palmettobug");
