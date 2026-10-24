@@ -38,7 +38,8 @@ architectures:
 auto_update:
   container_version: false
   method: sources
-  local: []
+  local:
+    - macros/vscode
   sources:
   - id: vscode
     method: webpage
@@ -149,10 +150,7 @@ build:
         - xauth
         - xdotool
 
-    - run:
-        - cp {{ get_file("download") }} vscode.deb
-        - apt install ./vscode.deb
-        - rm -rf ./vscode.deb
+    - include: macros/vscode/install.yaml
 
     - workdir: /opt
 
@@ -162,13 +160,12 @@ build:
         - rm -rf julia-{{ context.julia_version }}-linux-{{ context.julia_platform }}.tar.gz
         - ln -s /opt/julia-{{ context.julia_version }} /opt/julia-latest
 
+    - include: macros/vscode/extensions.yaml
+      with:
+        vscode_extra_extensions:
+          - julialang.language-julia
+
     - run:
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension julialang.language-julia
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
         - rm -rf /opt/vscode-data/CachedExtensionVSIXs/
         - chmod a+rwx /opt/vscode-extensions/ -R
         - chmod a+rwx /opt/vscode-data -R
@@ -246,7 +243,10 @@ files:
   - name: code
     contents: |
       #!/usr/bin/env sh
-      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox "$@"
+      set -eu
+      vscode_data="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}}/code-vscode-$(id -u)"
+      mkdir -p "$vscode_data"
+      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --user-data-dir="$vscode_data" --no-sandbox "$@"
 
   - name: module.sh
     contents: |
