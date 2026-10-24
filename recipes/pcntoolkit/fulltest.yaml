@@ -203,6 +203,16 @@ tests:
     validate:
       - output_exists: ${output_dir}/offline-blr/predictions.npz
 
+  - name: Run offline post-hoc and deviation prediction tutorial
+    description: Fit an independent normative reference, recover planted group effects and predict held-out synthetic labels.
+    command: env HOME=/nonexistent python /opt/pcntoolkit/tutorials/offline_deviations.py ${output_dir}/offline-deviations
+    expected_output_contains: "Offline post-hoc and deviation prediction passed"
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/offline-deviations/posthoc.csv
+      - output_exists: ${output_dir}/offline-deviations/prediction.json
+      - output_exists: ${output_dir}/offline-deviations/deviations.png
+
 cleanup:
   script: |
     #!/usr/bin/env bash
