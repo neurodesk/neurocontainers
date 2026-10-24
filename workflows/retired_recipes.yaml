@@ -30,3 +30,8 @@ retired:
     reason: >-
       Published by mistake as a separate tool. FreeSurfer 6.0.0 is released
       as freesurfer/6.0.0 alongside the other FreeSurfer versions instead.
+  - recipe: neurodesktop-lite
+    reason: >-
+      Retired after its desktop changes were integrated into the main
+      neurodesk/neurodesktop repository. Desktop development continues there
+      rather than in a separate NeuroContainers recipe.
