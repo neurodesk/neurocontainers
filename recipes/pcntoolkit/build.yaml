@@ -79,6 +79,9 @@ build:
         - offline_blr.py
         - /opt/pcntoolkit/tutorials/offline_blr.py
     - copy:
+        - offline_deviations.py
+        - /opt/pcntoolkit/tutorials/offline_deviations.py
+    - copy:
         - check_tutorials.py
         - /opt/pcntoolkit/tutorials/check_tutorials.py
     - run:
@@ -102,6 +105,8 @@ files:
     filename: tutorials.md
   - name: offline_blr.py
     filename: offline_blr.py
+  - name: offline_deviations.py
+    filename: offline_deviations.py
   - name: check_tutorials.py
     filename: check_tutorials.py
 
@@ -128,13 +133,15 @@ readme: |-
 
   ## Bundled tutorials
 
-  Release-matched notebooks, their license, a workflow index, and an offline BLR
-  example are installed in `/opt/pcntoolkit/tutorials`. Copy that directory to a
+  Release-matched notebooks, their license, a workflow index, and offline BLR,
+  post-hoc and deviation-score prediction examples are installed in
+  `/opt/pcntoolkit/tutorials`. Copy that directory to a
   writable project directory before editing notebooks or saving model outputs.
   See its `README.md` for the original seven requested topics and remaining gaps.
 
   ```bash
   python /opt/pcntoolkit/tutorials/offline_blr.py ./pcn-example-output
+  python /opt/pcntoolkit/tutorials/offline_deviations.py ./pcn-deviation-output
   ```
 
   ## Installation
