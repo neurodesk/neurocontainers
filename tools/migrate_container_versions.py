@@ -38,7 +38,6 @@ BUNDLES = {
     "esilpd",
     "flames",
     "mneextended",
-    "neurodesktop-lite",
     "syncro",
     "musclemap",
     "topofit",

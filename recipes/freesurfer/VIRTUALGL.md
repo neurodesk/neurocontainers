@@ -158,13 +158,10 @@ and sends desktop updates to the viewer. Do not overwrite the session's
 
 ## Neurodesktop background
 
-The desktop [GPU wrapper](../neurodesktop-lite/config/gpu/neurodesktop-container-runtime)
-and [allowlist](../neurodesktop-lite/config/gpu/gpu-containers.tsv)
-route enabled FreeSurfer 8.2.0 launches through VirGL settings. Its
-[environment setup](../neurodesktop-lite/config/jupyter/environment_variables.sh)
-disables automatic `--nv`, citing glibc errors on Ubuntu 24.04 hosts. Those
-settings matter if this work later extends to Neurodesktop, but do not require
-desktop changes for the standalone HPC target.
+The former lite desktop recipe has been retired in favor of the main
+[Neurodesktop repository](https://github.com/neurodesk/neurodesktop).
+Consult that repository's desktop configuration before extending this work to
+Neurodesktop; the standalone HPC target does not require desktop changes.
 
 ## Packaging and remaining verification
 

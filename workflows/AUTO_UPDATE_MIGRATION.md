@@ -86,7 +86,7 @@ python -m builder.audit_updates --json update-coverage.json
 pytest builder/tests
 ./workflows/test_all.sh
 python workflows/verify_source_migration.py --report source-replay.json
-python workflows/verify_source_migration.py neurodesktop-lite mneextended qsmxt
+python workflows/verify_source_migration.py mneextended qsmxt
 python workflows/verify_binary_updates.py --help
 python -m builder.check_version qsmxt --dry-run --json qsmxt-update.json
 ```
