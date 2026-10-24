@@ -1,0 +1,12 @@
+builder: neurodocker
+
+# Include after the OpenRecon server installation. Preserve its import path.
+directives:
+  - file:
+      name: nifti2mrd.py
+      filename: nifti2mrd.py
+  - run:
+      - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
+  - run:
+      - chmod {{ context.converter_mode }} /opt/code/python-ismrmrd-server/nifti2mrd.py
+    condition: context.converter_mode is defined

@@ -19,8 +19,6 @@ variables:
 files:
   - name: epirecon.py
     filename: epirecon.py
-  - name: twix2mrd.py
-    filename: twix2mrd.py
   - name: siemens_twix2mrd.py
     filename: siemens_twix2mrd.py
   - name: mrd2nifti.py
@@ -37,6 +35,7 @@ auto_update:
   container_version: false
   method: sources
   local:
+    - macros/openrecon_converters
     - macros/openrecon
   sources:
     - id: base_image
@@ -92,6 +91,7 @@ build:
         - python3-pip
         - python-is-python3
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_converters/twix2mrd.yaml
     - run:
         - ldconfig
     - run:
@@ -99,7 +99,6 @@ build:
     - workdir: /opt/epirecon
     - run:
         - cp {{ get_file("epirecon.py") }} /opt/code/python-ismrmrd-server/epirecon.py
-        - cp {{ get_file("twix2mrd.py") }} /opt/code/python-ismrmrd-server/twix2mrd.py
         - cp {{ get_file("siemens_twix2mrd.py") }} /opt/code/python-ismrmrd-server/siemens_twix2mrd.py
         - cp {{ get_file("mrd2nifti.py") }} /opt/code/python-ismrmrd-server/mrd2nifti.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
