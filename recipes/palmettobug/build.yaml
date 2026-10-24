@@ -22,6 +22,10 @@ build:
           version: latest
     - run:
         - pip install --no-cache-dir "setuptools<81" palmettobug=={{ context.version }}
+        - >-
+          python3 -c 'import importlib.metadata as m;
+          p = m.distribution("palmettobug").locate_file("palmettobug/Assets/Px_classifiers");
+          p.mkdir(parents=True, exist_ok=True)'
 
 
 deploy:
