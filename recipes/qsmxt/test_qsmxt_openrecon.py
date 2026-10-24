@@ -1402,13 +1402,22 @@ def test_t2star_empty_or_small_maps_have_valid_window_and_scaling(values):
     assert np.all(display[(~np.isfinite(data)) | (data <= 0)] == 0)
 
 
-def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
-    anat_dir = tmp_path / "output" / "derivatives" / "qsmxt" / "sub-01" / "anat"
+@pytest.mark.parametrize("suffix", ["part-mag_T2starw", "CombinedMagnitude", "magnitude"])
+@pytest.mark.parametrize("extension", [".nii", ".nii.gz"])
+def test_find_qsmxt_outputs_accepts_combined_magnitude_names(tmp_path, suffix, extension):
+    subject_dir = tmp_path / "output" / "derivatives" / "qsmxt" / "sub-01"
+    anat_dir = subject_dir / "anat"
     anat_dir.mkdir(parents=True)
-    combined_magnitude = anat_dir / "sub-01_acq-greqsm_CombinedMagnitude.nii"
+    combined_magnitude = anat_dir / f"sub-01_acq-greqsm_{suffix}{extension}"
     nib.save(
         nib.Nifti1Image(np.ones((2, 2, 2), dtype=np.float32), np.eye(4)),
         combined_magnitude,
+    )
+    fmap_dir = subject_dir / "fmap"
+    fmap_dir.mkdir()
+    nib.save(
+        nib.Nifti1Image(np.full((2, 2, 2), 2, dtype=np.float32), np.eye(4)),
+        fmap_dir / f"sub-01_acq-greqsm_desc-total_magnitude{extension}",
     )
     settings = qsmxt._settings_from_config(
         {"parameters": {"sendoutputs": "magnitude"}},
@@ -1421,7 +1430,27 @@ def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
         settings,
     )
 
-    assert specs[0][2] == combined_magnitude
+    assert [(output_id, path) for output_id, _, path in specs] == [
+        ("magnitude", combined_magnitude),
+    ]
+
+
+@pytest.mark.parametrize("extension", [".nii", ".nii.gz"])
+def test_find_qsmxt_outputs_does_not_substitute_first_echo_magnitude(tmp_path, extension):
+    fmap_dir = tmp_path / "output" / "derivatives" / "qsmxt" / "sub-01" / "fmap"
+    fmap_dir.mkdir(parents=True)
+    nib.save(
+        nib.Nifti1Image(np.ones((2, 2, 2), dtype=np.float32), np.eye(4)),
+        fmap_dir / f"sub-01_acq-greqsm_desc-total_magnitude{extension}",
+    )
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"sendoutputs": "magnitude"}},
+        FakeMetadata(),
+    )
+
+    assert qsmxt._find_qsmxt_outputs(
+        tmp_path / "output", {"subject": "01"}, settings,
+    ) == []
 
 
 @pytest.mark.parametrize("diagnostics", ["", "full"])
