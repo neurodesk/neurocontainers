@@ -95,6 +95,21 @@ instead of `--image`. The directory must contain validated `qsmxt.json` and
 phantom and records `mode: native`; it supplies no evidence about SIF extraction
 or container bindings. A new SIF release still needs the image-mode check.
 
+### Verified release
+
+On 2026-10-24, the image-mode verifier passed against the published
+`quay.io/neurodesk/qsmxt:10.0.0_20261021` release using Apptainer 1.5.3 and
+Boutiques 0.5.33. The resolved SIF artifact manifest was
+`sha256:a4f37d703ef049a1bfbae9733b31bc0d1a61b39405f70015fcd0e2e493f15c56`;
+the downloaded SIF SHA-256 was
+`f54c74a2e27abf8fbc2b9e0ba2bcdd75854667a3a29ae6b6fbd54efe321780a8`.
+Both extracted descriptors passed official validation, the version descriptor
+reported QSMxT 10.0.0, and the processing descriptor completed the default
+pipeline. The resulting susceptibility image had 5,226 nonzero voxels, all
+values were finite, and its 32 × 32 × 24 grid and affine matched the phantom.
+This verifies the default processing invocation for that release. MRIcron GUI
+acceptance and wider descriptor adoption remain open.
+
 ## Adoption status
 
 - QSMxT: version/help and default BIDS command descriptors, matched to the recipe's installed version.
