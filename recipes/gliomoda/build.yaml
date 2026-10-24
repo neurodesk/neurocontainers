@@ -21,6 +21,8 @@ variables:
   venv: /opt/gliomoda-{{ context.upstream_version }}
 
 auto_update:
+  local:
+    - macros/brainles
   method: sources
   container_version: gliomoda
   sources:
@@ -46,12 +48,11 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-        VENV: "{{ context.venv }}"
-        # These default under $HOME, which does not exist at container runtime.
-        MPLCONFIGDIR: /tmp/mpl-gliomoda
-        XDG_CACHE_HOME: /tmp/cache-gliomoda
-        PYTHONNOUSERSITE: "1"
-        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - include: macros/brainles/environment.yaml
+      with:
+        mpl_cache: /tmp/mpl-gliomoda
+        xdg_cache: /tmp/cache-gliomoda
 
     - install:
         - ca-certificates
@@ -64,9 +65,9 @@ build:
         - python3-pip
         - python3-venv
 
+    - include: macros/brainles/bootstrap.yaml
+
     - run:
-        - python3 -m venv "${VENV}"
-        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
         # Install and set permissions in one layer. A later chmod of a
         # previous Torch layer copies large libraries into the new layer.
         # Preserve the x86 CUDA index and the pinned official ARM CPU wheel.
