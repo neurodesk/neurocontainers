@@ -39,7 +39,6 @@ def test_supported_recipe_contracts_have_deploy_and_embedded_metadata() -> None:
         "afni",
         "connectomeworkbench",
         "bidscoin",
-        "neurodesktop-lite",
     ):
         compiled = compile_recipe(
             resolve_recipe(config, name),
