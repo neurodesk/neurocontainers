@@ -1,4 +1,6 @@
 variables:
+  debian_ca_package: ca-certificates_20250419~deb12u1~deb11u1_all.deb
+  debian_ca_sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
   debian_security_snapshot: 20260901T000000Z
   package_version: 0.6.4-1
 
@@ -16,7 +18,8 @@ architectures:
 auto_update:
   container_version: "sigviewer"
   method: sources
-  local: []
+  local:
+    - macros/debian_security
   sources:
   - id: sigviewer
     method: apt
@@ -53,12 +56,7 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
-    - run:
-        - mkdir -p /tmp/debian-ca-certificates /etc/ssl/certs
-        - dpkg-deb --extract {{ get_file("debian_ca_certificates") }} /tmp/debian-ca-certificates
-        - cat /tmp/debian-ca-certificates/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt
-        - rm -rf /tmp/debian-ca-certificates
-        - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
+    - include: macros/debian_security/bootstrap.yaml
 
     - install:
         - "sigviewer={{ context.package_version }}"
@@ -75,9 +73,6 @@ build:
         - cp {{ get_file("sigviewer_xdf") }} /opt/sigviewer-testdata/reference.xdf
 
 files:
-- name: debian_ca_certificates
-  url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
-  sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
 - name: sigviewer_gdf
   url: https://raw.githubusercontent.com/EEGKit/biosig/15e7caaa1c2b199bac11e333543617e074ee79bc/biosig/t310_ERDSMaps/sample.gdf
   sha256: ec71e5eab48c217fb40a4f0dc41657f25701071e36e1d41d9b7bc434b4beae4f
