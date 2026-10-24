@@ -32,8 +32,6 @@ variables:
 files:
 - name: musclemap.py
   filename: musclemap.py
-- name: nifti2mrd.py
-  filename: nifti2mrd.py
 - name: enhanceddicom2mrd.py
   filename: enhanceddicom2mrd.py
 - name: OpenReconLabel.json
@@ -111,6 +109,7 @@ auto_update:
   container_version: false
   method: sources
   local:
+  - macros/openrecon_converters
   - macros/openrecon
   sources:
   - id: musclemap
@@ -227,6 +226,9 @@ build:
             - unzip
 
         - include: macros/openrecon/neurodocker.yaml
+        - include: macros/openrecon_converters/nifti2mrd.yaml
+          with:
+            converter_mode: "0444"
 
         - workdir: /opt/
         - run:
@@ -305,7 +307,6 @@ build:
 
         - run:
             - install -m 0444 {{ get_file("musclemap.py") }} /opt/code/python-ismrmrd-server/musclemap.py
-            - install -m 0444 {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
             - install -m 0444 {{ get_file("enhanceddicom2mrd.py") }} /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
             - install -m 0444 {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
             - install -m 0444 {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md

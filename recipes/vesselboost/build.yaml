@@ -70,6 +70,7 @@ auto_update:
     target:
       variable: openrecon_server_commit
   local:
+  - macros/openrecon_converters
   - macros/openrecon
 
 build:
@@ -84,6 +85,7 @@ build:
         DEBIAN_FRONTEND: noninteractive
     - install: bzip2 ca-certificates git unzip build-essential
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_converters/nifti2mrd.yaml
     - workdir: /opt
     - run:
         - unzip -q {{ get_file("vesselboost_zip") }} -d /opt
@@ -110,7 +112,6 @@ build:
         PATH: $PATH:/opt/VesselBoost/
         VESSELBOOST_HOME: /opt/VesselBoost
     - copy: vesselboost.py /opt/code/python-ismrmrd-server/vesselboost.py
-    - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
 
 readme: |2-
     ----------------------------------

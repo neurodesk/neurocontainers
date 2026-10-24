@@ -10,8 +10,6 @@ copyright:
 files:
   - name: arfirecon.py
     filename: arfirecon.py
-  - name: dicom2mrd.py
-    filename: dicom2mrd.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
@@ -34,6 +32,7 @@ auto_update:
   container_version: false
   method: sources
   local:
+  - macros/openrecon_converters
   - macros/openrecon
   sources:
   - id: openrecon_ismrmrd
@@ -72,9 +71,9 @@ build:
     - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
 
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_converters/dicom2mrd.yaml
 
     - copy: arfirecon.py /opt/code/python-ismrmrd-server/arfirecon.py
-    - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
         - install -m 0755 {{ get_file("arfirecon") }} /usr/local/bin/arfirecon
