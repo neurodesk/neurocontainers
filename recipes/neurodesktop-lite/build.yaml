@@ -15,9 +15,9 @@ show_in_menu: false
 show_in_applist: false
 
 variables:
-  apptainer_version: "1.5.4"
-  firefox_version: "158.0"
-  code_server_version: "4.141.0"
+  apptainer_version: "1.5.5"
+  firefox_version: "158.0.1"
+  code_server_version: "4.143.1"
   firefox_arch:
     try:
     - value: linux-x86_64
@@ -42,21 +42,21 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "26529af2989547ea213c2a31cf21e149d5da991e"
-  nf_neuro_commit: "c2909599fbf995031dbeb70d2d7f0f62f9238064"
+  neurocommand_commit: "31cee6576d72dbb2a3e226da4e6e39d3adfc1f3e"
+  nf_neuro_commit: "98234c97094e4632b5c910141ae34c779196b2fb"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
   hatchling_build_version: 1.32.0
-  codex_version: "0.163.0"
-  claude_version: "2.1.304"
-  opencode_version: "1.19.3"
-  nextflow_tag: "v26.10.2"
+  codex_version: "0.164.0"
+  claude_version: "2.1.310"
+  opencode_version: "1.19.4"
+  nextflow_tag: "v26.10.3"
   nf_test_version: 0.9.5
   datalad_version: "1.7.1"
   nipype_version: 1.12.0
   nbdev_version: "3.3.25"
-  nf_core_version: 4.1.0
-  snakemake_version: "9.27.0"
+  nf_core_version: "4.2.0"
+  snakemake_version: "9.27.1"
   pydra_version: 1.0a7
   nipoppy_version: 0.4.7
   matplotlib_version: "3.11.2"
@@ -87,7 +87,7 @@ variables:
   pytest_version: 9.1.1
   requests_version: 2.34.2
   chardet_version: 5.2.0
-  base_digest: "sha256:8c2070865d058ddee0570fd32a245856376bda5d17c4112e88c404885ba47c4a"
+  base_digest: "sha256:cc7aa7b4f008920a301a72d50b2523490a9f918e9a32c427b7a890a4a35afe24"
   go_version: "1.27.3"
   go_arch:
     try:
