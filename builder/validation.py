@@ -80,15 +80,6 @@ LEGACY_CATEGORIES = CATEGORIES + [
     "tractography",
 ]
 
-INCLUDE_MACROS = [
-    "openrecon/neurodocker.yaml",
-    "macros/openrecon/neurodocker.yaml",  # Support both formats
-    "openrecon_i2i/helpers.yaml",
-    "macros/openrecon_i2i/helpers.yaml",
-    "macros/b0_shimming/helpers.yaml",
-    "macros/ep3d/helpers.yaml",
-]
-
 
 _jinja_env = jinja2.Environment()
 _ICON_DATA_URI_RE = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(?P<data>.+)$")
@@ -695,10 +686,9 @@ class IncludeDirective:
 
     @include.validator
     def _validate_include(self, attribute, value):
-        if value not in INCLUDE_MACROS:
-            raise ValueError(
-                f"Include macro '{value}' not supported. Must be one of: {INCLUDE_MACROS}"
-            )
+        from builder.fragments import macro_path
+
+        macro_path(value)
 
 
 @attrs.define
@@ -1157,6 +1147,14 @@ def validate_recipe_file(
         recipe = validate_recipe_dict(recipe_dict, strict_metadata=strict_metadata)
 
         recipe_path = Path(file_path)
+        from builder.fragments import validate_macro_tree
+
+        roots = (Path(__file__).resolve().parents[1],)
+        for parent in recipe_path.resolve().parents:
+            if (parent / "macros").is_dir():
+                roots = (parent,)
+                break
+        validate_macro_tree(recipe_dict["build"]["directives"], roots)
         if recipe_path.name in {"build.yaml", "build.yml"}:
             fulltest_path = recipe_path.with_name("fulltest.yaml")
             if fulltest_path.is_file():
@@ -1170,8 +1168,8 @@ def validate_recipe_file(
 
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML syntax: {str(e)}")
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Recipe file not found: {file_path}")
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"{file_path}: {error}") from error
 
 
 def get_validation_errors(

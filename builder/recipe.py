@@ -29,11 +29,12 @@ from .ir import (
 )
 from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
-from .template_backend import apply_builtin_template
+from .template_backend import expand_builtin_template
+from .fragments import load_fragment, resolve_macro
 from .validation import NESTED_TEST_DIRECTIVE_ERROR, validate_recipe_dict
 from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
-from .config import ARCHITECTURE_ALIASES as ARCHITECTURE_ALIASES, canonical_architecture
-from .variants import select_concrete_variant, variant_specs as variant_specs
+from .config import canonical_architecture
+from .variants import select_concrete_variant
 
 
 GLOBAL_MOUNT_POINTS = [
@@ -393,6 +394,8 @@ def compile_recipe(
     # Relative filenames resolve against the directory of the recipe or of the
     # macro declaring them, so a shared macro can ship its own files.
     file_dirs = [recipe_dir]
+    fragment_stack: list[Path] = []
+    fragment_roots = include_dirs or (Path(__file__).resolve().parents[1],)
 
     def register_file(mapping: dict[str, Any]) -> None:
         if "condition" in mapping and not renderer.render_condition(
@@ -406,6 +409,14 @@ def compile_recipe(
             if key in rendered and rendered[key] is not None:
                 rendered[key] = renderer.render_value(rendered[key], context)
         file = declared_file_from_mapping(name, rendered)
+        if len(file_dirs) > 1 and file.filename is not None:
+            asset = file_dirs[-1] / file.filename
+            if not asset.resolve().is_relative_to(file_dirs[-1].resolve()):
+                raise ValueError(
+                    f"fragment asset escapes its directory: {file.filename}"
+                )
+            if not asset.is_file():
+                raise FileNotFoundError(f"fragment asset not found: {asset}")
         plan.add_file(file, relative_to=file_dirs[-1])
 
     for key, value in (recipe.get("variables") or {}).items():
@@ -445,183 +456,199 @@ def compile_recipe(
     definition.fix_locale_def = bool(build.get("fix-locale-def", False))
     _default_directives(definition, build, pkg_manager)
 
-    def apply_directive(
-        directive: dict[str, Any], local_values: dict[str, Any] | None = None
-    ) -> None:
+    def apply_directive(directive: dict[str, Any]) -> None:
         if "condition" in directive and not renderer.render_condition(
             str(directive["condition"]), context
         ):
             return
-        if local_values:
-            old_values = dict(context.values)
-            context.values.update(local_values)
-        else:
-            old_values = None
-        try:
-            if "install" in directive:
-                rendered = renderer.render_value(directive["install"], context)
-                definition.add(Install(tuple(_split_install(rendered))))
-            elif "run" in directive:
-                with context.mount_scope("h" + _hash_obj(directive)[:8]) as scope:
-                    rendered = renderer.render_value(directive["run"], context)
-                if isinstance(rendered, str):
-                    rendered = [rendered]
-                elif not isinstance(rendered, list):
-                    raise ValueError("run directive must render to a string or list")
-                commands = [
-                    str(item)
-                    for item in rendered
-                    if item is not None and str(item) != ""
-                ]
-                command = " " + " \\\n && ".join(commands)
-                if scope.mounts:
-                    definition.add(RunWithMounts(scope.mounts, command))
-                else:
-                    definition.add(Run(command))
-            elif "workdir" in directive:
+        if "install" in directive:
+            rendered = renderer.render_value(directive["install"], context)
+            definition.add(Install(tuple(_split_install(rendered))))
+        elif "run" in directive:
+            with context.mount_scope("h" + _hash_obj(directive)[:8]) as scope:
+                rendered = renderer.render_value(directive["run"], context)
+            if isinstance(rendered, str):
+                rendered = [rendered]
+            elif not isinstance(rendered, list):
+                raise ValueError("run directive must render to a string or list")
+            commands = [
+                str(item) for item in rendered if item is not None and str(item) != ""
+            ]
+            command = " " + " \\\n && ".join(commands)
+            if scope.mounts:
+                definition.add(RunWithMounts(scope.mounts, command))
+            else:
+                definition.add(Run(command))
+        elif "workdir" in directive:
+            definition.add(
+                Workdir(str(renderer.render_value(directive["workdir"], context)))
+            )
+        elif "user" in directive:
+            definition.add(User(str(renderer.render_value(directive["user"], context))))
+        elif "entrypoint" in directive:
+            definition.add(
+                Entrypoint(str(renderer.render_value(directive["entrypoint"], context)))
+            )
+        elif "environment" in directive:
+            env = renderer.render_value(directive["environment"], context)
+            if not isinstance(env, dict):
+                raise ValueError("environment directive must render to a mapping")
+            if renderer.builtin_method is not None:
                 definition.add(
-                    Workdir(str(renderer.render_value(directive["workdir"], context)))
+                    Env({str(key): str(value) for key, value in env.items()})
                 )
-            elif "user" in directive:
-                definition.add(
-                    User(str(renderer.render_value(directive["user"], context)))
-                )
-            elif "entrypoint" in directive:
-                definition.add(
-                    Entrypoint(
-                        str(renderer.render_value(directive["entrypoint"], context))
-                    )
-                )
-            elif "environment" in directive:
-                env = renderer.render_value(directive["environment"], context)
-                if not isinstance(env, dict):
-                    raise ValueError("environment directive must render to a mapping")
+            else:
                 for key, value in env.items():
                     definition.add(Env({str(key): str(value)}))
-            elif "copy" in directive:
-                parts = _copy_parts(renderer.render_value(directive["copy"], context))
-                if len(parts) < 2:
-                    raise ValueError("copy directive requires source and destination")
-                from_image = renderer.render_value(directive.get("from_image"), context)
-                from_platform = renderer.render_value(
-                    directive.get("from_platform"), context
-                )
-                from_stage = None
-                if from_platform and not from_image:
-                    raise ValueError("copy from_platform requires from_image")
-                if from_image:
-                    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*", from_image):
-                        raise ValueError("copy from_image must be an image reference")
-                    if from_platform and not re.fullmatch(
-                        r"[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?", from_platform
-                    ):
-                        raise ValueError("copy from_platform must be an OCI platform")
-                    key = (from_image, from_platform)
-                    if key not in copy_stages:
-                        copy_stages[key] = f"copy-source-{len(copy_stages)}"
-                        definition.directives.insert(
-                            0, From(from_image, from_platform, copy_stages[key])
-                        )
-                    from_stage = copy_stages[key]
-                    resolved_sources = parts[:-1]
-                else:
-                    resolved_sources = [
-                        plan.add_copy_source(source) for source in parts[:-1]
-                    ]
-                definition.add(Copy(tuple(resolved_sources), parts[-1], from_stage))
-            elif "variables" in directive:
-                values = directive["variables"]
-                if not isinstance(values, dict):
-                    raise ValueError("variables directive must be a mapping")
-                for key, value in values.items():
-                    context.values[str(key)] = renderer.render_value(value, context)
-            elif "group" in directive:
-                with_values: dict[str, Any] = {}
-                for key, value in (directive.get("with") or {}).items():
-                    with_values[str(key)] = renderer.render_value(value, context)
-                for child in directive["group"]:
-                    apply_directive(child, with_values)
-            elif "include" in directive:
-                include_name = str(renderer.render_value(directive["include"], context))
-                include_path = None
-                for include_dir in include_dirs:
-                    candidate = include_dir / include_name
-                    if candidate.exists():
-                        include_path = candidate
-                        break
-                if include_path is None:
-                    raise FileNotFoundError(f"include not found: {include_name}")
-                include_data = yaml.safe_load(include_path.read_text())
-                file_dirs.append(include_path.parent.resolve())
-                try:
-                    for child in include_data.get("directives", []):
-                        apply_directive(child)
-                finally:
-                    file_dirs.pop()
-            elif "file" in directive:
-                file_mapping = directive["file"]
-                if not isinstance(file_mapping, dict):
-                    raise ValueError("file directive must be a mapping")
-                register_file(file_mapping)
-            elif "deploy" in directive:
-                deploy = renderer.render_value(directive["deploy"], context)
-                if isinstance(deploy, dict):
-                    if "bins" in deploy:
-                        bins = deploy["bins"]
-                        if not isinstance(bins, list):
-                            raise ValueError("Deploy bins must be a list")
-                        deploy_bins.extend(bins)
-                    if "path" in deploy:
-                        path = deploy["path"]
-                        if not isinstance(path, list):
-                            raise ValueError("Deploy path must be a list")
-                        deploy_path.extend(path)
-            elif "template" in directive:
-                template = directive["template"]
-                if not isinstance(template, dict):
-                    raise ValueError("template directive must be a mapping")
-                with context.mount_scope("h" + _hash_obj(directive)[:8]) as scope:
-                    name = str(renderer.render_value(template.get("name", ""), context))
-                    params = {
-                        str(key): renderer.render_value(value, context)
-                        for key, value in template.items()
-                        if key != "name"
-                    }
-                params.setdefault(
-                    "arch", "x86_64" if context.arch == "x86_64" else "aarch64"
-                )
-                template_directives = []
-                apply_builtin_template(
-                    name, params, pkg_manager, template_directives.append
-                )
-                for item in template_directives:
-                    if scope.mounts and isinstance(item, Run):
-                        item = RunWithMounts(scope.mounts, item.command)
-                    definition.add(item)
-            elif "boutique" in directive:
-                boutique_data = renderer.render_value(directive["boutique"], context)
-                if not isinstance(boutique_data, dict):
-                    raise ValueError("Boutique directive must be a mapping")
-                filename = f"{boutique_data.get('name', 'tool')}.json"
-                plan.add_file(
-                    DeclaredFile(
-                        name=filename,
-                        contents=json.dumps(boutique_data, indent=2) + "\n",
-                    ),
-                    renderable=False,
-                )
-                plan.copy_sources.append(
-                    CopySource(source=filename, declared_name=filename)
-                )
-                definition.add(Run("mkdir -p /boutique"))
-                definition.add(Copy((filename,), f"/boutique/{filename}"))
-            elif "test" in directive:
-                raise ValueError(NESTED_TEST_DIRECTIVE_ERROR)
+        elif "copy" in directive:
+            parts = _copy_parts(renderer.render_value(directive["copy"], context))
+            if len(parts) < 2:
+                raise ValueError("copy directive requires source and destination")
+            from_image = renderer.render_value(directive.get("from_image"), context)
+            from_platform = renderer.render_value(
+                directive.get("from_platform"), context
+            )
+            from_stage = None
+            if from_platform and not from_image:
+                raise ValueError("copy from_platform requires from_image")
+            if from_image:
+                if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*", from_image):
+                    raise ValueError("copy from_image must be an image reference")
+                if from_platform and not re.fullmatch(
+                    r"[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?", from_platform
+                ):
+                    raise ValueError("copy from_platform must be an OCI platform")
+                key = (from_image, from_platform)
+                if key not in copy_stages:
+                    copy_stages[key] = f"copy-source-{len(copy_stages)}"
+                    definition.directives.insert(
+                        0, From(from_image, from_platform, copy_stages[key])
+                    )
+                from_stage = copy_stages[key]
+                resolved_sources = parts[:-1]
             else:
-                raise ValueError(f"unsupported directive: {directive}")
-        finally:
-            if old_values is not None:
-                context.values = old_values
+                resolved_sources = [
+                    plan.add_copy_source(source) for source in parts[:-1]
+                ]
+            definition.add(Copy(tuple(resolved_sources), parts[-1], from_stage))
+        elif "variables" in directive:
+            values = directive["variables"]
+            if not isinstance(values, dict):
+                raise ValueError("variables directive must be a mapping")
+            for key, value in values.items():
+                context.values[str(key)] = renderer.render_value(value, context)
+        elif "group" in directive or "include" in directive:
+            with_values = {
+                str(key): renderer.render_value(value, context)
+                for key, value in (directive.get("with") or {}).items()
+            }
+            previous = dict(context.values)
+            context.values.update(with_values)
+            try:
+                if "group" in directive:
+                    for child in directive["group"]:
+                        apply_directive(child)
+                else:
+                    name = str(renderer.render_value(directive["include"], context))
+                    path = resolve_macro(name, fragment_roots)
+                    if path in fragment_stack:
+                        chain = " -> ".join(map(str, [*fragment_stack, path]))
+                        raise ValueError(f"include cycle: {chain}")
+                    children = load_fragment(path)
+                    fragment_stack.append(path)
+                    file_dirs.append(path.parent)
+                    try:
+                        for child in children:
+                            apply_directive(child)
+                    finally:
+                        file_dirs.pop()
+                        fragment_stack.pop()
+            finally:
+                context.values = previous
+        elif "file" in directive:
+            file_mapping = directive["file"]
+            if not isinstance(file_mapping, dict):
+                raise ValueError("file directive must be a mapping")
+            register_file(file_mapping)
+        elif "deploy" in directive:
+            deploy = renderer.render_value(directive["deploy"], context)
+            if isinstance(deploy, dict):
+                if "bins" in deploy:
+                    bins = deploy["bins"]
+                    if not isinstance(bins, list):
+                        raise ValueError("Deploy bins must be a list")
+                    deploy_bins.extend(bins)
+                if "path" in deploy:
+                    path = deploy["path"]
+                    if not isinstance(path, list):
+                        raise ValueError("Deploy path must be a list")
+                    deploy_path.extend(path)
+        elif "template" in directive:
+            template = directive["template"]
+            if not isinstance(template, dict):
+                raise ValueError("template directive must be a mapping")
+            with context.mount_scope("h" + _hash_obj(directive)[:8]) as scope:
+                name = str(renderer.render_value(template.get("name", ""), context))
+                params = {
+                    str(key): renderer.render_value(value, context)
+                    for key, value in template.items()
+                    if key != "name"
+                }
+            params.setdefault(
+                "arch", "x86_64" if context.arch == "x86_64" else "aarch64"
+            )
+            children, method = expand_builtin_template(name, params, pkg_manager)
+            previous = dict(context.values)
+            previous_template = getattr(renderer, "builtin_method", None)
+            context.values.update(params)
+            renderer.builtin_method = method
+            template_path = method.directory / f"{name}.yaml"
+            if template_path in fragment_stack:
+                raise ValueError(f"template fragment cycle: {name}")
+            fragment_stack.append(template_path)
+            file_dirs.append(method.directory)
+            try:
+                for child in children:
+                    before = len(definition.directives)
+                    apply_directive(child)
+                    if scope.mounts:
+                        for index in range(before, len(definition.directives)):
+                            item = definition.directives[index]
+                            if isinstance(item, Run):
+                                definition.directives[index] = RunWithMounts(
+                                    scope.mounts, item.command
+                                )
+                            elif isinstance(item, RunWithMounts):
+                                definition.directives[index] = RunWithMounts(
+                                    tuple(dict.fromkeys((*scope.mounts, *item.mounts))),
+                                    item.command,
+                                )
+            finally:
+                file_dirs.pop()
+                fragment_stack.pop()
+                context.values = previous
+                renderer.builtin_method = previous_template
+        elif "boutique" in directive:
+            boutique_data = renderer.render_value(directive["boutique"], context)
+            if not isinstance(boutique_data, dict):
+                raise ValueError("Boutique directive must be a mapping")
+            filename = f"{boutique_data.get('name', 'tool')}.json"
+            plan.add_file(
+                DeclaredFile(
+                    name=filename,
+                    contents=json.dumps(boutique_data, indent=2) + "\n",
+                ),
+                renderable=False,
+            )
+            plan.copy_sources.append(
+                CopySource(source=filename, declared_name=filename)
+            )
+            definition.add(Run("mkdir -p /boutique"))
+            definition.add(Copy((filename,), f"/boutique/{filename}"))
+        elif "test" in directive:
+            raise ValueError(NESTED_TEST_DIRECTIVE_ERROR)
+        else:
+            raise ValueError(f"unsupported directive: {directive}")
 
     for directive in build.get("directives", []) or []:
         apply_directive(directive)

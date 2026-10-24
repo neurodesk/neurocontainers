@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .config import canonical_architecture
-from .shared_inputs import SharedInputs
+from .shared_inputs import working_tree_inputs
 
 
 def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
@@ -27,7 +27,7 @@ def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
                 "--date=format:%Y%m%d",
                 "--",
                 str(recipe_dir),
-                *SharedInputs.from_recipe(recipe).roots,
+                *working_tree_inputs(recipe, repo_root).roots,
             ],
             cwd=repo_root,
             check=True,

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import shlex
-from pathlib import PurePosixPath
 from typing import Any
 
 from .ir import (
@@ -13,7 +11,6 @@ from .ir import (
     Env,
     From,
     Install,
-    LiteralFile,
     Run,
     RunWithMounts,
     User,
@@ -97,18 +94,6 @@ def _render_env(values: dict[str, str]) -> list[str]:
     return lines
 
 
-def _render_literal_file(item: LiteralFile) -> str:
-    target = shlex.quote(item.name)
-    parent = str(PurePosixPath(item.name).parent)
-    commands: list[str] = []
-    if parent not in {"", "."}:
-        commands.append(f"mkdir -p {shlex.quote(parent)}")
-    commands.append(f"cat > {target} <<'EOF'\n{item.contents.rstrip()}\nEOF")
-    if item.executable:
-        commands.append(f"chmod +x {target}")
-    return " &&\n ".join(commands)
-
-
 def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str]:
     if isinstance(directive, From):
         if not directive.image:
@@ -142,8 +127,6 @@ def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str
         return [f"USER {directive.user}"]
     if isinstance(directive, Entrypoint):
         return ['ENTRYPOINT ["{}"]'.format(directive.command)]
-    if isinstance(directive, LiteralFile):
-        return [_indent_run_instruction(f"RUN {_render_literal_file(directive)}")]
     raise TypeError(f"unsupported directive: {directive!r}")
 
 
@@ -195,8 +178,6 @@ def _instruction_records(
         return [{"name": "user", "kwds": {"user": directive.user}}]
     if isinstance(directive, Entrypoint):
         return [{"name": "entrypoint", "kwds": {"args": [directive.command]}}]
-    if isinstance(directive, LiteralFile):
-        return [{"name": "run", "kwds": {"command": _render_literal_file(directive)}}]
     raise TypeError(f"unsupported directive: {directive!r}")
 
 
