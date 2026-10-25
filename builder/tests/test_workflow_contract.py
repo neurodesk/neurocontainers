@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
 from pathlib import Path
+
+import pytest
+import yaml
+
+from builder.release_plan import plan_recipe_changes
+from builder.shared_inputs import SharedInputs
 
 
 def test_build_app_workflow_uses_staged_cache_context() -> None:
@@ -67,6 +74,53 @@ def test_candidate_workflow_skips_mixed_prs_without_hiding_other_detection_error
     assert 'echo "changed_recipes=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
     assert 'echo "source_only_recipes=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
     assert 'exit "$status"' in candidate_workflow
+
+
+@pytest.mark.parametrize(
+    "changed_path",
+    [
+        "recipes/tool/helper.sh",
+        "macros/fixture.yaml",
+        "macros/nested/helper.py",
+        "builder/templates/fixture.yaml",
+        "builder/templates/helper.sh",
+    ],
+)
+def test_promotion_push_trigger_covers_planned_recipe_inputs(changed_path: str) -> None:
+    workflow = yaml.safe_load(
+        Path(".github/workflows/promote-container-candidate.yml").read_text()
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    fragments = {
+        "builder/templates/fixture.yaml": (
+            "binaries:\n  directives:\n  - include: fixture.yaml\n"
+            "  - file: {name: template-helper, filename: helper.sh}\n"
+        ),
+        "macros/fixture.yaml": (
+            "directives:\n- file: {name: macro-helper, filename: nested/helper.py}\n"
+        ),
+    }
+    recipe = {"build": {"directives": [{"group": [{"template": {"name": "fixture"}}]}]}}
+    dependencies = SharedInputs.from_recipe(recipe, fragments.get)
+    plan = plan_recipe_changes(
+        [changed_path],
+        {"tool": recipe},
+        {"tool": recipe},
+        shared_dependencies={"tool": dependencies},
+    )
+    assert plan.candidate_recipes == ["tool"]
+    assert triggers["push"]["branches"] == ["main"]
+    assert any(
+        fnmatchcase(changed_path, pattern) for pattern in triggers["push"]["paths"]
+    )
+    for unrelated in (
+        "builder/recipe.py",
+        "tools/one_pr_release.py",
+        "releases/tool/1.0.0.json",
+    ):
+        assert not any(
+            fnmatchcase(unrelated, pattern) for pattern in triggers["push"]["paths"]
+        )
 
 
 def test_promotion_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> (

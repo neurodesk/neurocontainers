@@ -16,8 +16,11 @@ on:
     paths:
       # The trusted resolve job runs the same release planner as the PR gate and
       # schedules artifact promotion only when that plan contains candidates.
-      # This broad trigger also catches recipe-local build inputs such as scripts.
+      # Track the same roots as shared-input discovery, including macro assets
+      # and builtin fragments that can change without a recipe-local edit.
       - "recipes/**"
+      - "macros/**"
+      - "builder/templates/**"
   workflow_dispatch:
     inputs:
       pr_number:
