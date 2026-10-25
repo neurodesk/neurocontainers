@@ -1,7 +1,7 @@
 {
   "apps": {
     "lashis 2.0.0": {
-      "version": "20260508",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     }
