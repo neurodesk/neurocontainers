@@ -19,7 +19,7 @@ variables:
   julia_sha256: 41b84d727e4e96fbf3ed9e92fa195d773d247b9097f73fad688f8b699758bae7
   base_image_digest: sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
   openrecon_ubuntu_version: '24.04'
-  shimmingtoolbox_commit: 0afbd9e133df1eeca8deecdf37875825462dd43b
+  shimmingtoolbox_tag: '1.5'
   numpy_version: 2.2.6
   scipy_version: 1.15.3
   nibabel_version: 5.4.2
@@ -39,11 +39,18 @@ auto_update:
         variable: upstream_commit
     - id: shimmingtoolbox
       dependency: true
-      method: github_commit
+      method: github_release
       repo: shimming-toolbox/shimming-toolbox
-      ref: master
+      version_regex: v?(?P<version>\d+(?:\.\d+)+)
       target:
-        variable: shimmingtoolbox_commit
+        variable: shimmingtoolbox_tag
+        value: tag
+    - id: shimmingtoolbox_archive
+      dependency: true
+      method: http_digest
+      url: https://github.com/shimming-toolbox/shimming-toolbox/archive/refs/tags/{{ context.shimmingtoolbox_tag }}.tar.gz
+      target:
+        file: shimmingtoolbox_archive
     - id: base_image
       dependency: true
       method: oci_digest
@@ -165,7 +172,8 @@ deploy:
     - st_prepare_fieldmap
 files:
   - name: shimmingtoolbox_archive
-    url: https://github.com/shimming-toolbox/shimming-toolbox/archive/{{ context.shimmingtoolbox_commit }}.tar.gz
+    url: https://github.com/shimming-toolbox/shimming-toolbox/archive/refs/tags/{{ context.shimmingtoolbox_tag }}.tar.gz
+    sha256: b7cd51f93c0c041ff6acc800f7034c3bff0452c2908d5b7ab20a0e9912461cc9
   - name: test_b0mapromeo_analytic.py
     filename: test_b0mapromeo_analytic.py
   - name: test_b0mapromeo_artifact.py
