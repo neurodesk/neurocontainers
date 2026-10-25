@@ -163,9 +163,18 @@ files:
     contents: |-
       #!/usr/bin/env sh
       set -eu
-      mne_vscode_data="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}}/mne-vscode-$(id -u)"
-      mkdir -p "$mne_vscode_data"
-      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --user-data-dir="$mne_vscode_data" "$@"
+      has_user_data_dir=false
+      for argument in "$@"; do
+        case "$argument" in
+          --user-data-dir|--user-data-dir=*) has_user_data_dir=true ;;
+        esac
+      done
+      if [ "$has_user_data_dir" = false ]; then
+        mne_vscode_data="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}}/mne-vscode-$(id -u)"
+        mkdir -p "$mne_vscode_data"
+        set -- --user-data-dir="$mne_vscode_data" "$@"
+      fi
+      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions "$@"
 
 categories:
   - "electrophysiology"

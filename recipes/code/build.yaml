@@ -244,9 +244,18 @@ files:
     contents: |
       #!/usr/bin/env sh
       set -eu
-      vscode_data="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}}/code-vscode-$(id -u)"
-      mkdir -p "$vscode_data"
-      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --user-data-dir="$vscode_data" --no-sandbox "$@"
+      has_user_data_dir=false
+      for argument in "$@"; do
+        case "$argument" in
+          --user-data-dir|--user-data-dir=*) has_user_data_dir=true ;;
+        esac
+      done
+      if [ "$has_user_data_dir" = false ]; then
+        vscode_data="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}}/code-vscode-$(id -u)"
+        mkdir -p "$vscode_data"
+        set -- --user-data-dir="$vscode_data" "$@"
+      fi
+      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox "$@"
 
   - name: module.sh
     contents: |

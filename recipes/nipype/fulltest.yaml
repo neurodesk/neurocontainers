@@ -44,8 +44,8 @@ tests:
   - name: Python and Jupyter editor extensions
     description: Verify shared extensions are installed outside home.
     command: >-
-      /usr/bin/code --no-sandbox --user-data-dir="${output_dir}/vscode-test-data"
-      --extensions-dir=/opt/vscode-extensions --list-extensions
+      /usr/local/sbin/code --no-sandbox --user-data-dir="${output_dir}/vscode-test-data"
+      --list-extensions
       | grep -E '^(ms-python.python|ms-python.vscode-pylance|ms-toolsai.jupyter|ms-toolsai.jupyter-keymap|ms-toolsai.jupyter-renderers)$'
       | sort -u | wc -l
     expected_output_contains: "5"
