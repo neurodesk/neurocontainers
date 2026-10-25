@@ -53,6 +53,121 @@ def test_observation_is_frozen() -> None:
         observed.value = "1.3"  # type: ignore[misc]
 
 
+def test_github_commit_observes_nested_submodules_at_the_selected_parent() -> None:
+    session = Mock()
+    session.get.side_effect = [
+        response(data={"sha": "a" * 40}),
+        response(data={"status": "ahead", "ahead_by": 1}),
+        response(
+            data={
+                "type": "submodule",
+                "sha": "b" * 40,
+                "submodule_git_url": "https://github.com/org/helper.git",
+            }
+        ),
+        response(
+            data={
+                "type": "submodule",
+                "sha": "c" * 40,
+                "submodule_git_url": "https://github.com/org/backend",
+            }
+        ),
+    ]
+    observed = update_observations.observe_source(
+        {
+            "method": "github_commit",
+            "repo": "org/tool",
+            "ref": "release/2",
+            "submodules": {
+                "helper_commit": ["third_party/helper"],
+                "backend_commit": ["third_party/helper", "backend"],
+            },
+        },
+        session,
+        current="0" * 40,
+    )
+    assert observed.value == "a" * 40
+    assert observed.metadata == {
+        "ref": "release/2",
+        "ancestry": "ahead",
+        "ahead_by": 1,
+        "helper_commit": "b" * 40,
+        "backend_commit": "c" * 40,
+    }
+    calls = session.get.call_args_list
+    assert len(calls) == 4
+    assert calls[2].args == (
+        "https://api.github.com/repos/org/tool/contents/third_party/helper",
+    )
+    assert calls[2].kwargs == {"params": {"ref": "a" * 40}, "timeout": 30}
+    assert calls[3].args == (
+        "https://api.github.com/repos/org/helper/contents/backend",
+    )
+    assert calls[3].kwargs == {"params": {"ref": "b" * 40}, "timeout": 30}
+
+
+@pytest.mark.parametrize(
+    "submodules",
+    [
+        {},
+        [],
+        {"ref": ["helper"]},
+        {"bad-name": ["helper"]},
+        {"helper": []},
+        {"helper": "path"},
+        {"helper": ["../helper"]},
+        {"helper": ["/helper"]},
+        {"helper": ["helper?ref=main"]},
+    ],
+)
+def test_github_commit_rejects_invalid_submodule_selectors(submodules) -> None:
+    with pytest.raises(ValueError, match="submodules"):
+        update_observations.validate_source(
+            {
+                "method": "github_commit",
+                "repo": "org/tool",
+                "submodules": submodules,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"type": "file", "sha": "b" * 40},
+        {
+            "type": "submodule",
+            "sha": "bad",
+            "submodule_git_url": "https://github.com/org/helper",
+        },
+        {
+            "type": "submodule",
+            "sha": "b" * 40,
+            "submodule_git_url": "https://example.org/org/helper",
+        },
+        {
+            "type": "submodule",
+            "sha": "b" * 40,
+            "submodule_git_url": "https://user@github.com/org/helper",
+        },
+    ],
+)
+def test_github_commit_rejects_invalid_submodule_response(entry) -> None:
+    session = Mock()
+    session.get.side_effect = [response(data={"sha": "a" * 40}), response(data=entry)]
+    with pytest.raises(ValueError, match="submodule"):
+        update_observations.observe_source(
+            {
+                "method": "github_commit",
+                "repo": "org/tool",
+                "submodules": {"helper_commit": ["helper"]},
+            },
+            session,
+            current="a" * 40,
+        )
+    assert session.get.call_count == 2
+
+
 def test_existing_version_provider_delegates_and_preserves_raw_tag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -375,10 +490,16 @@ def test_github_commit_rejects_diverged_history() -> None:
 
     with pytest.raises(ValueError, match="not a descendant"):
         update_observations.observe_source(
-            {"method": "github_commit", "repo": "org/tool", "ref": "main"},
+            {
+                "method": "github_commit",
+                "repo": "org/tool",
+                "ref": "main",
+                "submodules": {"helper_commit": ["helper"]},
+            },
             github_session,
             current="1" * 40,
         )
+    assert github_session.get.call_count == 2
 
 
 def test_git_commit_uses_bounded_argument_vector(
