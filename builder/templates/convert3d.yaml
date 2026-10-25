@@ -23,9 +23,11 @@ binaries:
     -   environment:
             C3DPATH: '{{ self.install_path }}'
             PATH: '{{ self.install_path }}/bin:$PATH'
+    -   file:
+            name: convert3d-archive
+            url: '{{ self.urls[self.version] }}'
     -   run: |
             {{ self.install_dependencies() }}
             echo "Downloading Convert3D ..."
             mkdir -p {{ self.install_path }}
-            curl -fsSL {{ self.urls[self.version] }} \
-            | tar -xz -C {{ self.install_path }} --strip-components 1
+            tar -xzf {{ get_file("convert3d-archive") }} -C {{ self.install_path }} --strip-components 1
