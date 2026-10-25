@@ -96,6 +96,12 @@ def process(connection, config, metadata):
 
 def compute_bloch_siegert_maps(input_images, settings=None):
     settings = dict(settings or {})
+    settings["predummiescounts"] = _setting_count(
+        settings, "predummiescounts", default=PRE_DUMMY
+    )
+    settings["postdummiescounts"] = _setting_count(
+        settings, "postdummiescounts", default=POST_DUMMY
+    )
     magnitude_images, phase_images = _split_magnitude_phase_images(input_images)
     if not magnitude_images:
         raise ValueError("Bloch-Siegert mapping requires magnitude image messages")
@@ -113,7 +119,9 @@ def compute_bloch_siegert_maps(input_images, settings=None):
         zip(magnitude_groups, phase_groups)
     ):
         sequence_nframe, sequence_ntx = _sequence_shape(
-            min(len(magnitude_group), len(phase_group))
+            min(len(magnitude_group), len(phase_group)),
+            settings["predummiescounts"],
+            settings["postdummiescounts"],
         )
         if nframe is None:
             nframe = sequence_nframe
@@ -312,8 +320,8 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
         _meta_text(phase_source_meta, "RescaleIntercept") or "missing",
     )
 
-    myPRE_DUMMY = _setting_float(settings, "predummiescounts", default=PRE_DUMMY)
-    myPOST_DUMMY = _setting_float(settings, "postdummiescounts", default=POST_DUMMY)
+    myPRE_DUMMY = settings["predummiescounts"]
+    myPOST_DUMMY = settings["postdummiescounts"]
 
 
     phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
@@ -746,13 +754,13 @@ def _pair_slice_groups(magnitude_groups, phase_groups):
     return paired_magnitude, paired_phase
 
 
-def _sequence_shape(frame_count):
+def _sequence_shape(frame_count, pre_dummy, post_dummy):
     ntx = 8 if frame_count > 25 else 1
     required_frames = (
         ECHOES_PER_TX * ntx
         + ntx
-        + (myPRE_DUMMY + 1)
-        + (myPOST_DUMMY + 1)
+        + (pre_dummy + 1)
+        + (post_dummy + 1)
     )
     if frame_count >= required_frames:
         return required_frames, ntx
@@ -1291,12 +1299,12 @@ def _settings_from_config(config):
         "predummiescounts": _config_float(
             config,
             "predummiescounts",
-            default=myPRE_DUMMY,
+            default=PRE_DUMMY,
         ),
         "postdummiescounts": _config_float(
             config,
             "postdummiescounts",
-            default=myPOST_DUMMY,
+            default=POST_DUMMY,
         ),
         "phasewrap": _config_float(config, "phasewrap", default=PHASE_WRAP),
     }
@@ -1335,6 +1343,13 @@ def _setting_float(settings, key, default=0.0):
         return float(settings.get(key, default))
     except (TypeError, ValueError):
         return float(default)
+
+
+def _setting_count(settings, key, default):
+    value = _setting_float(settings, key, default)
+    if not math.isfinite(value) or value < 0 or not value.is_integer():
+        raise ValueError(f"{key} must be a nonnegative integer, got {value}")
+    return int(value)
 
 
 def _coerce_bool(value, default=False):

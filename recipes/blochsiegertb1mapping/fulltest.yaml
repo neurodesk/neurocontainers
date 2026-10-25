@@ -80,12 +80,13 @@ tests:
         ]
         return magnitude + phase
 
-    # The first two pre-reference frames are deliberately different: B0 must
-    # use only frame 3, while BSp must depend only on A and B.
+    # A zero temporal baseline makes the analytic BS phase exactly
+    # -(A-B) = -(-0.2-0.1) = 0.3 radians, even after baseline fitting.
+    # Nonzero B0 increments and temporal drift are tested separately below.
     one_tx_phase = [
-        0.4, -0.2, 0.1,
-        0.1, 0.2, -0.2, 0.4,
-        0.1, 0.3, 0.5,
+        0.0, 0.0, 0.0,
+        0.1, 0.0, -0.2, 0.0,
+        0.0, 0.0, 0.0,
         -0.6,
     ]
     one_tx_images = make_dataset(one_tx_phase)
@@ -93,7 +94,7 @@ tests:
     assert settings["deltatems"] == 1.0
     assert settings["applymask"] is False
     assert settings["applyfilter"] is False
-    assert module.FILTER_POLYNOMIAL_ORDER_BY_TX == {1: 10, 8: 10}
+    assert module.FILTER_POLYNOMIAL_ORDER_BY_TX == {1: 10, 8: 10, 16: 10}
     assert "sendb1" not in settings
     assert "sendb0" not in settings
     assert "sendmask" not in settings
@@ -106,21 +107,32 @@ tests:
     assert one_tx["phsc"].shape == (1, 1, 8, 8)
     assert one_tx["b0"].shape == (1, 8, 8)
     assert np.allclose(one_tx["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
-    expected_b1 = math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
+    assert settings["bspulsewidthms"] == 6
+    # At B0=0 the calibration is a monotonic one-dimensional table.
+    # Its independent linear interpolation is the reference for the runtime's
+    # two-dimensional B0/BSp inversion; the old square-root model is not used.
+    tables = np.load(wrapper_path.parent / "blochsiegert_lut.npz")
+    zero_b0 = np.flatnonzero(tables["b0_offsets"] == 0)[0]
+    def calibrated_b1(phase, pulse_width):
+        width = np.flatnonzero(tables["pulse_widths"] == pulse_width)[0]
+        calibration = tables["lut"][width, zero_b0]
+        assert np.all(np.diff(calibration) >= 0)
+        return float(np.interp(phase, calibration, tables["b1_scales"]))
+    expected_b1 = calibrated_b1(0.3, 6)
     assert np.allclose(one_tx["b1"][0, 0, 3, 3], expected_b1, atol=1e-5)
     wider_pulse = module.compute_bloch_siegert_maps(
         one_tx_images,
-        module._settings_from_config({"parameters": {"bspulsewidthms": 24.0}}),
+        module._settings_from_config({"parameters": {"bspulsewidthms": 12}}),
     )
     assert np.allclose(
         wider_pulse["b1"][0, 0, 3, 3],
-        expected_b1 / math.sqrt(2.0),
+        calibrated_b1(0.3, 12),
         atol=1e-5,
     )
     assert np.allclose(one_tx["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
     assert np.allclose(
         one_tx["b0"][0, 3, 3],
-        0.2 * 1000.0 / (2.0 * math.pi),
+        0.0,
         atol=1e-5,
     )
     assert np.allclose(
@@ -128,8 +140,15 @@ tests:
         11.74 * 200.0 / expected_b1,
         atol=1e-5,
     )
+    b0_phase = list(one_tx_phase)
+    b0_phase[:3] = [0.4, -0.2, 0.0]
+    b0_phase[7:10] = [0.2, 0.4, 0.6]
+    b0_images = make_dataset(b0_phase)
+    nonzero_b0 = module.compute_bloch_siegert_maps(b0_images, settings)
+    assert np.allclose(nonzero_b0["b0"][0, 3, 3],
+                       0.2 * 1000.0 / (2.0 * math.pi), atol=1e-5)
     half_ms_b0 = module.compute_bloch_siegert_maps(
-        one_tx_images,
+        b0_images,
         module._settings_from_config({"parameters": {"deltatems": 0.5}}),
     )
     assert np.allclose(
@@ -146,8 +165,8 @@ tests:
         assert "deltatems must be positive" in str(error)
     else:
         raise AssertionError("zero Delta TE must be rejected")
-    assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.0, atol=1e-5)
-    assert np.allclose(one_tx["b1"][0, 0, 0, 0], 0.0, atol=1e-5)
+    assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.3, atol=1e-5)
+    assert np.allclose(one_tx["b1"][0, 0, 0, 0], expected_b1, atol=1e-5)
     assert np.allclose(one_tx["phsc"][0, 0, 0, 0], -0.6, atol=1e-5)
     assert np.allclose(
         one_tx["b0"][0, 0, 0],
@@ -171,6 +190,7 @@ tests:
         pre_dummy=2,
         phase_c_indices=np.asarray([3]),
         phase_d_indices=np.asarray([4]),
+        magnitude_mask=np.ones((1, 5, 5), dtype=bool),
     )
     assert bool(phase_mask[0, 2, 0]) is False
     assert float(phase_std[0, 2, 0]) >= 30.0
@@ -214,19 +234,21 @@ tests:
     else:
         raise AssertionError("filtering without trusted voxels must fail")
 
-    original_extrapolator = module._extrapolate_phase_volume
-    extrapolation_modes = []
-    def recording_extrapolator(
-        volume,
-        mask,
-        polynomial_order,
-        zero_non_positive,
-        apply_to_entire_volume,
-        smooth_sigma,
-    ):
-        extrapolation_modes.append(apply_to_entire_volume)
+    # A linear field is discrete-harmonic. Region filling its missing
+    # interior must recover that field while retaining trusted boundary data.
+    linear_field = np.add.outer(np.arange(5), np.arange(5)).astype(np.float32)[None]
+    boundary = np.ones(linear_field.shape, dtype=bool)
+    boundary[:, 1:4, 1:4] = False
+    damaged = linear_field.copy()
+    damaged[~boundary] = -100
+    recovered = module._regionfill_phase_volume(damaged, boundary)
+    assert np.allclose(recovered, linear_field, atol=1e-4)
+    original_regionfill = module._regionfill_phase_volume
+    fill_modes = []
+    def recording_regionfill(volume, mask, apply_to_entire_volume=False):
+        fill_modes.append(apply_to_entire_volume)
         return np.asarray(volume, dtype=np.float32)
-    module._extrapolate_phase_volume = recording_extrapolator
+    module._regionfill_phase_volume = recording_regionfill
     try:
         test_bsp = np.ones((1, 1, 3, 3), dtype=np.float32)
         test_b0 = np.ones((1, 3, 3), dtype=np.float32)
@@ -234,14 +256,14 @@ tests:
         module._filter_bloch_siegert_maps(
             test_bsp, test_b0, test_mask, test_mask, False
         )
-        assert extrapolation_modes == [False, False]
-        extrapolation_modes.clear()
+        assert fill_modes == [False, True]
+        fill_modes.clear()
         module._filter_bloch_siegert_maps(
             test_bsp, test_b0, test_mask, test_mask, True
         )
-        assert extrapolation_modes == [True, False]
+        assert fill_modes == [True, True]
     finally:
-        module._extrapolate_phase_volume = original_extrapolator
+        module._regionfill_phase_volume = original_regionfill
 
     hole_2d = np.ones((5, 5), dtype=bool)
     hole_2d[2, 2] = False
@@ -261,9 +283,9 @@ tests:
     assert np.all(filled_tunnel[:, 2, 2])
 
     shorter_dummy_phase = [
-        0.4, 0.1,
-        0.1, 0.2, -0.2, 0.4,
-        0.2, 0.4,
+        *([0.0] * 2),
+        0.1, 0.0, -0.2, 0.0,
+        *([0.0] * 2),
         -0.6,
     ]
     shorter_dummy_settings = module._settings_from_config(
@@ -289,14 +311,14 @@ tests:
     )
     assert np.allclose(
         shorter_dummy["b0"][0, 3, 3],
-        0.2 * 1000.0 / (2.0 * math.pi),
+        0.0,
         atol=1e-5,
     )
 
     longer_dummy_phase = [
-        0.4, -0.2, 0.0, 0.2,
-        0.1, 0.2, -0.2, 0.4,
-        0.0, 0.2, 0.4, 0.6,
+        *([0.0] * 4),
+        0.1, 0.0, -0.2, 0.0,
+        *([0.0] * 4),
         -0.6,
     ]
     longer_dummy_settings = module._settings_from_config(
@@ -322,14 +344,14 @@ tests:
     )
     assert np.allclose(
         longer_dummy["b0"][0, 3, 3],
-        0.2 * 1000.0 / (2.0 * math.pi),
+        0.0,
         atol=1e-5,
     )
 
     zero_dummy_phase = [
-        0.1,
-        0.1, 0.2, -0.2, 0.4,
-        0.3,
+        *([0.0] * 1),
+        0.1, 0.0, -0.2, 0.0,
+        *([0.0] * 1),
         -0.6,
     ]
     zero_dummy_settings = module._settings_from_config(
@@ -345,15 +367,14 @@ tests:
     assert np.allclose(zero_dummy["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
     assert np.allclose(
         zero_dummy["b0"][0, 3, 3],
-        0.2 * 1000.0 / (2.0 * math.pi),
+        0.0,
         atol=1e-5,
     )
 
     ten_pre_dummy_phase = [
-        0.4, -0.2,
-        *([0.1] * 9),
-        0.1, 0.2, -0.2, 0.4,
-        0.1, 0.3, 0.5,
+        *([0.0] * 11),
+        0.1, 0.0, -0.2, 0.0,
+        *([0.0] * 3),
         -0.6,
     ]
     ten_pre_dummy_settings = module._settings_from_config(
@@ -369,9 +390,23 @@ tests:
     assert np.allclose(ten_pre_dummy["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
     assert np.allclose(
         ten_pre_dummy["b0"][0, 3, 3],
-        0.2 * 1000.0 / (2.0 * math.pi),
+        0.0,
         atol=1e-5,
     )
+
+    # A known quadratic baseline has equal phase at reference times 3 and
+    # 8, so B0 is zero. Removing it must retain the planted 0.3-rad BS phase.
+    drift_phase = [0.01 * (t - 3) * (t - 8) for t in range(1, 10)]
+    drift_phase[3] += 0.1
+    drift_phase[5] -= 0.2
+    drift_phase[8] = -0.6
+    drift = module.compute_bloch_siegert_maps(
+        make_dataset(drift_phase),
+        module._settings_from_config({"parameters": {"postdummy": 0}}),
+    )
+    assert np.allclose(drift["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
+    assert np.allclose(drift["b0"][0, 3, 3], 0.0, atol=1e-5)
+    assert np.allclose(drift["b1"][0, 0, 3, 3], expected_b1, atol=1e-5)
 
     small_negative_phase = list(one_tx_phase)
     small_negative_phase[5] = 0.2
@@ -379,7 +414,7 @@ tests:
         make_dataset(small_negative_phase),
         settings,
     )
-    assert np.allclose(small_negative["bsp"][0, 0, 3, 3], -0.1, atol=1e-5)
+    assert np.allclose(small_negative["bsp"][0, 0, 3, 3], 0.0, atol=1e-5)
     assert np.allclose(small_negative["b1"][0, 0, 3, 3], 0.0, atol=1e-5)
 
     retained_negative_phase = list(one_tx_phase)
@@ -388,7 +423,7 @@ tests:
         make_dataset(retained_negative_phase),
         settings,
     )
-    assert np.allclose(retained_negative["bsp"][0, 0, 3, 3], -0.5, atol=1e-5)
+    assert np.allclose(retained_negative["bsp"][0, 0, 3, 3], 0.0, atol=1e-5)
     assert np.allclose(retained_negative["b1"][0, 0, 3, 3], 0.0, atol=1e-5)
 
     wrapped_negative_phase = list(one_tx_phase)
@@ -560,11 +595,12 @@ tests:
     assert int(np.min(b1_pixels)) == 0
     assert int(np.max(b1_pixels)) == 4095
     first_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
-    assert first(first_meta.get("SeriesDescription")) == "bss_source-b1"
+    assert first(first_meta.get("SeriesDescription")) == "bss_source OR B1 map"
     assert first(first_meta.get("BlochSiegertOutput")) == "BlochSiegertB1Map"
     assert first(first_meta.get("BlochSiegertUnits")) == "uT"
     assert int(first(first_meta.get("Keep_image_geometry"))) == 0
-    assert first(first_meta.get("SequenceDescriptionAdditional")) == "openrecon"
+    assert first(first_meta.get("SequenceDescription")) == "bss_source OR B1 map"
+    assert first(first_meta.get("ProtocolName")) == "bss_source OR B1 map"
     assert first(first_meta.get("IceMiniHead")) is None
     assert first(first_meta.get("ImageTypeValue3")) is None
     assert np.isclose(
@@ -583,7 +619,7 @@ tests:
         f"uT = display * {module._format_display_number(8.0 / 4095.0)} + 0"
     )
     assert first(first_meta.get("ImageComments")) == (
-        f"bss_source-b1; scanner display uint16 0-4095; {b1_formula}"
+        f"bss_source OR B1 map; scanner display uint16 0-4095; {b1_formula}"
     )
     assert first(first_meta.get("ImageComment")) == first(first_meta.get("ImageComments"))
     assert float(first(first_meta.get("WindowCenter"))) == 4.0
@@ -636,14 +672,14 @@ tests:
         restored = np.asarray(image.data, dtype=np.float64) * slope + intercept
         assert np.isclose(restored[0, 0, 3, 3], 0.0, atol=abs(slope) / 2.0)
 
-    eight_tx_phase = [0.1] * 46
+    eight_tx_phase = [0.0] * 46
     for tx_index in range(8):
         eight_tx_phase[3 + 4 * tx_index] = 0.1
-        eight_tx_phase[4 + 4 * tx_index] = 0.2
+        eight_tx_phase[4 + 4 * tx_index] = 0.0
         eight_tx_phase[5 + 4 * tx_index] = -0.2 - 0.01 * tx_index
-        eight_tx_phase[6 + 4 * tx_index] = 0.4
+        eight_tx_phase[6 + 4 * tx_index] = 0.0
     eight_tx_phsc = [-0.8 + 0.1 * tx_index for tx_index in range(8)]
-    eight_tx_phase[35:38] = [0.3, 0.3, 0.3]
+    eight_tx_phase[35:38] = [0.0, 0.0, 0.0]
     eight_tx_phase[38:46] = eight_tx_phsc
     eight_tx_images = make_dataset(eight_tx_phase, series_name="bss_8tx")
     eight_tx = module.compute_bloch_siegert_maps(eight_tx_images, settings)
@@ -665,13 +701,37 @@ tests:
         ismrmrd.Meta.deserialize(mandatory_outputs[7].attribute_string).get(
             "SeriesDescription"
         )
-    ) == "bss_8tx-b1-tx08"
+    ) == "bss_8tx OR B1 map Tx8"
     assert first(
         ismrmrd.Meta.deserialize(mandatory_outputs[8].attribute_string).get(
             "SeriesDescription"
         )
-    ) == "bss_8tx-b0"
+    ) == "bss_8tx OR B0 Map"
     module._validate_output_images(mandatory_outputs, eight_tx_images)
+
+    sixteen_tx_phase = [0.0] * 86
+    for tx_index in range(16):
+        sixteen_tx_phase[3 + 4 * tx_index] = 0.1
+        sixteen_tx_phase[5 + 4 * tx_index] = -0.2
+    sixteen_tx_phsc = [-0.8 + 0.05 * tx for tx in range(16)]
+    sixteen_tx_phase[70:86] = sixteen_tx_phsc
+    sixteen_images = make_dataset(sixteen_tx_phase, series_name="bss_16tx")
+    sixteen = module.compute_bloch_siegert_maps(sixteen_images, settings)
+    assert sixteen["nframe"] == 86 and sixteen["ntx"] == 16
+    assert sixteen["b1"].shape == (16, 1, 8, 8)
+    assert np.allclose(sixteen["bsp"][:, 0, 3, 3], 0.3, atol=1e-5)
+    assert np.allclose(sixteen["b1"][:, 0, 3, 3], expected_b1, atol=1e-5)
+    assert np.allclose(sixteen["phsc"][:, 0, 3, 3], sixteen_tx_phsc, atol=1e-5)
+    assert np.allclose(sixteen["b0"], 0.0, atol=1e-5)
+    sixteen_outputs = module.build_output_images(
+        sixteen, dict(settings, sendbsp=False, sendphsc=False), sixteen_images,
+    )
+    assert [int(image.image_series_index) for image in sixteen_outputs] == [
+        *range(101, 117), 160, *([180] * 16), 181,
+    ]
+    for image in sixteen_outputs[:16]:
+        assert np.asarray(image.data).shape == (1, 1, 8, 8)
+        assert list(image.getHead().matrix_size) == [8, 8, 1]
 
     forty_slice_phase = list(eight_tx_phase)
     forty_slice_magnitude = []

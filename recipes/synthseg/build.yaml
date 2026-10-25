@@ -31,7 +31,7 @@ variables:
   glasser_atlas_sha256: 99a6ae33753687e3ef37330dac7b6b9ececd46750938fb1c58e7ed7b157ba1a1
   glasser_names_url: https://ndownloader.figshare.com/files/5534027
   glasser_names_sha256: d008cea4903e4047079020cf1d31f8b1fd8ca092d6ac8b060a8e71da40836e57
-  glasser_template_url: https://www.bic.mni.mcgill.ca/~vfonov/icbm/2009/mni_icbm152_nlin_asym_09a_nifti.zip
+  glasser_template_url: https://packages.bic.mni.mcgill.ca/mni-models/icbm152/mni_icbm152_nlin_asym_09a_nifti.zip
   glasser_template_sha256: 188e1706b0ed74a0d1b3a52ad1a2b198814815f70a65f3ded091b7ceb6296a44
   # mri_synthseg and the small label/name .npy files live in the FreeSurfer
   # source tree.
@@ -61,6 +61,7 @@ auto_update:
   container_version: "freesurfer"
   method: sources
   local:
+  - macros/openrecon_converters
   - macros/openrecon
   sources:
   - id: freesurfer
@@ -142,7 +143,7 @@ auto_update:
   - id: glasser_template
     dependency: true
     method: http_digest
-    url: https://www.bic.mni.mcgill.ca/~vfonov/icbm/2009/mni_icbm152_nlin_asym_09a_nifti.zip
+    url: https://packages.bic.mni.mcgill.ca/mni-models/icbm152/mni_icbm152_nlin_asym_09a_nifti.zip
     target:
       variable: glasser_template_sha256
 
@@ -176,6 +177,7 @@ build:
         - unzip
 
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_converters/nifti2mrd.yaml
 
     # TensorFlow 2.13 is the last release whose bundled Keras still accepts the
     # `fused=False` BatchNormalization argument that mri_synthseg 8.2.0 uses,
@@ -245,7 +247,6 @@ build:
     - run:
         - cp {{ get_file("verify_products.py") }} /opt/code/python-ismrmrd-server/verify_products.py
         - cp {{ get_file("synthseg.py") }} /opt/code/python-ismrmrd-server/synthseg.py
-        - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
         - cp {{ get_file("brainquant.py") }} /opt/code/python-ismrmrd-server/brainquant.py
@@ -297,8 +298,6 @@ files:
     sha256: "{{ context.glasser_template_sha256 }}"
   - name: synthseg.py
     filename: synthseg.py
-  - name: nifti2mrd.py
-    filename: nifti2mrd.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
