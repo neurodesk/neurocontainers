@@ -1,7 +1,7 @@
 {
   "apps": {
     "deepsif 0.0.1": {
-      "version": "20260629",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     }

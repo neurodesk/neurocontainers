@@ -1,12 +1,12 @@
 {
   "apps": {
     "sigviewer 0.6.4": {
-      "version": "20261013",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     },
     "sigviewerGUI-sigviewer 0.6.4": {
-      "version": "20261013",
+      "version": "20261024",
       "exec": "sigviewer",
       "apptainer_args": []
     }
