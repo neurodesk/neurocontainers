@@ -218,6 +218,7 @@ auto_update:
       dependency: true
       method: github_commit
       repo: pytorch/pytorch
+      ref: release/2.13
       target:
         variable: cblas_torch_commit
     - id: cblas-acl
