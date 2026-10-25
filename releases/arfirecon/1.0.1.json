@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "arfirecon 1.0.1": {
+      "version": "20261024",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}

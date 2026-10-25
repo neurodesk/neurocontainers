@@ -1,7 +1,7 @@
 {
   "apps": {
     "sodiumgriddingptpi 0.1.10": {
-      "version": "20260803",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     }

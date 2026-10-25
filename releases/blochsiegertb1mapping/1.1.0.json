@@ -1,7 +1,7 @@
 {
   "apps": {
     "blochsiegertb1mapping 1.1.0": {
-      "version": "20260915",
+      "version": "20261025",
       "exec": "",
       "apptainer_args": []
     }

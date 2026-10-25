@@ -1,7 +1,7 @@
 {
   "apps": {
     "vesselboost 2.0.5": {
-      "version": "20261019",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     }
