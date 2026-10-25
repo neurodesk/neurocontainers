@@ -1,12 +1,13 @@
 name: brainstemnavigator
 version: 1.0.0
+ants_version: 2.4.3
 tests:
   - name: atlas inspection help
     command: brainstemnavigator --help
     expected_output_contains: user-supplied Brainstem Navigator
   - name: registration tools
     command: antsRegistration --version && command -v antsApplyTransforms
-    expected_output_contains: antsApplyTransforms
+    expected_output_contains: ${ants_version}
   - name: synthetic mounted atlas inspection
     command: |-
       python - <<'PYTHON'
