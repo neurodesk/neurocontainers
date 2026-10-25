@@ -13,8 +13,9 @@ import numpy as np
 from builder.boutiques import extract, file_digest
 
 
-def verify(output: Path, version: str, *, image: Path | None,
-           descriptors: Path | None) -> dict:
+def verify(
+    output: Path, version: str, *, image: Path | None, descriptors: Path | None
+) -> dict:
     from boutiques.validator import validate_descriptor
 
     output = output.resolve()
@@ -47,7 +48,8 @@ def verify(output: Path, version: str, *, image: Path | None,
     def launch(name: str, invocation: dict) -> str:
         result = subprocess.run(
             [*launcher, str(descriptors / f"{name}.json"), json.dumps(invocation)],
-            text=True, capture_output=True,
+            text=True,
+            capture_output=True,
         )
         (output / f"{name}.log").write_text(result.stdout + result.stderr)
         result.check_returncode()
@@ -78,15 +80,25 @@ def verify(output: Path, version: str, *, image: Path | None,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--image", type=Path, help="Built QSMxT SIF to extract and execute")
-    mode.add_argument("--native-descriptors", type=Path,
-                      help="Validate descriptors against qsmxt on PATH, without a SIF")
+    mode.add_argument(
+        "--image", type=Path, help="Built QSMxT SIF to extract and execute"
+    )
+    mode.add_argument(
+        "--native-descriptors",
+        type=Path,
+        help="Validate descriptors against qsmxt on PATH, without a SIF",
+    )
     parser.add_argument("--version", required=True)
-    parser.add_argument("--output", type=Path, required=True,
-                        help="New directory for the phantom, results and evidence")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="New directory for the phantom, results and evidence",
+    )
     args = parser.parse_args()
-    evidence = verify(args.output, args.version, image=args.image,
-                      descriptors=args.native_descriptors)
+    evidence = verify(
+        args.output, args.version, image=args.image, descriptors=args.native_descriptors
+    )
     print(json.dumps(evidence))
 
 
