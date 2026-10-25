@@ -1,7 +1,7 @@
 {
   "apps": {
     "brainles-aurora_arm64 0.2.7": {
-      "version": "20261012",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     }

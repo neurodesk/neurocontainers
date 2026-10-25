@@ -1,7 +1,7 @@
 {
   "apps": {
     "deep-quality-estimation_arm64 0.0.3": {
-      "version": "20261012",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     }
