@@ -9,11 +9,11 @@ derived Bloch-Siegert map volumes back to the scanner.
 
 - Reconstructed MRD magnitude and phase `ismrmrd.Image` messages from the same
   Bloch-Siegert acquisition.
-- The workflow requires 11 frames per anatomical slice for the 1Tx case or 46
-  frames per anatomical slice for the 8Tx case. As in the MATLAB code, more
-  than 25 available frames selects 8 Tx channels; otherwise it selects 1 Tx.
-  The post-reference frames follow the four B/C/A/D echoes per channel, and
-  the dedicated Tx-phase block occupies the final `nTx` frames.
+- With the default two pre/post dummy counts, the workflow requires exactly
+  11, 46, or 86 frames per anatomical slice for 1, 8, or 16 Tx channels.
+  Configured dummy counts change those totals. The post-reference frames follow
+  the four B/C/A/D echoes per channel; the dedicated Tx-phase block occupies
+  the final `nTx` frames.
 - Phase images are expected in the same raw range used by the MATLAB code:
   `phase_radians = raw_phase * 2*pi / 4096 - pi`.
 
@@ -27,53 +27,53 @@ operations:
 - Build `phaseMask` from the first `PreDummy+1` frames and every C/D
   frame. Circularly average those frames, subtract the average phase from each
   selected frame, and calculate the phase-difference standard deviation in
-  degrees. `phaseMask` uses a `<30 degree` threshold.
+  degrees. Retain the 80% most phase-stable voxels within the magnitude mask.
 - Build `MaskForMagnitude` from `MBSS1`, the mean of magnitude frames
   `1:(2*nTx+2)`. For values below the global `MBSS1` mean, set
   `thr = mean(low_values) + 2 * std(low_values)`, then use `MBSS1 > thr`.
   Holes are first filled independently in every 2D slice, followed by a 3D
   hole fill for multi-slice volumes.
-- Compute each Tx Bloch-Siegert phase as `-angle(A * conj(B))`. The BSp and B1
-  calculations do not use the pre-reference frames.
-- Add `2*pi` where `BSp < -90 degrees` and retain the remaining small negative
-  values in the BSp output. Clamp only a separate B1-calculation copy to zero,
-  then compute `Meas_B1 = sqrt(BSp_for_B1 / KBS)` with
-  `KBS = 0.044 * bspulsewidthms / 6`.
-- For B0 only, exclude up to the first two pre-reference frames and circularly
-  average all remaining pre-reference frames through the last one. Average the
-  post-reference frames immediately after the B/C/A/D echoes and compute
-  `B0 = angle(post * conj(pre)) * 1000 / (2*pi*deltatems)`.
+- Fit a quadratic temporal baseline to the pre-reference, C/D and adjusted
+  post-reference samples at trusted voxels. Correct A and B for that baseline,
+  then compute each Tx Bloch-Siegert phase as `-angle(A * conj(B))`.
+- Add `2*pi` where the raw BSp is below -90 degrees. After region filling,
+  clamp negative BSp values to zero for both the BSp output and B1 lookup.
+- For B0, exclude up to the first two pre-reference frames and circularly
+  average the remaining pre-reference samples. Calculate the first post-frame
+  increment relative to that reference and subsequent post-frame increments
+  relative to their predecessor. Circularly average these increments and convert
+  to Hz with `B0 = mean_increment * 1000 / (2*pi*deltatems)`.
 - Use the final `nTx` frames as the dedicated transmit-phase block.
-- Filter every BS phase volume and the B0 map with a 3D polynomial fit (order
-  20 for 1Tx, order 10 for 8Tx)
-  over voxels trusted by `phaseMask`, followed by a 3D Gaussian filter with
-  `sigma=0.5` and multiplication by `MaskForMagnitude`. By default, only
-  untrusted BS phase voxels are replaced by the fit. `Apply Filter` replaces
-  the entire BS phase volume instead. B0 always replaces only untrusted voxels.
-  B1 is calculated from the resulting filtered BS phase.
+- Fill untrusted voxels in BSp and B0 using slice-wise harmonic interpolation.
+  Trusted samples remain fixed. The former polynomial extrapolation helper
+  remains in the module, but the active filtering path uses region filling.
+- Recover B1 from the packaged RF-pulse calibration table using B0 and BSp.
+  The default pulse width is 6 ms. B1 is not calculated from the earlier
+  square-root approximation; release smoke tests independently check the
+  zero-B0 calibration curve and recover the known BS phase with quadratic drift.
 
 ## Outputs
 
 All derived outputs are sent as explicit-volume MRD images with fresh returned
 series identities, `Keep_image_geometry = 0`, no source `IceMiniHead`, and
-`SequenceDescriptionAdditional = openrecon`. Every complete, nonconstant 3D
+matching series, sequence and protocol descriptions. Every complete, nonconstant 3D
 output volume is linearly encoded into the full scanner display range
 `0..4095`. DICOM `RescaleSlope` and `RescaleIntercept` restore its physical
 units, and window center/width are recorded in those physical units. A constant
 volume uses zero-valued pixels and stores its physical value in the intercept.
 
-- `<source>-b1` or `<source>-b1-txNN`: measured B1 maps in uT. Preferred series
+- `<source> OR B1 map` or `<source> OR B1 map TxN`: measured B1 maps in uT. Preferred series
   indices start at `101`.
-- `<source>-bsp` or `<source>-bsp-txNN`: Bloch-Siegert phase maps converted
+- `<source> OR BS Phase` or `<source> OR BS Phase TxN`: Bloch-Siegert phase maps converted
   from radians to degrees. Preferred series indices start at `120`.
-- `<source>-phsc` or `<source>-phsc-txNN`: dedicated transmit phase maps
+- `<source> OR Tx Phase` or `<source> OR Tx Phase TxN`: dedicated transmit phase maps
   converted from radians to degrees. Preferred series indices start at `140`.
-- `<source>-b0`: B0 phase-difference map in Hz on preferred series index `160`.
-- `<source>-ref-amplitude`: 1Tx reference-amplitude map in V on preferred
+- `<source> OR B0 Map`: B0 phase-difference map in Hz on preferred series index `160`.
+- `<source> OR V_Ref_Amp`: 1Tx reference-amplitude map in V on preferred
   series index `170`, computed as `11.74 * ABS_Tx_Ref_Amp / B1`.
-- `<source>-b1-processing`: masked B1 histogram/cumulative-sum information
-  images in a single derived series (`1` image for 1Tx, `8` images for 8Tx).
-- `<source>-b0-processing`: masked B0 histogram/cumulative-sum information
+- `<source> OR B1 Hist`: masked B1 histogram/cumulative-sum information
+  images in a single derived series (`1`, `8`, or `16` images for the selected Tx count).
+- `<source> OR B0 Hist`: masked B0 histogram/cumulative-sum information
   image in a separate derived series.
 
 The preferred series indices are shifted only if the incoming image stream
