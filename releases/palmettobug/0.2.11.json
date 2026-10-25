@@ -1,12 +1,12 @@
 {
   "apps": {
     "palmettobug 0.2.11": {
-      "version": "20260911",
+      "version": "20261024",
       "exec": "",
       "apptainer_args": []
     },
     "palmettobugGUI-palmettobug 0.2.11": {
-      "version": "20260911",
+      "version": "20261024",
       "exec": "palmettobug",
       "apptainer_args": []
     }
