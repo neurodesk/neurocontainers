@@ -1,0 +1,9 @@
+builder: neurodocker
+
+# Consumers declare the pinned editor artifact as `download`, retaining their
+# version, platform and digest/update-source ownership. Requires Debian apt.
+directives:
+  - run:
+      - cp {{ get_file("download") }} vscode.deb
+      - apt install ./vscode.deb
+      - rm -rf ./vscode.deb
