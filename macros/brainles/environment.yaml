@@ -1,0 +1,11 @@
+builder: neurodocker
+
+# Consumers provide venv and separate writable cache paths. Keep package and
+# Torch/index choices in the recipe. System python3-venv must be installed.
+directives:
+  - environment:
+      VENV: "{{ context.venv }}"
+      MPLCONFIGDIR: "{{ context.mpl_cache }}"
+      XDG_CACHE_HOME: "{{ context.xdg_cache }}"
+      PYTHONNOUSERSITE: "1"
+      PATH: "{{ context.venv }}/bin:$PATH"
