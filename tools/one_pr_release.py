@@ -29,7 +29,7 @@ from builder.release_plan import (
     plan_recipe_changes,
     recipe_names_from_paths,
 )
-from builder.shared_inputs import SharedInputs
+from builder.shared_inputs import SharedInputs, is_shared_path, working_tree_inputs
 from builder.variants import concrete_variant_specs
 
 REPO_ROOT = SCRIPT_REPO_ROOT
@@ -123,7 +123,7 @@ def recipe_fingerprint(recipe: str, revision: str | None = None) -> str:
             "ls-tree", "-r", "--name-only", revision, "--", prefix
         ).splitlines()
         inputs = [(path, path.removeprefix(prefix)) for path in sorted(paths)]
-        for root in SharedInputs.from_recipe(data).roots:
+        for root in shared_inputs_at(data, revision).roots:
             paths = run_git(
                 "ls-tree", "-r", "--name-only", revision, "--", root
             ).splitlines()
@@ -153,7 +153,7 @@ def recipe_fingerprint(recipe: str, revision: str | None = None) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     data = yaml.safe_load((recipe_dir / "build.yaml").read_text())
-    for path in SharedInputs.from_recipe(data).files(REPO_ROOT):
+    for path in working_tree_inputs(data, REPO_ROOT).files(REPO_ROOT):
         digest.update(path.relative_to(REPO_ROOT).as_posix().encode())
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -213,11 +213,20 @@ def load_retirements_at(revision: str) -> dict[str, str]:
     return retired
 
 
+def shared_inputs_at(data: dict | None, revision: str) -> SharedInputs:
+    def read(path: str) -> str | None:
+        if not run_git("ls-tree", "--name-only", revision, "--", path):
+            return None
+        return run_git("show", f"{revision}:{path}")
+
+    return SharedInputs.from_recipe(data, read)
+
+
 def release_plan(base: str, head: str) -> ReleasePlan:
     """Plan recipe work from Git trees using trusted, non-rendering policy."""
     paths = changed_files(base, head)
     names = recipe_names_from_paths(paths)
-    if any(path.startswith("macros/") for path in paths):
+    if any(is_shared_path(path) for path in paths):
         tree = run_git("ls-tree", "-r", "--name-only", head, "--", "recipes")
         names = sorted(
             set(names)
@@ -235,11 +244,23 @@ def release_plan(base: str, head: str) -> ReleasePlan:
         any(data is None for data in head_recipes.values())
         or RETIREMENT_MANIFEST in paths
     )
+    dependencies = {
+        name: SharedInputs(
+            tuple(
+                sorted(
+                    set(shared_inputs_at(base_recipes[name], base).roots)
+                    | set(shared_inputs_at(head_recipes[name], head).roots)
+                )
+            )
+        )
+        for name in names
+    }
     plan = plan_recipe_changes(
         paths,
         base_recipes,
         head_recipes,
         load_retirements_at(head) if consult_manifest else {},
+        shared_dependencies=dependencies,
     )
     if not plan.candidate_recipes:
         return plan
@@ -247,9 +268,7 @@ def release_plan(base: str, head: str) -> ReleasePlan:
     allowed = tuple(
         f"recipes/{recipe}/" for recipe in plan.changed_recipes + plan.retired_recipes
     )
-    shared_inputs = [
-        SharedInputs.from_recipe(head_recipes[name]) for name in plan.candidate_recipes
-    ]
+    shared_inputs = [dependencies[name] for name in plan.candidate_recipes]
     unrelated = [
         path
         for path in paths
@@ -268,11 +287,6 @@ def release_plan(base: str, head: str) -> ReleasePlan:
     return plan
 
 
-def detect_recipes(base: str, head: str) -> list[str]:
-    """Return only recipes whose planned change requires a candidate build."""
-    return release_plan(base, head).candidate_recipes
-
-
 def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> bool:
     """Allow finalization past concurrent changes that preserve the image."""
     base_recipe = load_recipe_at(merge_sha, recipe)
@@ -282,8 +296,8 @@ def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> b
         path
         for path in changed_files(merge_sha, "HEAD")
         if path.startswith(recipe_prefix)
-        or SharedInputs.from_recipe(base_recipe).contains(path)
-        or SharedInputs.from_recipe(head_recipe).contains(path)
+        or shared_inputs_at(base_recipe, merge_sha).contains(path)
+        or shared_inputs_at(head_recipe, "HEAD").contains(path)
     ]
     if not relevant_paths:
         return False
@@ -292,6 +306,16 @@ def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> b
         relevant_paths,
         {recipe: base_recipe},
         {recipe: head_recipe},
+        shared_dependencies={
+            recipe: SharedInputs(
+                tuple(
+                    sorted(
+                        set(shared_inputs_at(base_recipe, merge_sha).roots)
+                        | set(shared_inputs_at(head_recipe, "HEAD").roots)
+                    )
+                )
+            )
+        },
     )
     return plan.source_only_recipes == [recipe]
 
@@ -307,7 +331,7 @@ def build_date(recipe: str, revision: str = "HEAD") -> str:
         revision,
         "--",
         f"recipes/{recipe}",
-        *SharedInputs.from_recipe(data).roots,
+        *shared_inputs_at(data, revision).roots,
     )
     if not value:
         raise RuntimeError(f"Could not determine build date for {recipe}")

@@ -8,7 +8,7 @@ import pytest
 from builder.dockerfile import render_directive, render_dockerfile
 from builder.ir import Definition, Run, RunWithMounts
 from builder.recipe import _default_template_command
-from builder.template_backend import apply_builtin_template
+from builder.tests.template_helpers import apply_builtin_template
 
 
 @pytest.mark.parametrize("with_mount", [False, True])

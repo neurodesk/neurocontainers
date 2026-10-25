@@ -406,3 +406,81 @@ build:
       - install.packages.jl
       - /opt
 ```
+
+## Shared fragments
+
+`include: macros/example/setup.yaml` and `include: example/setup.yaml` both load
+`macros/example/setup.yaml`. A fragment is a YAML mapping with a `directives`
+list. Paths must stay inside a configured repository's `macros/` directory,
+including after resolving symlinks. Missing fragments, malformed directives,
+and include cycles fail validation or compilation with the offending path.
+
+For example, a recipe can call a parameterized fragment:
+
+```yaml
+- include: macros/example/setup.yaml
+  with:
+    install_path: /opt/example
+    enabled: true
+```
+
+The fragment can declare an asset beside its own YAML file and call another
+fragment. `helper.sh` below belongs to `macros/example/`, and the nested include
+path starts at the repository macro root:
+
+```yaml
+# macros/example/setup.yaml
+directives:
+  - file:
+      name: example-helper
+      filename: helper.sh
+  - include: example/dependencies.yaml
+  - run: cp {{ get_file("example-helper") }} {{ context.install_path }}/helper.sh
+    condition: context.enabled
+```
+
+`file.filename` resolves beside its declaring fragment, including files inside
+nested groups. `get_file` uses the ordinary cached build context and read-only
+BuildKit mount. Runtime assets must be copied to a runtime path such as `/opt`.
+
+`include.with` and `group.with` render their values in the caller's context,
+then overlay those values for the entire nested directive list. Nested scopes
+can override outer values. Variables declared inside the list remain visible
+to subsequent directives in that list; all variable changes disappear when the
+scope exits. A scope's own `condition` runs before applying its `with` values.
+Child conditions run inside the scope. Include paths can use the scoped values.
+
+Builtin `template` calls select a method and its argument defaults, then send
+that method's directives through the same interpreter as ordinary fragments.
+The compatible `self.*` method helpers, dependencies, package manager, URL maps,
+and architecture arguments remain available. Builtins can declare files, include
+macros, set scoped variables, and use directive conditions. Method bodies require
+`directives`; the obsolete `env`/`instructions` representation is rejected.
+There is no external NeuroDocker runtime dependency.
+
+Builtin archive downloads can migrate individually to declared cached files.
+FreeSurfer already accepts a recipe-declared archive. Remaining builtin download
+commands stay in their method bodies pending source-pin and cache migrations.
+Recipe source versions and updater policies continue to belong to recipes.
+
+### Shared inputs and releases
+
+Static discovery tracks literal template names inside groups, include paths,
+nested fragments, and fragment-owned local files. It reads YAML without rendering
+Jinja or evaluating conditions. Revision-based release operations read fragment
+contents from that Git revision. Dynamic include or template names conservatively
+depend on both the entire `macros/` and `builder/templates/` trees, so nested calls
+cannot hide a dependency. Literal references exclude unrelated templates.
+
+Consumer selection, recipe fingerprints, and build dates use this dependency
+information. Explicit `auto_update.local` macro roots retain their historical
+ordering and overlap in fingerprints. Conditions, architectures, and named
+variants do not narrow static dependencies: every possible consumer is rebuilt,
+and candidate CI selects its declared variants through the existing build matrix.
+
+Template-only and template-plus-recipe changes can enter candidate publication
+when every changed path belongs to the selected recipes or their shared inputs.
+Unrelated builder Python changes still fail the recipe-only publication policy.
+Selection considers dependencies from both the base and head revision, including
+deleted or renamed fragment paths. A missing required input fails generation or
+fingerprinting instead of substituting another template.

@@ -3,13 +3,13 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jinja2
 import yaml
 
 from .dockerfile import _install_command
-from .ir import Env, Install, Run
+from .template import rewrite_legacy_self
 
 
 _TEMPLATE_DIR = Path(__file__).with_name("templates")
@@ -47,6 +47,7 @@ class TemplateMethod:
     data: dict[str, Any]
     values: dict[str, str]
     pkg_manager: str
+    directory: Path = _TEMPLATE_DIR
 
     def __getattr__(self, key: str) -> Any:
         if key in self.values:
@@ -92,7 +93,7 @@ class TemplateMethod:
 def _render_string(source: str, method: TemplateMethod) -> str:
     renders = 0
     while "{{" in source and "}}" in source:
-        source = source.replace("self.", "template.")
+        source = rewrite_legacy_self(source, _JINJA)
         source = _JINJA.from_string(source).render(template=method)
         renders += 1
         if renders > 20:
@@ -101,6 +102,8 @@ def _render_string(source: str, method: TemplateMethod) -> str:
 
 
 def _load_template(name: str) -> dict[str, Any]:
+    if not name or not all(c.isalnum() or c == "_" for c in name):
+        raise ValueError(f"invalid builtin template name: {name!r}")
     path = _TEMPLATE_DIR / f"{name}.yaml"
     if not path.is_file():
         raise NotImplementedError(
@@ -127,9 +130,9 @@ def _method_values(
     return values
 
 
-def apply_builtin_template(
-    name: str, params: dict[str, Any], pkg_manager: str, add: Callable[[Any], None]
-) -> None:
+def expand_builtin_template(
+    name: str, params: dict[str, Any], pkg_manager: str
+) -> tuple[list[dict[str, Any]], TemplateMethod]:
     template = _load_template(name)
     method_name = str(
         params.get("method") or ("binaries" if "binaries" in template else "source")
@@ -146,62 +149,14 @@ def apply_builtin_template(
         )
 
     method = TemplateMethod(
-        method_data, _method_values(method_data, params), pkg_manager
+        method_data, _method_values(method_data, params), pkg_manager, _TEMPLATE_DIR
     )
     method.pkg_manager = pkg_manager
 
     directives = method_data.get("directives")
-    if directives is None:
-        directives = []
-        env = method_data.get("env", {})
-        if isinstance(env, dict) and env:
-            directives.append({"environment": env})
-        instructions = method_data.get("instructions", "")
-        if instructions:
-            directives.append({"run": instructions})
     if not isinstance(directives, list):
         raise ValueError(
             f"template {name!r} method {method_name!r} directives must be a list"
         )
 
-    for directive in directives:
-        if not isinstance(directive, dict):
-            raise ValueError(f"template directive must be a mapping: {directive!r}")
-        if "environment" in directive:
-            env = directive["environment"]
-            if not isinstance(env, dict):
-                raise ValueError("template environment directive must be a mapping")
-            if env:
-                add(
-                    Env(
-                        {
-                            str(_render_string(str(key), method)): _render_string(
-                                str(value), method
-                            )
-                            for key, value in env.items()
-                        }
-                    )
-                )
-        elif "install" in directive:
-            packages = directive["install"]
-            if not isinstance(packages, list):
-                raise ValueError("template install directive must be a list")
-            add(
-                Install(
-                    tuple(_render_string(str(package), method) for package in packages)
-                )
-            )
-        elif "run" in directive:
-            run = directive["run"]
-            if isinstance(run, list):
-                command = " \\\n && ".join(
-                    _render_string(str(item), method)
-                    for item in run
-                    if item is not None
-                )
-            else:
-                command = _render_string(str(run), method)
-            if command.strip():
-                add(Run(command))
-        else:
-            raise ValueError(f"unsupported template directive: {directive}")
+    return directives, method

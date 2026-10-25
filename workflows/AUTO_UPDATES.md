@@ -380,7 +380,12 @@ Recipes consisting of repository-local scripts use `method: sources` with
 `local: []`. Changes to their own recipe files already enter candidate build and
 runtime-test CI. Shared inputs are declared as repository-relative macro paths,
 for example `local: [macros/openrecon]`. A change to a shared macro selects all
-consuming recipes and changes their build fingerprint. OpenRecon consumers must
+consuming recipes and changes their build fingerprint. Literal builtin template
+calls, nested includes, and fragment-owned files are also discovered statically.
+Their contents contribute to fingerprints and build dates. Dynamic fragment names
+conservatively select all shared fragment roots. See the
+[shared fragment contract](../builder/README.md#shared-fragments) for scoping,
+path rules, and revision-based release behavior. OpenRecon consumers must
 also track the four installed shared dependencies; the audit enforces this for
 new consumers.
 

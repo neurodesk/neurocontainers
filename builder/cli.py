@@ -16,7 +16,8 @@ from .adapters import (
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
 from .image_contexts import read_contexts, stage_image, write_contexts
-from .recipe import compile_recipe, load_recipe, variant_specs
+from .recipe import compile_recipe, load_recipe
+from .variants import variant_specs
 from .release import (
     build_date_for_recipe,
     release_data,

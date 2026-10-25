@@ -28,14 +28,15 @@ def test_declared_inputs_and_matching_do_not_read_or_render_macros(
     inputs = SharedInputs.from_recipe(recipe)
 
     assert inputs.roots == (
+        "builder/templates/",
+        "macros/",
         "macros/nested/tool.yaml",
         "macros/shared",
         "macros/shared/tool.yaml",
-        "macros/{{ context.macro }}.yaml",
     )
     assert inputs.contains("macros/shared/deleted.py")
     assert inputs.contains("macros/shared")
-    assert not inputs.contains("macros/shared-other/tool.yaml")
+    assert inputs.contains("macros/shared-other/tool.yaml")
     assert not SharedInputs.from_recipe(None).contains("macros/shared")
     plan = plan_recipe_changes(
         ["macros/shared/deleted.py"],
