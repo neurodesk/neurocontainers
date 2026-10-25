@@ -1,0 +1,16 @@
+builder: neurodocker
+
+# Debian 11/Bullseye images with /etc/apt/sources.list and dpkg-deb.
+# Include before any apt/network setup, with add-default-template: false.
+# Consumers own debian_security_snapshot, debian_ca_package and debian_ca_sha256.
+directives:
+  - file:
+      name: debian_ca_certificates
+      url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/{{ context.debian_ca_package }}
+      sha256: "{{ context.debian_ca_sha256 }}"
+  - run:
+      - mkdir -p /tmp/debian-ca-certificates /etc/ssl/certs
+      - dpkg-deb --extract {{ get_file("debian_ca_certificates") }} /tmp/debian-ca-certificates
+      - cat /tmp/debian-ca-certificates/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt
+      - rm -rf /tmp/debian-ca-certificates
+      - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
