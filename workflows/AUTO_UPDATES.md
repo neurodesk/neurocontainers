@@ -198,6 +198,14 @@ and declare the same variable in `fulltest.yaml` so the commit, software version
 container label, and runtime assertion update together. `target.fulltest_variable`
 follows the primary target value, which is the commit SHA for this provider.
 
+A commit source can also expose `submodules` as commit metadata. Map each metadata
+field to a list of relative submodule paths. Each path is resolved at the preceding
+repository's exact commit, starting with the observed parent commit. Bind these
+fields through `target.variables` to update the parent and nested pins together.
+For example, `submodules: {backend_commit: [third_party/helper, backend]}` follows
+`third_party/helper` in the parent and then `backend` in that submodule. Submodule
+repositories must use HTTPS GitHub URLs. The parent's ancestry check still applies.
+
 ```yaml
 version_file: src/version.h
 version_regex: '#define TOOL_VERSION "(?P<version>[0-9.]+)"'

@@ -45,7 +45,9 @@ class SourceObservation:
 
 VERSION_METHODS = frozenset(METHOD_FIELDS) - {"manual"}
 NEW_METHOD_FIELDS = {
-    "github_commit": frozenset({"repo", "ref", "version_file", "version_regex"}),
+    "github_commit": frozenset(
+        {"repo", "ref", "version_file", "version_regex", "submodules"}
+    ),
     "git_commit": frozenset({"url", "ref"}),
     "oci_digest": frozenset({"image", "tag"}),
     "http_digest": frozenset(
@@ -144,6 +146,31 @@ def validate_source(config: dict) -> None:
         ):
             raise ValueError("github_commit.repo must be an owner/repository name")
         _safe_ref(config.get("ref"), default="HEAD")
+        if "submodules" in config:
+            submodules = config["submodules"]
+            if not isinstance(submodules, dict) or not submodules:
+                raise ValueError(
+                    "github_commit.submodules must map fields to path lists"
+                )
+            for metadata_name, paths in submodules.items():
+                if (
+                    not isinstance(metadata_name, str)
+                    or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", metadata_name)
+                    or metadata_name
+                    in {"value", "url", "tag", "ref", "version", "ancestry", "ahead_by"}
+                    or not isinstance(paths, list)
+                    or not paths
+                    or len(paths) > 8
+                    or any(
+                        not isinstance(path, str)
+                        or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]*", path)
+                        or any(part in {"", ".", ".."} for part in path.split("/"))
+                        for path in paths
+                    )
+                ):
+                    raise ValueError(
+                        "github_commit.submodules requires safe relative paths and metadata fields"
+                    )
         if "version_file" in config and (
             not re.fullmatch(
                 r"[A-Za-z0-9_][A-Za-z0-9_./-]*", str(config["version_file"])
@@ -334,6 +361,45 @@ def _github_commit(
             ahead_by = compared.get("ahead_by")
             if isinstance(ahead_by, int):
                 metadata["ahead_by"] = ahead_by
+    submodules = {}
+    for metadata_name, paths in config.get("submodules", {}).items():
+        parent_repo, parent_sha = repo, sha
+        for path in paths:
+            key = parent_repo, parent_sha, path
+            if key not in submodules:
+                response = session.get(
+                    f"https://api.github.com/repos/{parent_repo}/contents/{path}",
+                    params={"ref": parent_sha},
+                    timeout=30,
+                )
+                entry = _mapping(response, "GitHub submodule API")
+                commit = entry.get("sha")
+                if (
+                    entry.get("type") != "submodule"
+                    or not isinstance(commit, str)
+                    or not FULL_SHA.fullmatch(commit)
+                ):
+                    raise ValueError(
+                        "GitHub submodule API returned no pinned submodule"
+                    )
+                remote = entry.get("submodule_git_url")
+                if not isinstance(remote, str):
+                    raise ValueError("GitHub submodule has no repository URL")
+                parsed = urlsplit(remote)
+                child_repo = parsed.path.removeprefix("/").removesuffix(".git")
+                if (
+                    parsed.scheme != "https"
+                    or parsed.netloc != "github.com"
+                    or parsed.query
+                    or parsed.fragment
+                    or not REPOSITORY.fullmatch(child_repo)
+                ):
+                    raise ValueError(
+                        "GitHub submodule requires an HTTPS GitHub repository"
+                    )
+                submodules[key] = child_repo, commit.lower()
+            parent_repo, parent_sha = submodules[key]
+        metadata[metadata_name] = parent_sha
     return SourceObservation(
         value=sha,
         url=f"https://github.com/{repo}/commit/{sha}",

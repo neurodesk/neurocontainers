@@ -218,26 +218,25 @@ auto_update:
       dependency: true
       method: github_commit
       repo: pytorch/pytorch
+      ref: release/2.13
+      submodules:
+        ideep_commit:
+          - third_party/ideep
+        onednn_commit:
+          - third_party/ideep
+          - mkl-dnn
       target:
         variable: cblas_torch_commit
+        variables:
+          cblas_ideep_commit: ideep_commit
+          cblas_onednn_commit: onednn_commit
     - id: cblas-acl
       dependency: true
       method: github_commit
       repo: ARM-software/ComputeLibrary
+      ref: releases/arm_compute_52_6_0
       target:
         variable: cblas_acl_commit
-    - id: cblas-ideep
-      dependency: true
-      method: github_commit
-      repo: intel/ideep
-      target:
-        variable: cblas_ideep_commit
-    - id: cblas-onednn
-      dependency: true
-      method: github_commit
-      repo: uxlfoundation/oneDNN
-      target:
-        variable: cblas_onednn_commit
     - id: cblas-openblas
       dependency: true
       method: github_commit
