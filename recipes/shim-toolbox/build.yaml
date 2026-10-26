@@ -14,7 +14,7 @@ variables:
   openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
   base_image_digest: sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
   openrecon_ubuntu_version: '24.04'
-  shimmingtoolbox_commit: 0afbd9e133df1eeca8deecdf37875825462dd43b
+  shimmingtoolbox_tag: '1.5'
   numpy_version: 2.2.6
   scipy_version: 1.15.3
   nibabel_version: 5.4.2
@@ -29,14 +29,20 @@ auto_update:
     - macros/b0_shimming
   sources:
     - id: shimmingtoolbox
-      method: github_commit
+      method: github_release
       repo: shimming-toolbox/shimming-toolbox
-      ref: master
+      version_regex: v?(?P<version>\d+(?:\.\d+)+)
       target:
-        variable: shimmingtoolbox_commit
+        variable: shimmingtoolbox_tag
+        value: tag
         variables:
           shimmingtoolbox_version: version
-      version_file: shimming-toolbox/shimmingtoolbox/version.txt
+    - id: shimmingtoolbox_archive
+      dependency: true
+      method: http_digest
+      url: https://github.com/shimming-toolbox/shimming-toolbox/archive/refs/tags/{{ context.shimmingtoolbox_tag }}.tar.gz
+      target:
+        file: shimmingtoolbox_archive
     - id: base_image
       dependency: true
       method: oci_digest
@@ -128,7 +134,8 @@ deploy:
     - st_mask
 files:
   - name: shimmingtoolbox_archive
-    url: https://github.com/shimming-toolbox/shimming-toolbox/archive/{{ context.shimmingtoolbox_commit }}.tar.gz
+    url: https://github.com/shimming-toolbox/shimming-toolbox/archive/refs/tags/{{ context.shimmingtoolbox_tag }}.tar.gz
+    sha256: b7cd51f93c0c041ff6acc800f7034c3bff0452c2908d5b7ab20a0e9912461cc9
   - name: shim_toolbox.py
     filename: shim_toolbox.py
   - name: shim_toolbox
