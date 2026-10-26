@@ -30,6 +30,9 @@ build:
         - libqt5pas1
         - appmenu-gtk2-module
         - libglu1-mesa
+        - xvfb
+        - xauth
+        - imagemagick
 
     - workdir: /opt
 
