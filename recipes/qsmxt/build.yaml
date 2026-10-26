@@ -63,6 +63,7 @@ auto_update:
     method: github_release_asset
     repo: QSMxT/QSMxT
     asset: qsmxt-v{version}-aarch64-unknown-linux-gnu.tar.gz
+    version_regex: v?(?P<version>\d+\.\d+\.\d+)
     target:
       variable: qsmxt_aarch64_url
       variables:
