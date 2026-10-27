@@ -38,7 +38,6 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
 # These direct-script entrypoints add the repository to sys.path before imports.
-"tools/generate_apps_json.py" = ["E402"]
 "tools/migrate_container_versions.py" = ["E402"]
 "tools/one_pr_release.py" = ["E402"]
 "tools/sync_openrecon.py" = ["E402"]

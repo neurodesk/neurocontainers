@@ -217,12 +217,10 @@ rendering can have side effects. Documentation inside an existing image remains
 the version shipped with that image; updated documentation is available in the
 recipe source until the next image release.
 
-The apps.json workflow also runs on recipe definition changes. It reads literal
-categories from the current source recipe (including the source recorded for
-named variants), replacing the historical category union in the catalog. It
-preserves all published app identities and build dates and does not rewrite
-release JSON or publish images. Missing recipes and templated categories retain
-the categories from release metadata.
+The apps.json repository consolidates releases from configured source repositories
+on its daily schedule. It reads the current recipe's `domains` to route every
+published version, while app metadata and categories come from release JSON.
+It does not rewrite release JSON or publish images.
 
 ## Retiring a recipe
 
@@ -246,9 +244,9 @@ the manifest cannot drift from the tree.
 A retirement publishes nothing and withdraws nothing. The recipe is reported as
 `retired` rather than `changed`, which keeps it out of the schema validation
 that runs by path, and no candidate is built. Artifacts already in `releases/`
-keep their metadata, so apps.json and the catalog continue to serve every
-version that was built; `generate_apps_json.py` already falls back to release
-metadata when a recipe directory is absent.
+keep their metadata, so the apps.json catalog continues to serve every version
+that was built. Retired recipe domains are declared in
+`workflows/retired_recipes.yaml`.
 
 Because the gate runs the planner from the trusted base, a pull request cannot
 both introduce a new removal rule and rely on it. Land the policy change first,

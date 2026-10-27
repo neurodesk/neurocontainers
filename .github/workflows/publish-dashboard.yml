@@ -27,16 +27,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Checkout apps.json catalog
+        uses: actions/checkout@v5
         with:
-          python-version: "3.10"
-
-      - name: Install snapshot dependencies
-        run: python -m pip install pyyaml==6.0.2
-
-      - name: Generate apps.json snapshot
-        run: python tools/generate_apps_json.py --output dashboard/apps.json
+          repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+          path: apps-catalog
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -47,7 +43,7 @@ jobs:
       - name: Build static dashboard
         run: |
           cd dashboard
-          go run . --out ../public --releases-dir ../releases --recipes-dir ../recipes --apps-json ./apps.json
+          go run . --out ../public --releases-dir ../releases --recipes-dir ../recipes --catalog-root ../apps-catalog
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
