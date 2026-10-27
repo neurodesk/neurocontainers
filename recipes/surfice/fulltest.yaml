@@ -20,40 +20,66 @@ setup:
   script: |
     #!/usr/bin/env bash
     set -e
-    mkdir -p ${output_dir}
-    cat > ${output_dir}/render_check.sh <<'SCRIPT'
+    mkdir -p "${output_dir}"
+    cat > "${output_dir}/render_check.sh" <<'SCRIPT'
     #!/usr/bin/env bash
     # usage: render_check.sh BINARY DEPTH MESH SHOTDIR
-    # Starts BINARY on a DEPTH-bit Xvfb display, loads MESH, and passes once the
-    # screen shows enough mesh-coloured (pinkish) pixels.
+    # Starts BINARY on a DEPTH-bit Xvfb display twice: once with only its
+    # startup knot, then with MESH loaded. Passes when the startup scene renders
+    # and the MESH scene differs from it, so a failed load cannot pass.
     bin=$1 depth=$2 mesh=$3 shotdir=$4
     mkdir -p "$shotdir"
-    # surfice writes preferences under $HOME; keep them out of the host home.
-    HOME=$(mktemp -d)
-    export HOME
-    xvfb-run -a -s "-screen 0 1600x1200x${depth}" bash -s "$bin" "$mesh" "$shotdir/${bin}_${depth}" <<'INNER'
-    bin=$1 mesh=$2 shot=$3
-    "$bin" -S "import gl
-    gl.meshload('$mesh')" >"$shot.log" 2>&1 &
-    pid=$!
-    n=0
-    for _ in $(seq 1 30); do
-      sleep 2
-      if ! kill -0 "$pid" 2>/dev/null; then
-        echo "$bin exited before rendering"; cat "$shot.log"; exit 1
-      fi
-      import -window root "$shot.png" 2>/dev/null || continue
-      n=$(convert "$shot.png" -scale 25% -fx 'r > 0.6 && r - g > 0.06 && r - b > 0.04' \
-        -format '%[fx:round(mean * w * h)]' info:)
-      if [ "$n" -gt 2000 ]; then
-        kill "$pid"; echo "$bin rendered mesh"; exit 0
-      fi
-    done
-    kill "$pid"
-    echo "$bin rendered no mesh (${n} mesh pixels)"; cat "$shot.log"; exit 1
-    INNER
+    if [ -z "$RENDER_CHECK_DISPLAY" ]; then
+      # surfice writes preferences under $HOME; keep them out of the host home.
+      tmphome=$(mktemp -d)
+      HOME=$tmphome RENDER_CHECK_DISPLAY=1 QT_QPA_PLATFORM=xcb \
+        xvfb-run -a -s "-screen 0 1600x1200x${depth}" "$0" "$@"
+      status=$?
+      rm -rf "$tmphome"
+      exit "$status"
+    fi
+
+    # shoot SCRIPT SHOT [BASELINE]: start BINARY with SCRIPT and screenshot it to
+    # SHOT.png once mesh-coloured pixels appear and, given BASELINE, once the
+    # screen differs from BASELINE.png. Without a window manager the GTK build
+    # sometimes leaves its GL area at the initial tiny allocation and never
+    # draws; such a window is relaunched, up to three attempts. A process that
+    # exits fails at once.
+    shoot() {
+      local script=$1 shot=$2 baseline=$3 pid n diff
+      for attempt in 1 2 3; do
+        n= diff=
+        "$bin" -S "$script" >"$shot.log" 2>&1 &
+        pid=$!
+        for _ in $(seq 1 15); do
+          sleep 2
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "$bin exited before rendering"; cat "$shot.log"; return 1
+          fi
+          import -window root "$shot.png" 2>/dev/null || continue
+          n=$(convert "$shot.png" -scale 25% -fx 'r > 0.6 && r - g > 0.06 && r - b > 0.04' \
+            -format '%[fx:round(mean * w * h)]' info:)
+          [ "$n" -gt 2000 ] || continue
+          if [ -n "$baseline" ]; then
+            diff=$(compare -metric AE -fuzz 10% "$baseline.png" "$shot.png" null: 2>&1 |
+              awk '{ printf "%d", $1 }')
+            [ "${diff:-0}" -gt 50000 ] || continue
+          fi
+          kill "$pid"; wait "$pid" 2>/dev/null; return 0
+        done
+        kill "$pid"; wait "$pid" 2>/dev/null
+        echo "attempt $attempt: $bin did not render ${shot##*/} (${n:-0} mesh pixels, ${diff:-n/a} pixels changed)"
+      done
+      cat "$shot.log"; return 1
+    }
+
+    out="$shotdir/${bin}_${depth}"
+    shoot "import gl" "${out}_startup" || exit 1
+    shoot "import gl
+    gl.meshload('$mesh')" "$out" "${out}_startup" || exit 1
+    echo "$bin rendered mesh"
     SCRIPT
-    chmod +x ${output_dir}/render_check.sh
+    chmod +x "${output_dir}/render_check.sh"
 
 tests:
   - name: Launchers on PATH
@@ -63,18 +89,18 @@ tests:
 
   - name: GTK launcher renders a mesh on a 24-bit display
     description: The binary the desktop menu launches opens a GL context and draws the sample mesh.
-    command: ${output_dir}/render_check.sh surfice 24 ${sample_mesh} ${output_dir}
+    command: '"${output_dir}/render_check.sh" surfice 24 "${sample_mesh}" "${output_dir}"'
     expected_output_contains: surfice rendered mesh
-    timeout: 120
+    timeout: 300
 
   - name: GTK launcher renders a mesh on a 16-bit display
     description: Without a 24-bit framebuffer config surfice must still render instead of crashing.
-    command: ${output_dir}/render_check.sh surfice 16 ${sample_mesh} ${output_dir}
+    command: '"${output_dir}/render_check.sh" surfice 16 "${sample_mesh}" "${output_dir}"'
     expected_output_contains: surfice rendered mesh
-    timeout: 120
+    timeout: 300
 
   - name: Qt5 launcher renders a mesh on a 24-bit display
     description: The module binary opens a GL context and draws the sample mesh.
-    command: ${output_dir}/render_check.sh surfice_qt5 24 ${sample_mesh} ${output_dir}
+    command: '"${output_dir}/render_check.sh" surfice_qt5 24 "${sample_mesh}" "${output_dir}"'
     expected_output_contains: surfice_qt5 rendered mesh
-    timeout: 120
+    timeout: 300

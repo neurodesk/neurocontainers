@@ -51,6 +51,7 @@ build:
 
 deploy:
   bins:
+    - surfice
     - surfice_qt5
 
 readme: |-
