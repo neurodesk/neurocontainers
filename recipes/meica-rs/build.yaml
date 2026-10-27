@@ -20,7 +20,7 @@ variables:
   node_aarch64_sha256: 6287aa46b6c375d816e63ae66d024fbbfd70404825aabdfdf898a970871d2f4b
   mindgrab_version: 0.1.20261008
   mindgrab_sha256: bb03c3bcf20975fd5cb0741d44c4f93f844b45a8822c8b312679258509f1bf3c
-  webapps_commit: df5f0a90104fda4f54fcafbd12abe6519861836f
+  webapps_commit: 5b5ff35a0acb58680f9a0a1787a986872c663ee8
 
 auto_update:
   method: sources
@@ -59,12 +59,11 @@ auto_update:
       url: https://registry.npmjs.org/@brainchop/mindgrab/-/mindgrab-{{ context.mindgrab_version }}.tgz
       target:
         variable: mindgrab_sha256
-    # Until neurodesk/webapps#559 merges, its branch is the only line holding the CLI; switch to main afterwards.
     - id: webapps
       dependency: true
       method: github_commit
       repo: neurodesk/webapps
-      ref: node-drivers-mindgrab-cli
+      ref: main
       target:
         variable: webapps_commit
     - id: node
