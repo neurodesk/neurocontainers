@@ -29,10 +29,14 @@ def load_registry(location: str) -> dict:
     return domains
 
 
-def check_labels(labels: object, location: str, repository: str, registry: dict) -> None:
+def check_labels(
+    labels: object, location: str, repository: str, registry: dict
+) -> None:
     if not isinstance(labels, list) or not labels:
         raise ValueError(f"{location}: domains must be a non-empty list")
-    if any(not isinstance(label, str) or not DOMAIN_ID.fullmatch(label) for label in labels):
+    if any(
+        not isinstance(label, str) or not DOMAIN_ID.fullmatch(label) for label in labels
+    ):
         raise ValueError(f"{location}: invalid domain ID")
     if len(set(labels)) != len(labels):
         raise ValueError(f"{location}: duplicate domain ID")
@@ -57,11 +61,15 @@ def validate(root: Path, repository: str, registry: dict) -> int:
         count += 1
     manifest = root / "workflows/retired_recipes.yaml"
     if manifest.is_file():
-        entries = yaml.safe_load(manifest.read_text(encoding="utf-8")).get("retired", [])
+        entries = yaml.safe_load(manifest.read_text(encoding="utf-8")).get(
+            "retired", []
+        )
         for entry in entries:
             check_labels(
-                entry.get("domains"), f"{manifest}:{entry.get('recipe')}",
-                repository, registry,
+                entry.get("domains"),
+                f"{manifest}:{entry.get('recipe')}",
+                repository,
+                registry,
             )
             count += 1
     return count
