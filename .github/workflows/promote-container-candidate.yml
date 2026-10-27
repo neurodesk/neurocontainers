@@ -1148,6 +1148,35 @@ jobs:
         with:
           script: |
             const issue_number = Number(process.env.PR_NUMBER);
+            const recoveryDocs =
+              'https://github.com/neurodesk/neurocontainers/blob/main/workflows/ONE_PR_RELEASES.md#concurrent-merges-and-staged-recovery';
+            // Every publish job staged its artifacts and only finalization failed, the
+            // case staged recovery accepts. Print the exact command for a maintainer;
+            // it reuses the staged images and repeats every check.
+            const recoveryCommand =
+              context.eventName === 'push' &&
+              process.env.PUBLISH_RESULT === 'success' &&
+              process.env.FINALIZE_RESULT === 'failure'
+                ? 'gh workflow run promote-container-candidate.yml ' +
+                  `--repo ${context.repo.owner}/${context.repo.repo} --ref main ` +
+                  `-f pr_number=${issue_number} -f staged_run_id=${context.runId}`
+                : null;
+            if (recoveryCommand) {
+              core.error(
+                'Finalization failed after every publish job succeeded. Review the ' +
+                `finalize log, then recover from the staged images: ${recoveryCommand}`
+              );
+              await core.summary
+                .addHeading('Staged recovery available', 2)
+                .addRaw(
+                  'Every publish job succeeded and only finalization failed. Review the ' +
+                  'finalize log, then run this within seven days, before the staged ' +
+                  'metadata expires:'
+                )
+                .addCodeBlock(recoveryCommand, 'bash')
+                .addLink('Staged recovery', recoveryDocs)
+                .write();
+            }
             const marker = '<!-- one-pr-container-candidate -->';
             const lifecycleStart = '<!-- container-release-status:start -->';
             const lifecycleEnd = '<!-- container-release-status:end -->';
@@ -1203,13 +1232,25 @@ jobs:
             } else if (awaitResult === 'failure' || awaitResult === 'cancelled') {
               heading = `## ⚠️ ${identity} merged — candidate promotion is blocked`;
               action = `**Action required:** Inspect the candidate wait failure, then rerun \`Promote merged container candidate\` with \`pr_number=${issue_number}\`. Do not rebuild a candidate that has already passed.`;
+            } else if (recoveryCommand) {
+              heading = `## ⚠️ ${identity} candidate passed — finalization failed`;
+              action = [
+                '**Action required:** Every publish job succeeded and only finalization ' +
+                'failed, so the staged images can be published without rebuilding. Review ' +
+                `the failed \`finalize\` log, then start [staged recovery](${recoveryDocs}) ` +
+                'within seven days, before the staged metadata expires:',
+                '',
+                '```bash',
+                recoveryCommand,
+                '```',
+              ].join('\n');
             } else {
               const promotionOutcome = promotionResult === 'failure'
                 ? 'failed'
                 : promotionResult;
               heading = `## ⚠️ ${identity} candidate passed — promotion ${promotionOutcome}`;
               action = '**Action required:** Inspect the failed promotion and follow ' +
-                '[staged recovery](https://github.com/neurodesk/neurocontainers/blob/main/workflows/ONE_PR_RELEASES.md#concurrent-merges-and-staged-recovery). ' +
+                `[staged recovery](${recoveryDocs}). ` +
                 'A superseded candidate cannot be recovered by blindly repeating publication.';
             }
             const replacement = [
