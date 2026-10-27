@@ -65,7 +65,11 @@ setup:
               awk '{ printf "%d", $1 }')
             [ "${diff:-0}" -gt 50000 ] || continue
           fi
-          kill "$pid"; wait "$pid" 2>/dev/null; return 0
+          # kill fails if the process died after drawing; that is not a pass.
+          if ! kill "$pid" 2>/dev/null; then
+            echo "$bin exited after rendering"; cat "$shot.log"; return 1
+          fi
+          wait "$pid" 2>/dev/null; return 0
         done
         kill "$pid"; wait "$pid" 2>/dev/null
         echo "attempt $attempt: $bin did not render ${shot##*/} (${n:-0} mesh pixels, ${diff:-n/a} pixels changed)"
@@ -83,7 +87,7 @@ setup:
 
 tests:
   - name: Launchers on PATH
-    description: The GUI menu entry runs surfice; the module exposes surfice_qt5.
+    description: Both launchers are installed; the GUI menu entry runs surfice and the module exposes both.
     command: command -v surfice surfice_qt5
     expected_output_contains: /opt/Surf_Ice/surfice_qt5
 
