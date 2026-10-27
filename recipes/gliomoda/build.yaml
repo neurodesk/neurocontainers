@@ -378,6 +378,8 @@ deploy:
   bins:
     - gliomoda
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

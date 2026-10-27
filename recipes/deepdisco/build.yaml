@@ -133,6 +133,8 @@ gui_apps:
   - name: DeepDisco
     exec: deepdisco
  
+domains:
+  - neuroimaging
 categories:
   - machine learning
   - diffusion imaging

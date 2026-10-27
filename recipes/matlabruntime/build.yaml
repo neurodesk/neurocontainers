@@ -68,6 +68,8 @@ files:
       printf 'MATLABCMD: %s\n' "${matlab_cmd}"
       printf 'AGREE_TO_MATLAB_RUNTIME_LICENSE: %s\n' "${AGREE_TO_MATLAB_RUNTIME_LICENSE:-unset}"
 
+domains:
+  - neuroimaging
 categories:
   - programming
 

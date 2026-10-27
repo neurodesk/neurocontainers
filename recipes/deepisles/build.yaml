@@ -274,6 +274,8 @@ files:
       #!/bin/sh
       exec /opt/miniconda/envs/deepisles/bin/python /opt/DeepIsles/deepisles.py "$@"
 
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - image segmentation

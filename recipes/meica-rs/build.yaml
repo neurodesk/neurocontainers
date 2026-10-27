@@ -171,6 +171,8 @@ files:
     sha256: 15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433
     executable: true
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - quality control

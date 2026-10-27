@@ -22,6 +22,7 @@ def write_recipe(
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": "data:image/png;base64,aWNvbg==",
         "readme": "Tool documentation",
         "auto_update": {

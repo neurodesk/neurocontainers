@@ -97,6 +97,8 @@ files:
 
       exec /analysis_script.sh "$@"
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

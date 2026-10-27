@@ -57,6 +57,8 @@ files:
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
   - phase processing

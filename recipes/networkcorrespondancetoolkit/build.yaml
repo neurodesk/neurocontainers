@@ -173,6 +173,8 @@ files:
     url: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
     sha256: aa8cbd6aa7ef85d0528616d2dffce8bd0b51924e7ddd18734ede6c1c63c462d0
 
+domains:
+  - neuroimaging
 categories:
   - image registration
   - data organisation

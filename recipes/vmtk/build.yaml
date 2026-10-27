@@ -181,6 +181,8 @@ deploy:
   path:
     - /opt/miniforge3/bin
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - visualization

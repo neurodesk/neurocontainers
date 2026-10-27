@@ -96,6 +96,8 @@ build:
 deploy:
   bins:
     - kspacefilter
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
 readme: |

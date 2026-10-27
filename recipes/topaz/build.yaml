@@ -79,6 +79,8 @@ readme: |
 
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - cryo EM
   - machine learning

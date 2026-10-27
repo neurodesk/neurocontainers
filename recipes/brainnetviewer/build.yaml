@@ -62,6 +62,8 @@ deploy:
   bins:
     - brainnetviewer
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - visualization

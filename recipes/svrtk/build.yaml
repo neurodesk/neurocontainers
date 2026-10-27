@@ -87,6 +87,8 @@ structured_readme:
     matching and complete outlier removal. Medical Image Analysis, 16(8),
     1550-1564. https://doi.org/10.1016/j.media.2012.07.004
 
+domains:
+  - neuroimaging
 categories:
   - fetal imaging
   - image reconstruction

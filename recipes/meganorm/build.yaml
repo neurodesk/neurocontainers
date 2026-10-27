@@ -496,6 +496,8 @@ deploy:
     - mne
     - mne_bids
 
+domains:
+  - neuroimaging
 categories:
   - electrophysiology
   - statistics

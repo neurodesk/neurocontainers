@@ -39,6 +39,8 @@ readme: |-
   To run applications outside of this container: ml fmriprep/{{ context.version }}
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - workflows

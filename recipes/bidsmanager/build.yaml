@@ -111,6 +111,8 @@ readme: |-
 
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - "data organisation"
   - "bids apps"

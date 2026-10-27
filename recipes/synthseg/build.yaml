@@ -273,6 +273,8 @@ deploy:
   bins:
     - mri_synthseg
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

@@ -206,6 +206,8 @@ deploy:
   path:
     - /opt/relion-{{ context.version }}/bin/
 
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 

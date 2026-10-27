@@ -77,6 +77,8 @@ deploy:
     - nobrainer
   path:
     - /opt/nobrainer/bin
+domains:
+  - neuroimaging
 categories:
   - machine learning
   - image segmentation

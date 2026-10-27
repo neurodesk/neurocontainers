@@ -102,6 +102,8 @@ files:
   - name: motioncor3_source
     url: https://github.com/czimaginginstitute/MotionCor3/archive/{{ context.motioncor3_commit }}.tar.gz
 
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 

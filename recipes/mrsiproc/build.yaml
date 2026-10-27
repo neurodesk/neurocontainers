@@ -277,6 +277,8 @@ deploy:
     - LCModel_Control_Template.m
     - LCModel_Control_Volunteers_WatRef.m
 
+domains:
+  - neuroimaging
 categories:
   - spectroscopy
   - workflows

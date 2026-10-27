@@ -51,6 +51,8 @@ deploy:
     - wb_command
     - wb_shortcuts
 
+domains:
+  - neuroimaging
 categories:
   - "functional imaging"
   - "data organisation"

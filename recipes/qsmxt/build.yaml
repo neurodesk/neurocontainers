@@ -291,6 +291,8 @@ tests:
       PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import qsmxt, ismrmrd, nibabel, scipy, skimage; print(qsmxt.__file__)" | grep -x '/opt/code/python-ismrmrd-server/qsmxt.py'
       test -f /opt/code/python-ismrmrd-server/OpenReconLabel.json
 
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
   - phase processing

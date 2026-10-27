@@ -109,6 +109,8 @@ readme: >-
 
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - machine learning

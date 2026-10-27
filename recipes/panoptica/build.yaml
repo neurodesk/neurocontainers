@@ -79,6 +79,8 @@ tests:
     script: |
       python -c "from importlib.metadata import version; import panoptica; print(version('panoptica'))"
 
+domains:
+  - neuroimaging
 categories:
   - quality control
   - image segmentation

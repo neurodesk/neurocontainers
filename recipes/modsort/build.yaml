@@ -160,6 +160,8 @@ gui_apps:
   - name: "modsort"
     exec: "modsort"
 
+domains:
+  - neuroimaging
 categories:
   - data organisation
 

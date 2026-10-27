@@ -56,6 +56,7 @@ def test_auto_update_only_change_is_source_only() -> None:
             "source-metadata-only",
         ),
         ({"icon": "data:image/png;base64,aGVsbG8="}, "catalog-only"),
+        ({"domains": ["neuroimaging"]}, "catalog-only"),
         ({"draft": True}, "source-metadata-only"),
     ],
 )

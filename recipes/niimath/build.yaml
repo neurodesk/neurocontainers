@@ -30,6 +30,8 @@ build:
     - deploy:
         bins:
           - niimath
+domains:
+  - neuroimaging
 categories:
   - data organisation
 structured_readme:

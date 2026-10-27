@@ -169,6 +169,16 @@ def validate_recipe_metadata(recipe_dict: Dict[str, Any]) -> None:
                 f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
             )
 
+    domains = recipe_dict.get("domains")
+    if not isinstance(domains, list) or not domains:
+        raise ValueError("domains is required and must be a non-empty list")
+    if any(
+        not isinstance(domain, str)
+        or not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", domain)
+        for domain in domains
+    ) or len(set(domains)) != len(domains):
+        raise ValueError("domains must contain unique lowercase domain IDs")
+
 
 def resolve_fulltest_version(config: Dict[str, Any]) -> str:
     """Resolve the top-level fulltest version using runner-style variables."""
@@ -791,6 +801,7 @@ class ContainerRecipe:
     deploy: Optional[DeployInfo] = attrs.field(default=None)
     tests: Optional[List[Union[BuiltinTest, ScriptTest]]] = attrs.field(default=None)
     categories: Optional[List[str]] = attrs.field(default=None)
+    domains: Optional[List[str]] = attrs.field(default=None)
     show_in_menu: Optional[bool] = attrs.field(default=None)
     show_in_applist: Optional[bool] = attrs.field(default=None)
     gui_apps: Optional[List[GUIApp]] = attrs.field(default=None)

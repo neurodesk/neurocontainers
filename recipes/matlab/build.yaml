@@ -8,6 +8,8 @@ copyright:
 architectures:
   - x86_64
 
+domains:
+  - neuroimaging
 categories:
   - programming
   - machine learning

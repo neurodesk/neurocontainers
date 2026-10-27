@@ -146,6 +146,8 @@ deploy:
     - python
     - python3
 
+domains:
+  - neuroimaging
 categories:
   - statistics
   - programming

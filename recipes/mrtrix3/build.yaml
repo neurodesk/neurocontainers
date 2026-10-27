@@ -85,6 +85,8 @@ readme: |
   To run container outside of this environment: ml mrtrix3/{{ context.version }}
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - diffusion imaging
 gui_apps:

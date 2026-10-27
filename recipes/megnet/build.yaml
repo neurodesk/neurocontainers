@@ -73,6 +73,8 @@ build:
         bins:
           - python
           - megnet
+domains:
+  - neuroimaging
 categories:
   - electrophysiology
 readme: |-

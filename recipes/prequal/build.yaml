@@ -169,6 +169,8 @@ deploy:
     - prequal
     - run_dtiQA.sh
 
+domains:
+  - neuroimaging
 categories:
   - diffusion imaging
   - quality control

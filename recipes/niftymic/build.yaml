@@ -61,6 +61,8 @@ structured_readme:
     brain MRI. NeuroImage, 206, 116324.
     https://doi.org/10.1016/j.neuroimage.2019.116324
 
+domains:
+  - neuroimaging
 categories:
   - fetal imaging
   - image reconstruction

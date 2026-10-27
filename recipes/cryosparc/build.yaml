@@ -62,6 +62,8 @@ deploy:
     - cryosparc
     - cryosparcm
     - cryosparcw
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 readme: |

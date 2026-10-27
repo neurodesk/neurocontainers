@@ -115,6 +115,8 @@ build:
             type: File
             optional: true
             value-key: '[IMAGE_FILE]'
+domains:
+  - neuroimaging
 categories:
   - visualization
   - structural imaging

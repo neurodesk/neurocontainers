@@ -64,6 +64,8 @@ files:
   - name: emuses_source
     url: https://github.com/chrisfoulon/emuses/archive/refs/tags/v{{ context.version }}.tar.gz
 
+domains:
+  - neuroimaging
 categories:
   - machine learning
   - statistics

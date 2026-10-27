@@ -355,6 +355,8 @@ deploy:
   bins:
     - hypermapper
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

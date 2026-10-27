@@ -63,6 +63,8 @@ files:
     sha256: 14e05f16dbf75e618b79eb7fc13ea985ffc8e158cfd9a6374a6c9af33fcc336e
   - name: dicom-const.patch
     filename: dicom-const.patch
+domains:
+  - neuroimaging
 categories:
   - image registration
   - structural imaging

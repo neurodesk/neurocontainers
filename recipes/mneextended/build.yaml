@@ -317,6 +317,8 @@ files:
 - name: mne_bids_pipeline_tar_gz
   url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.pipeline_commit }}.tar.gz
 
+domains:
+  - neuroimaging
 categories:
   - electrophysiology
   - programming

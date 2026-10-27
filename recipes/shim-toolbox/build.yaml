@@ -146,6 +146,8 @@ files:
     filename: OpenReconREADME.md
   - name: test_shim_toolbox.py
     filename: test_shim_toolbox.py
+domains:
+  - neuroimaging
 categories:
   - quantitative imaging
   - image reconstruction

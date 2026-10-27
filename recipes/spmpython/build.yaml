@@ -90,6 +90,8 @@ readme: |-
   To run container outside of this environment: ml spmpython/{{ context.version }}
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - image segmentation

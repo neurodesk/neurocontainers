@@ -3,6 +3,8 @@ version: "1.9.6"
 architectures:
   - x86_64
   - aarch64
+domains:
+  - neuroimaging
 categories:
   - data organisation
 structured_readme:

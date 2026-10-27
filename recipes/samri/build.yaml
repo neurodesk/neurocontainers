@@ -169,6 +169,8 @@ deploy:
     - /opt/bru2
     - /opt/ants-{{ context.ants_version }}
 
+domains:
+  - neuroimaging
 categories:
   - rodent imaging
   - functional imaging

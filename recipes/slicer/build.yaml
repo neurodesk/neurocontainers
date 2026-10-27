@@ -165,6 +165,8 @@ deploy:
   bins:
     - Slicer
 
+domains:
+  - neuroimaging
 categories:
   - visualization
   - image segmentation

@@ -27,6 +27,8 @@ build:
         path: []
         bins:
           - petprep
+domains:
+  - neuroimaging
 categories:
   - quantitative imaging
   - structural imaging
