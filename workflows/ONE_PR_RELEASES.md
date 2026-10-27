@@ -93,6 +93,9 @@ possible.
 To recover a failed **push** promotion whose publish jobs all succeeded, dispatch
 the promoter on `main` with the original PR number and failed run ID:
 
+When this is the failure, `report_promotion` prints the filled-in command in
+the PR's candidate comment, the run summary, and an error annotation.
+
 ```bash
 gh workflow run promote-container-candidate.yml \
   --repo neurodesk/neurocontainers --ref main \
