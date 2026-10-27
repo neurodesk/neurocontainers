@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -182,16 +183,40 @@ class HttpResponse:
 Transport = Callable[[str, str, dict[str, str], dict[str, str] | None], HttpResponse]
 
 
+TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
+TRANSIENT_ATTEMPTS = 4
+
+
 def _requests_transport(
     method: str,
     url: str,
     headers: dict[str, str],
     params: dict[str, str] | None = None,
 ) -> HttpResponse:
+    """Send a request, retrying reads that fail transiently.
+
+    A single dropped connection used to abort release finalization after the
+    staged images were already tagged. Reads are idempotent, so retry them with
+    exponential backoff; other methods get one attempt.
+    """
     import requests
 
-    response = requests.request(method, url, headers=headers, params=params, timeout=60)
-    return HttpResponse(response.status_code, dict(response.headers), response.content)
+    attempts = TRANSIENT_ATTEMPTS if method in ("GET", "HEAD") else 1
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.request(
+                method, url, headers=headers, params=params, timeout=60
+            )
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == attempts:
+                raise
+        else:
+            if response.status_code not in TRANSIENT_STATUS or attempt == attempts:
+                return HttpResponse(
+                    response.status_code, dict(response.headers), response.content
+                )
+        time.sleep(2**attempt)
+    raise AssertionError("unreachable")
 
 
 @dataclass

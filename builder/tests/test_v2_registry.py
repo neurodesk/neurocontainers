@@ -225,3 +225,30 @@ def test_audit_reports_unavailable_releases_and_mirror_disagreement(
     assert rows[0]["registries"]["missing.test/org"]["error"] == "HTTP 401"
     with pytest.raises(ValueError, match="No release"):
         v2_registry.audit_releases(tmp_path / "absent", [])
+
+
+def test_floating_tag_writes_retry_transient_oras_failures(monkeypatch):
+    calls = []
+
+    def run(command, check):
+        calls.append(command)
+        if len(calls) == 1:
+            raise v2_registry.subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(v2_registry.subprocess, "run", run)
+    monkeypatch.setattr(v2_registry.time, "sleep", lambda seconds: None)
+
+    v2_registry.oras_tag("example.test/demo@sha256:" + "a" * 64, "latest")
+
+    assert len(calls) == 2
+
+
+def test_floating_tag_writes_give_up_after_bounded_attempts(monkeypatch):
+    def run(command, check):
+        raise v2_registry.subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(v2_registry.subprocess, "run", run)
+    monkeypatch.setattr(v2_registry.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(v2_registry.subprocess.CalledProcessError):
+        v2_registry.oras_tag("example.test/demo@sha256:" + "a" * 64, "latest")

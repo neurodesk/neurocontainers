@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -153,6 +154,18 @@ def resolve_sif(image: str, client: RegistryClient | None = None) -> SifReferenc
     return min(candidates, key=lambda candidate: candidate.artifact_digest)
 
 
+def oras_tag(source: str, alias: str, attempts: int = 3) -> None:
+    """Point alias at source, retrying transient registry failures."""
+    for attempt in range(1, attempts + 1):
+        try:
+            subprocess.run(["oras", "tag", source, alias], check=True)
+            return
+        except subprocess.CalledProcessError:
+            if attempt == attempts:
+                raise
+            time.sleep(30 * attempt)
+
+
 def finalize(
     repository: str, version: str, build_date: str, *, apply: bool
 ) -> dict[str, str]:
@@ -176,7 +189,7 @@ def finalize(
     if apply:
         for alias, tag in plan.items():
             source = f"{repository}@{identities[tag].subject_digest}"
-            subprocess.run(["oras", "tag", source, alias], check=True)
+            oras_tag(source, alias)
             actual = resolve_sif(f"{repository}:{alias}")
             if actual.subject_digest != identities[tag].subject_digest:
                 raise RegistryError(

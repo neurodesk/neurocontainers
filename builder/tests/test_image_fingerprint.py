@@ -320,3 +320,76 @@ def test_cli_fails_on_registry_errors(monkeypatch) -> None:
     monkeypatch.setattr("builder.image_fingerprint.remote_fingerprint", broken)
 
     assert main(["--remote", "--allow-missing", "ghcr.io/x/y:latest"]) == 1
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        self.headers = {}
+        self.content = b"{}"
+
+
+def _scripted_requests(monkeypatch, outcomes):
+    import requests
+
+    from builder import image_fingerprint
+
+    calls = []
+
+    def request(method, url, **kwargs):
+        calls.append(method)
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return _FakeResponse(outcome)
+
+    monkeypatch.setattr(requests, "request", request)
+    monkeypatch.setattr(image_fingerprint.time, "sleep", lambda seconds: None)
+    return calls
+
+
+def test_registry_reads_retry_dropped_connections_and_server_errors(monkeypatch):
+    import requests
+
+    from builder.image_fingerprint import _requests_transport
+
+    calls = _scripted_requests(
+        monkeypatch, [requests.ConnectionError("reset"), 503, 200]
+    )
+
+    response = _requests_transport("GET", "https://ghcr.io/v2/x", {})
+
+    assert response.status_code == 200
+    assert calls == ["GET", "GET", "GET"]
+
+
+def test_registry_reads_do_not_retry_definite_answers(monkeypatch):
+    from builder.image_fingerprint import _requests_transport
+
+    calls = _scripted_requests(monkeypatch, [404])
+
+    assert _requests_transport("GET", "https://ghcr.io/v2/x", {}).status_code == 404
+    assert calls == ["GET"]
+
+
+def test_registry_reads_give_up_after_bounded_attempts(monkeypatch):
+    import requests
+
+    from builder.image_fingerprint import TRANSIENT_ATTEMPTS, _requests_transport
+
+    calls = _scripted_requests(
+        monkeypatch, [requests.ConnectionError("down")] * TRANSIENT_ATTEMPTS
+    )
+
+    with pytest.raises(requests.ConnectionError):
+        _requests_transport("GET", "https://ghcr.io/v2/x", {})
+    assert len(calls) == TRANSIENT_ATTEMPTS
+
+
+def test_registry_writes_are_not_retried(monkeypatch):
+    from builder.image_fingerprint import _requests_transport
+
+    calls = _scripted_requests(monkeypatch, [503])
+
+    assert _requests_transport("PUT", "https://ghcr.io/v2/x", {}).status_code == 503
+    assert calls == ["PUT"]
