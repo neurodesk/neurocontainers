@@ -12,7 +12,7 @@ variables:
   ants_archive_url: "https://github.com/ANTsX/ANTs/releases/download/v2.6.5/ants-2.6.5-centos7-X64-gcc.zip"
   ants_archive_sha256: "4f0f37d5d7a945afbdd35a4a71390de7ecf9406ce8b92db4cd9df33ce0e94d0c"
   nibabel_version: "5.4.2"
-  numpy_version: "2.5.4"
+  numpy_version: "2.2.6"
 auto_update:
   method: sources
   container_version: false
@@ -37,6 +37,8 @@ auto_update:
     - id: numpy
       method: pypi
       package: numpy
+      # Keep updates compatible with Ubuntu 22.04's Python 3.10.
+      version_regex: (?P<version>2\.2\.\d+)
       dependency: true
       target:
         variable: numpy_version
