@@ -2,7 +2,7 @@ name: openads
 version: 1.0.0
 
 copyright:
-  - license: JHU Non-Profit Research Software License Agreement
+  - name: JHU Non-Profit Research Software License Agreement
     url: https://github.com/farialab/OpenADS/blob/main/LICENSE
 
 architectures:

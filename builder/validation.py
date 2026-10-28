@@ -15,6 +15,7 @@ from typing import List, Dict, Union, Optional, Any, Literal
 
 import attrs
 import jinja2
+from packaging.licenses import InvalidLicenseExpression, canonicalize_license_expression
 import yaml
 
 if __package__ in (None, ""):
@@ -425,20 +426,52 @@ def validate_recipe_template_syntax(recipe_dict: Dict[str, Any]):
 # ============================================================================
 
 
+def validate_license(instance, attribute, value: Any) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("license must be a nonempty string")
+    if value in {"other-open", "other-closed", "NOASSERTION", "NONE"}:
+        return
+    if "{{" in value or "{%" in value:
+        _jinja_env.parse(value)
+        return
+    try:
+        canonicalize_license_expression(value)
+    except InvalidLicenseExpression as error:
+        raise ValueError(
+            f"Invalid SPDX license expression '{value}'. For a custom license, "
+            "use 'name' with a URL, or 'license: other-open' / "
+            "'license: other-closed' with a URL for Zenodo publication."
+        ) from error
+
+
+def validate_license_url(instance, attribute, value: Any) -> None:
+    validate_non_empty_string(instance, attribute, value)
+    if not isinstance(value, str):
+        raise ValueError("license URL must be a string")
+    validate_url(instance, attribute, value)
+
+
 @attrs.define
 class CustomCopyrightInfo:
     name: str = attrs.field(validator=validate_non_empty_string)
-    url: Optional[str] = attrs.field(
-        default=None, validator=attrs.validators.optional(validate_url)
-    )
+    url: str = attrs.field(validator=validate_license_url)
 
 
 @attrs.define
 class SPDXCopyrightInfo:
-    license: str = attrs.field(validator=validate_non_empty_string)
+    license: str = attrs.field(validator=validate_license)
     url: Optional[str] = attrs.field(
         default=None, validator=attrs.validators.optional(validate_url)
     )
+    name: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_non_empty_string)
+    )
+
+    def __attrs_post_init__(self) -> None:
+        if self.license in {"other-open", "other-closed", "NOASSERTION", "NONE"} or (
+            "licenseref-" in self.license.lower()
+        ):
+            validate_license_url(self, attrs.fields(type(self)).url, self.url)
 
 
 # ============================================================================
@@ -979,6 +1012,8 @@ def parse_copyright_from_dict(
     if "license" in copyright_dict:
         return SPDXCopyrightInfo(**copyright_dict)
     elif "name" in copyright_dict:
+        if not copyright_dict.get("url"):
+            raise ValueError("Custom license metadata must include a nonempty URL")
         return CustomCopyrightInfo(**copyright_dict)
     else:
         raise ValueError(
