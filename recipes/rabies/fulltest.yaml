@@ -78,11 +78,14 @@ tests:
   - name: Upstream token-data pipeline check (complete)
     description: Run RABIES' own end-to-end check, which runs preprocess, confound_correction and analysis on generated token data
     timeout: 1800
+    # Nipype's parameterized DataSink keeps every source-path folder starting
+    # with "_", so a workspace such as /home/runner/_work nests the datasink
+    # outputs and RABIES can no longer find them. Run under /tmp instead.
     command: |
       set -euo pipefail
-      rm -rf ${output_dir}/error_check_complete
-      mkdir -p ${output_dir}/error_check_complete
-      error_check_rabies.py --complete --output_dir ${output_dir}/error_check_complete > ${output_dir}/error_check_complete.log 2>&1 || { tail -50 ${output_dir}/error_check_complete.log; exit 1; }
+      check_dir=$(mktemp -d /tmp/rabies-error-check.XXXXXX)
+      trap 'rm -rf "$check_dir"' EXIT
+      error_check_rabies.py --complete --output_dir "$check_dir/out" > "$check_dir/check.log" 2>&1 || { tail -50 "$check_dir/check.log"; exit 1; }
       echo "RABIES complete token-data check passed"
     expected_output_contains: "RABIES complete token-data check passed"
     expected_exit_code: 0
