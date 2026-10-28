@@ -1,8 +1,8 @@
-datalad_version: "1.7.1"
+datalad_version: "1.7.2"
 git_annex_version: 10.20230126-3
 venv: /opt/datalad
 name: datalad
-version: "1.7.1"
+version: "1.7.2"
 test_data:
   output_dir: test_output
 setup:
