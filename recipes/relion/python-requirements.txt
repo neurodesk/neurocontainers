@@ -1,4 +1,4 @@
-# Pinned dependencies for the RELION Python programs, resolved for Python 3.10 on
+# Pinned dependencies for the RELION Python programs, resolved for Python 3.11 on
 # x86_64 from the RELION 5.1 environment.yml. The CUDA PyTorch wheel and the
 # classranker, Blush, DynaMight, Topaz and ModelAngelo sources are declared in
 # build.yaml and installed separately.
@@ -14,7 +14,7 @@ babel==2.18.0
 biopython==1.81
 build==1.6.1
 cachey==0.2.1
-certifi==2026.7.22
+certifi==2026.10.23
 charset-normalizer==3.5.2
 click==8.1.8
 cloudpickle==3.1.2
@@ -34,7 +34,7 @@ executing==2.3.0
 fair-esm==1.0.3
 fastcluster==1.2.6
 fasteners==0.20
-filelock==4.1.0
+filelock==4.2.4
 flexcache==0.3
 flexparser==0.4
 fonttools==4.65.0
@@ -113,7 +113,7 @@ pandas==2.3.3
 parso==0.8.7
 partd==1.4.2
 pexpect==4.9.0
-pillow==12.3.0
+pillow==13.0.0
 pint==0.24.4
 pip==26.2.1
 platformdirs==4.12.4
@@ -151,7 +151,7 @@ scikit-image==0.25.1
 scikit-learn==1.5.0
 scipy==1.11.2
 seaborn==0.12.2
-setuptools==83.0.0
+setuptools==84.2.1
 six==1.17.0
 skan==0.12.2
 snowballstemmer==3.1.1
