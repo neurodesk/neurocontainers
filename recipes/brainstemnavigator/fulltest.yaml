@@ -1,6 +1,6 @@
 name: brainstemnavigator
 version: 1.0.0
-ants_version: 2.4.3
+ants_version: "2.6.5"
 tests:
   - name: atlas inspection help
     command: brainstemnavigator --help

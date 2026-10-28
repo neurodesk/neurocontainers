@@ -8,11 +8,11 @@ copyright:
 architectures:
   - x86_64
 variables:
-  ants_version: 2.4.3
-  ants_archive_url: https://github.com/ANTsX/ANTs/releases/download/v2.4.3/ants-2.4.3-centos7-X64-gcc.zip
-  ants_archive_sha256: 80b449b96fdd215c83cc1c4b261c76c42939b321a69a31b2e2ad0b9b8d2e9837
-  nibabel_version: 5.3.2
-  numpy_version: 1.26.4
+  ants_version: "2.6.5"
+  ants_archive_url: "https://github.com/ANTsX/ANTs/releases/download/v2.6.5/ants-2.6.5-centos7-X64-gcc.zip"
+  ants_archive_sha256: "4f0f37d5d7a945afbdd35a4a71390de7ecf9406ce8b92db4cd9df33ce0e94d0c"
+  nibabel_version: "5.4.2"
+  numpy_version: "2.2.6"
 auto_update:
   method: sources
   container_version: false
@@ -37,6 +37,8 @@ auto_update:
     - id: numpy
       method: pypi
       package: numpy
+      # Keep updates compatible with Ubuntu 22.04's Python 3.10.
+      version_regex: (?P<version>2\.2\.\d+)
       dependency: true
       target:
         variable: numpy_version
