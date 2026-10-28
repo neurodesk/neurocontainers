@@ -2,7 +2,8 @@ name: matlabruntime
 version: 2026b
 
 copyright:
-  - name: MATLAB Runtime
+  - license: other-closed
+    name: MATLAB Runtime
     url: https://www.mathworks.com/products/compiler/matlab-runtime.html
 
 architectures:

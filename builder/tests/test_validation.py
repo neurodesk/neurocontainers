@@ -19,6 +19,7 @@ from builder.validation import (
     SPDXCopyrightInfo,
     GUIApp,
     FileInfo,
+    parse_copyright_from_dict,
 )
 
 VALID_ICON = (
@@ -28,6 +29,49 @@ VALID_ICON = (
 VALID_SVG_ICON = (
     "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
 )
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"license": "custom"},
+        {"license": "Not-A-Real-License"},
+        {"license": "MIT OR"},
+        {"license": 42},
+        {"license": "other-open"},
+        {"license": "other-closed", "url": ""},
+        {"license": "LicenseRef-Example"},
+        {"license": "NOASSERTION"},
+        {"license": "NONE"},
+        {"name": "Custom license"},
+    ],
+)
+def test_invalid_copyright_metadata_is_rejected(entry):
+    with pytest.raises(ValueError):
+        parse_copyright_from_dict(entry)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"license": "MIT"},
+        {"license": "MIT OR Apache-2.0"},
+        {"license": "{{ context.license_id }}"},
+        {"license": "LicenseRef-Example", "url": "https://example.com/LICENSE"},
+        {"license": "NOASSERTION", "url": "https://example.com"},
+        {"name": "Custom license", "url": "https://example.com/LICENSE"},
+        {
+            "license": "other-closed",
+            "name": "Custom research license",
+            "url": "https://example.com/LICENSE",
+        },
+        {"license": "other-open", "url": "https://example.com/LICENSE"},
+    ],
+)
+def test_valid_copyright_metadata_is_preserved(entry):
+    result = parse_copyright_from_dict(entry)
+    for field, value in entry.items():
+        assert getattr(result, field) == value
 
 
 def test_valid_minimal_recipe():

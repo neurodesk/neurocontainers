@@ -2,7 +2,8 @@ name: matlab
 version: 2026b
 
 copyright:
-  - name: MATLAB
+  - license: other-closed
+    name: MATLAB
     url: https://www.mathworks.com/products/matlab.html
 
 architectures:
