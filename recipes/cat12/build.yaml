@@ -132,6 +132,8 @@ readme: |
 
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - "image segmentation"
   - "image registration"

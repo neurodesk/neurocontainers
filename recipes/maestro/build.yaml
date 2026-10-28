@@ -124,6 +124,8 @@ files:
   - name: config.sh
     filename: config.sh
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

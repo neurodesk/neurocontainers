@@ -94,6 +94,8 @@ build:
 
     - copy: README.md /README.md
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - machine learning

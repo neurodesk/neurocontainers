@@ -82,6 +82,8 @@ build:
           - spm{{ context.spm_major }}
           - run_spm{{ context.spm_major }}.sh
   add-default-template: false
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - structural imaging

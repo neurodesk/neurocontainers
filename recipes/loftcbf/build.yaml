@@ -76,6 +76,8 @@ files:
   sha256: a4dcf585a6eb107ed9e21e68cc068c3d555a4d31866f5d2785ca1ad235976736
 - name: loftcbf_smoke.m
   filename: loftcbf_smoke.m
+domains:
+  - neuroimaging
 categories:
 - arterial spin labelling
 - quantitative imaging

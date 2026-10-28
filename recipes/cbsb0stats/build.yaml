@@ -99,6 +99,8 @@ deploy:
     path:
         - /opt/code/FSL-BET2/bin
 
+domains:
+  - neuroimaging
 categories:
     - functional imaging
 

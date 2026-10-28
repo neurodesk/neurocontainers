@@ -72,6 +72,8 @@ build:
           - /opt/tinyrange
         bins:
           - tinyrange
+domains:
+  - neuroimaging
 categories:
   - programming
 files:

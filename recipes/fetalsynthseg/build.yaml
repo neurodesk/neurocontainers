@@ -120,6 +120,8 @@ structured_readme:
     segmentation in fetal MRI with synthetic data. MICCAI 2024, LNCS 15003.
     https://doi.org/10.1007/978-3-031-72384-1_41
 
+domains:
+  - neuroimaging
 categories:
   - fetal imaging
   - image segmentation

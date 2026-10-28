@@ -72,6 +72,8 @@ gui_apps:
   - name: FunctionnectomeGUI
     exec: FunctionnectomeGUI
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - diffusion imaging

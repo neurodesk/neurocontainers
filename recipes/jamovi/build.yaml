@@ -49,6 +49,8 @@ deploy:
     description: "Statistical spreadsheet for data analysis"
     port: 41337
 
+domains:
+  - neuroimaging
 categories:
   - statistics
 

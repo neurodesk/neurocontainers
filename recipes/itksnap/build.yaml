@@ -40,6 +40,8 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNS
 gui_apps:
   - name: "itksnapGUI"
     exec: "itksnap"
+domains:
+  - neuroimaging
 categories:
   - visualization
 readme: |-

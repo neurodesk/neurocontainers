@@ -150,6 +150,8 @@ deploy:
   bins:
     - giga_connectome
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - bids apps

@@ -106,6 +106,8 @@ files:
     url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/libcublas10_10.2.1.243-1_amd64.deb
     sha256: 038fca37eaa299f43e2d48f2ba2d9738d8206da36f91cc5e4ddde0b9c784065c
 
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 

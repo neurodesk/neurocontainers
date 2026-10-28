@@ -149,6 +149,8 @@ gui_apps:
   - name: anatomistGUI
     exec: anatomist
 
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - image segmentation

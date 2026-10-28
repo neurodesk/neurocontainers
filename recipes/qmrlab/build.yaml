@@ -66,6 +66,8 @@ deploy:
   bins:
     - qMRLab
 
+domains:
+  - neuroimaging
 categories:
   - quantitative imaging
   - image reconstruction

@@ -464,6 +464,8 @@ build:
         makeDeployBin: true
   add-default-template: false
   add-tzdata: false
+domains:
+  - neuroimaging
 categories:
   - structural imaging
 readme: |-

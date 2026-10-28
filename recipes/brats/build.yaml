@@ -448,6 +448,8 @@ deploy:
   path:
     - "{{ context.venv }}/bin"
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

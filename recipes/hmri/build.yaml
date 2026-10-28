@@ -70,6 +70,8 @@ readme: |-
 
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - "quantitative imaging"
   - "structural imaging"

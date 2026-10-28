@@ -108,6 +108,8 @@ deploy:
   bins:
     - slicegrappa
 
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
 

@@ -1870,6 +1870,8 @@ tests:
     script: |
       python -c "import brainles_preprocessing; from brainles_preprocessing.preprocessor import Preprocessor; print('ok')"
 
+domains:
+  - neuroimaging
 categories:
   - image registration
   - structural imaging

@@ -133,6 +133,8 @@ gui_apps:
   - name: libreofficeMathGUI
     exec: lomath
 
+domains:
+  - neuroimaging
 categories:
   - data organisation
 

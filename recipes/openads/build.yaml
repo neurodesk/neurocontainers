@@ -111,6 +111,8 @@ build:
         bins:
           - ads
 
+domains:
+  - neuroimaging
 categories:
   - diffusion imaging
   - structural imaging

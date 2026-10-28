@@ -138,6 +138,8 @@ readme: |-
   To run container outside of this environment: ml clinicadl/{{ context.version }}
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - workflows
 copyright:

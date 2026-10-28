@@ -50,6 +50,8 @@ deploy:
     - /opt/BrainSuite{{ context.brainsuite_version }}/svreg/bin
     - /opt/BrainSuite{{ context.brainsuite_version }}/bdp
 
+domains:
+  - neuroimaging
 categories:
   - bids apps
   - structural imaging

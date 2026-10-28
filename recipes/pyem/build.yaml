@@ -89,6 +89,8 @@ files:
 deploy:
   path:
     - /opt/pyem-bin
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 readme: |

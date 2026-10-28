@@ -180,6 +180,8 @@ deploy:
     bins:
         - predict3.py
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - body

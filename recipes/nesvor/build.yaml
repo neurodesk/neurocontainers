@@ -46,6 +46,8 @@ structured_readme:
     Slice-to-Volume Reconstruction in MRI. IEEE Transactions on Medical
     Imaging, 42(6), 1707-1719. https://doi.org/10.1109/TMI.2023.3236216
 
+domains:
+  - neuroimaging
 categories:
   - fetal imaging
   - image reconstruction

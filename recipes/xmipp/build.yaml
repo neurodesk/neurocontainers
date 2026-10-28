@@ -151,6 +151,8 @@ files:
 deploy:
   path:
     - /opt/xmipp/bin
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 readme: |

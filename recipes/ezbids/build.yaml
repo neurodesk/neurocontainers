@@ -1,6 +1,8 @@
 name: ezbids
 version: 1.1.0
 
+domains:
+  - neuroimaging
 categories:
   - "data organisation"
   - "bids apps"

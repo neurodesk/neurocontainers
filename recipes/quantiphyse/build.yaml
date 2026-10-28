@@ -623,6 +623,8 @@ files:
 gui_apps:
 - name: quantiphyseGUI
   exec: quantiphyse
+domains:
+  - neuroimaging
 categories:
 - arterial spin labelling
 - quantitative imaging

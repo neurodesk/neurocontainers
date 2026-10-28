@@ -139,5 +139,7 @@ readme: |-
   
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - spectroscopy

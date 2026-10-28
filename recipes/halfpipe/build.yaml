@@ -28,6 +28,8 @@ build:
         path: []
         bins:
           - halfpipe
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - workflows

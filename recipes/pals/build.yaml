@@ -187,6 +187,8 @@ deploy:
   bins:
     - python
  
+domains:
+  - neuroimaging
 categories:
   - image segmentation
  

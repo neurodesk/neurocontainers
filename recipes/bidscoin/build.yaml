@@ -1,6 +1,8 @@
 name: bidscoin
 version: 4.6.2
 
+domains:
+  - neuroimaging
 categories:
   - "data organisation"
   - "bids apps"

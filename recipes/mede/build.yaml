@@ -129,6 +129,8 @@ files:
       wadler_lindig==0.1.7
       wrapt==2.2.0
 
+domains:
+  - neuroimaging
 categories:
   - data organisation
 

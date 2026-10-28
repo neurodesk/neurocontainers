@@ -108,6 +108,8 @@ deploy:
   bins:
     - acsrss
 
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
 

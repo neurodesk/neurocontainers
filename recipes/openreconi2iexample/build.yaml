@@ -95,6 +95,8 @@ deploy:
   bins:
     - openreconi2iexample
 
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
 

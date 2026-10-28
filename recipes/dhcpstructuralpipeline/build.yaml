@@ -61,6 +61,8 @@ structured_readme:
     reconstruction. NeuroImage, 173, 88-112.
     https://doi.org/10.1016/j.neuroimage.2018.01.054
 
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - image segmentation

@@ -165,5 +165,7 @@ structured_readme:
     Sherif, S., Grignard, M., & Phillips, C. (July 12, 2021).
     noddi-singularity Zenodo doi:10.5281/zenodo.5093701
 
+domains:
+  - neuroimaging
 categories:
   - diffusion imaging

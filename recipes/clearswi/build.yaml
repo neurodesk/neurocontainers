@@ -293,6 +293,8 @@ files:
       #!/usr/bin/env bash
       exec julia --startup-file=no /opt/clearswi/libexec/clearswi "$@"
 
+domains:
+  - neuroimaging
 categories:
   - phase processing
   - structural imaging

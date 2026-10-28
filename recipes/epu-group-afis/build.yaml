@@ -68,6 +68,8 @@ files:
 deploy:
   bins:
     - EPU_Group_AFIS.py
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 readme: |

@@ -9,6 +9,8 @@ copyright:
   - license: BSD-3-Clause
     url: https://github.com/OpenRefine/OpenRefine/blob/master/LICENSE.txt
 
+domains:
+  - neuroimaging
 categories:
   - data organisation
 

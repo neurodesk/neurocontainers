@@ -54,6 +54,8 @@ build:
         path:
           - /opt/batch-heudiconv
         bins: []
+domains:
+  - neuroimaging
 categories:
   - workflows
   - data organisation

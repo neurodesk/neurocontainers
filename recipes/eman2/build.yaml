@@ -77,6 +77,8 @@ gui_apps:
     exec: e2projectmanager.py
   - name: e2displayGUI
     exec: e2display.py
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 readme: |

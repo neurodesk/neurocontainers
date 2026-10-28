@@ -92,6 +92,8 @@ build:
 deploy:
   bins:
     - bidsvue
+domains:
+  - neuroimaging
 categories:
   - data organisation
   - bids apps

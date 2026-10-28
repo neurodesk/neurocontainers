@@ -67,6 +67,8 @@ deploy:
   path:
     - /opt/ashs/bin
 
+domains:
+  - neuroimaging
 categories:
   - "image segmentation"
   - "structural imaging"
