@@ -1,5 +1,5 @@
 name: xcpd
-version: 26.2.0
+version: 26.3.0
 default_timeout: 120
 tests:
   - name: XCP-D version
