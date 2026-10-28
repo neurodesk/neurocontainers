@@ -14,8 +14,8 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: rabies
-version: "0.6.2"
-upstream_version: "0.6.2"
+version: "0.6.3"
+upstream_version: "0.6.3"
 nilearn_version: "0.10.2"
 
 required_files:
