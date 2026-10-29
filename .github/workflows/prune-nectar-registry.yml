@@ -1,7 +1,7 @@
 name: Prune Nectar registry
 
-# Deletes Nectar Harbor artifacts that neurocommand's apps.json no longer
-# serves, freeing the ssdsorg project's storage quota. Dry run by default; the
+# Deletes Nectar Harbor artifacts that the domain catalog no longer serves,
+# freeing the ssdsorg project's storage quota. Dry run by default; the
 # plan is uploaded as an artifact so it can be reviewed before applying.
 
 on:
@@ -42,6 +42,12 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Check out domain catalog
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+          path: apps-catalog
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -54,7 +60,7 @@ jobs:
           NECTAR_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
         run: |
           set -o pipefail
-          args=(--min-age-days "${MIN_AGE_DAYS}" --report nectar-prune-plan.json)
+          args=(--catalog-root apps-catalog --min-age-days "${MIN_AGE_DAYS}" --report nectar-prune-plan.json)
           if [ "${APPLY}" = "true" ]; then
             args+=(--apply --expect-plan "${PLAN_HASH}")
           fi
