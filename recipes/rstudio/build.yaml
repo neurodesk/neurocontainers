@@ -1,5 +1,5 @@
 name: rstudio
-version: 2026.10.0
+version: 2026.10.1
 
 copyright:
   - license: AGPL-3.0
@@ -9,7 +9,7 @@ architectures:
   - x86_64
 
 variables:
-  upstream_tag: "v2026.10.0+233"
+  upstream_tag: "v2026.10.1+239"
 
 auto_update:
   method: github_tags
