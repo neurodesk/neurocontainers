@@ -10,6 +10,8 @@ import yaml
 
 MERGE = "b" * 40
 HEAD = "a" * 40
+BASE = "e" * 40
+FORK = "f" * 40
 
 
 def pull(number=7, merge=MERGE, merged=True, base="main"):
@@ -17,7 +19,7 @@ def pull(number=7, merge=MERGE, merged=True, base="main"):
         "number": number,
         "merge_commit_sha": merge,
         "merged_at": "2026-10-14T05:55:39Z" if merged else None,
-        "base": {"ref": base},
+        "base": {"ref": base, "sha": BASE},
         "head": {"sha": HEAD},
     }
 
@@ -41,6 +43,11 @@ const github = {rest: {
     polls++;
     if (input.api_error) throw new Error(input.api_error);
     return {data: input.responses[Math.min(polls - 1, input.responses.length - 1)]};
+  },
+  compareCommitsWithBasehead: async query => {
+    if (query.basehead !== `${input.base}...${input.head}`)
+      throw new Error(`Unexpected comparison ${query.basehead}`);
+    return {data: {merge_base_commit: {sha: input.fork}}};
   }},
   pulls: {get: async query => {
     gets++;
@@ -70,6 +77,9 @@ global.setTimeout = (callback, delay) => {delays.push(delay); callback(); return
                 {
                     "responses": responses,
                     "merge": MERGE,
+                    "base": BASE,
+                    "head": HEAD,
+                    "fork": FORK,
                     "event": event,
                     "api_error": api_error,
                     "dispatch": dispatch,
@@ -104,6 +114,7 @@ def test_delayed_merge_is_promoted_with_exact_candidate_identity(responses, poll
         "pr_number": "7",
         "head_sha": HEAD,
         "merge_sha": MERGE,
+        "fork_sha": FORK,
     }
 
 

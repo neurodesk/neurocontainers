@@ -41,6 +41,10 @@ artifacts after merge. They no longer create a second release-metadata PR.
    run for the exact PR head SHA to finish before allocating the ARC publishing
    runner. It verifies the PR number, recipe fingerprint, artifact hashes, and
    release metadata before publishing the tested files.
+   A PR branched from an older `main` is tested without the recipe edits `main`
+   gained before the merge. GitHub reports the PR's fork point, and the merged
+   recipe may differ from the tested one only by edits the release planner
+   classifies as source-only, such as `domains`.
    The variant a candidate claims is re-resolved against the merged recipe, so a
    candidate cannot promote itself into an identity the recipe never declared.
 6. The promoter commits the generated JSON to `releases/` on `main`. That push

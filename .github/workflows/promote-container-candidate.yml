@@ -63,6 +63,7 @@ jobs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
       merge_sha: ${{ steps.pr.outputs.merge_sha }}
+      fork_sha: ${{ steps.pr.outputs.fork_sha }}
       recipes: ${{ steps.plan.outputs.recipes }}
       release_plan: ${{ steps.plan.outputs.release_plan }}
       skip_reason: ${{ steps.plan.outputs.skip_reason }}
@@ -134,10 +135,18 @@ jobs:
             if (!mergeSha) {
               throw new Error(`PR #${pr.number} has no merge commit SHA`);
             }
+            // The candidate was tested without main's edits after the PR's
+            // fork point. GitHub computes it, so the head is never fetched.
+            const comparison = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner, repo: context.repo.repo,
+              basehead: `${pr.base.sha}...${pr.head.sha}`,
+              per_page: 1,
+            });
             core.setOutput('should_promote', 'true');
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('merge_sha', mergeSha);
+            core.setOutput('fork_sha', comparison.data.merge_base_commit.sha);
       - name: Record the dispatch association for lifecycle reporting
         id: reporting_identity
         if: >-
@@ -423,10 +432,12 @@ jobs:
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
+          FORK_SHA: ${{ needs.resolve.outputs.fork_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           python tools/one_pr_release.py verify --bundle promotion-bundle \
             --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
+            --fork-sha "${FORK_SHA}" \
             --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
       - name: Log in to GHCR staging
@@ -616,10 +627,12 @@ jobs:
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
+          FORK_SHA: ${{ needs.resolve.outputs.fork_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           python tools/one_pr_release.py verify --bundle promotion-bundle \
             --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
+            --fork-sha "${FORK_SHA}" \
             --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
       - name: Prepare trusted promotion metadata

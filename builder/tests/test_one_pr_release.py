@@ -357,11 +357,22 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     monkeypatch.setattr(
         one_pr_release,
-        "recipe_changes_since_merge_are_source_only",
-        lambda recipe, merge_sha: recipe == "demo" and merge_sha == "merge123",
+        "unseen_recipe_changes_are_source_only",
+        lambda recipe, merge_sha, fork_sha: recipe == "demo"
+        and merge_sha == "merge123",
+    )
+    working_tree_fingerprint = one_pr_release.recipe_fingerprint
+    monkeypatch.setattr(
+        one_pr_release,
+        "recipe_fingerprint",
+        lambda recipe, revision=None: "merged-fingerprint"
+        if revision == "merge123"
+        else working_tree_fingerprint(recipe),
     )
     verified = one_pr_release.verify_candidate(candidate_dir, "abc123", 42, "merge123")
     assert verified["recipe"] == "demo"
+    assert verified["recipe_fingerprint"] == "merged-fingerprint"
+    monkeypatch.setattr(one_pr_release, "recipe_fingerprint", working_tree_fingerprint)
     manifest["recipe_fingerprint"] = one_pr_release.recipe_fingerprint("demo")
     (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
@@ -1194,7 +1205,7 @@ def test_template_revision_dependencies_control_candidates_fingerprints_and_date
     recipe_file.write_text(yaml.safe_dump(recipe))
     asset.write_text("changed runtime input")
     git("commit", "-am", "Concurrent documentation and runtime asset")
-    assert not one_pr_release.recipe_changes_since_merge_are_source_only("demo", merged)
+    assert not one_pr_release.unseen_recipe_changes_are_source_only("demo", merged)
     assert one_pr_release.release_plan(merged, "HEAD").candidate_recipes == ["demo"]
 
     # Rename/deletion of a previous dependency still selects the original consumer.

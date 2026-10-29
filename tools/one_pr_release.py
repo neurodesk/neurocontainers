@@ -287,20 +287,20 @@ def release_plan(base: str, head: str) -> ReleasePlan:
     return plan
 
 
-def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> bool:
-    """Allow finalization past concurrent changes that preserve the image."""
-    base_recipe = load_recipe_at(merge_sha, recipe)
-    head_recipe = load_recipe_at("HEAD", recipe)
+def recipe_change_action(recipe: str, base: str, head: str) -> str | None:
+    """Classify recipe edits between two trusted commits, or None without edits."""
+    base_recipe = load_recipe_at(base, recipe)
+    head_recipe = load_recipe_at(head, recipe)
     recipe_prefix = f"recipes/{recipe}/"
     relevant_paths = [
         path
-        for path in changed_files(merge_sha, "HEAD")
+        for path in changed_files(base, head)
         if path.startswith(recipe_prefix)
-        or shared_inputs_at(base_recipe, merge_sha).contains(path)
-        or shared_inputs_at(head_recipe, "HEAD").contains(path)
+        or shared_inputs_at(base_recipe, base).contains(path)
+        or shared_inputs_at(head_recipe, head).contains(path)
     ]
     if not relevant_paths:
-        return False
+        return None
 
     plan = plan_recipe_changes(
         relevant_paths,
@@ -310,14 +310,31 @@ def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> b
             recipe: SharedInputs(
                 tuple(
                     sorted(
-                        set(shared_inputs_at(base_recipe, merge_sha).roots)
-                        | set(shared_inputs_at(head_recipe, "HEAD").roots)
+                        set(shared_inputs_at(base_recipe, base).roots)
+                        | set(shared_inputs_at(head_recipe, head).roots)
                     )
                 )
             )
         },
     )
-    return plan.source_only_recipes == [recipe]
+    return "source_only" if plan.source_only_recipes == [recipe] else "candidate"
+
+
+def unseen_recipe_changes_are_source_only(
+    recipe: str, merge_sha: str, fork_sha: str | None = None
+) -> bool:
+    """Allow a candidate past main's recipe edits it never saw if they keep the image.
+
+    A candidate is built from its PR head, which forked from main at fork_sha.
+    Main's edits between that fork and the merge's first parent reach the
+    merged recipe without ever being tested, as do edits after the merge.
+    """
+    ranges = [(merge_sha, "HEAD")]
+    if fork_sha is not None:
+        run_git("merge-base", "--is-ancestor", fork_sha, f"{merge_sha}^1")
+        ranges.append((fork_sha, f"{merge_sha}^1"))
+    actions = {recipe_change_action(recipe, base, head) for base, head in ranges}
+    return "candidate" not in actions and "source_only" in actions
 
 
 def build_date(recipe: str, revision: str = "HEAD") -> str:
@@ -775,6 +792,7 @@ def verify_candidate(
     expected_head_sha: str,
     expected_pr_number: int | None = None,
     expected_merge_sha: str | None = None,
+    fork_sha: str | None = None,
 ) -> dict[str, Any]:
     """Verify a candidate against its PR identity and the merged recipe."""
     manifest = load_candidate_manifest(candidate_dir)
@@ -806,12 +824,12 @@ def verify_candidate(
         raise RuntimeError(f"Candidate head SHA mismatch for {container}")
     if expected_pr_number is not None and manifest["pr_number"] != expected_pr_number:
         raise RuntimeError(f"Candidate PR number mismatch for {container}")
-    fingerprint_changed = manifest["recipe_fingerprint"] != recipe_fingerprint(recipe)
-    source_only_change = (
-        expected_merge_sha is not None
-        and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
-    )
-    if fingerprint_changed and not source_only_change:
+    if manifest["recipe_fingerprint"] != recipe_fingerprint(recipe) and (
+        expected_merge_sha is None
+        or not unseen_recipe_changes_are_source_only(
+            recipe, expected_merge_sha, fork_sha
+        )
+    ):
         raise RuntimeError(f"Merged recipe differs from tested candidate: {container}")
 
     expected_release_json = f"{expected_info['version']}.json"
@@ -862,13 +880,19 @@ def verify_candidate(
     actual_release = json.loads(paths["release_json"].read_text(encoding="utf-8"))
     if actual_release != expected_release:
         raise RuntimeError(f"Release JSON mismatch for {container}")
-    return {**manifest, **expected_values, "recipe": recipe}
+    verified = {**manifest, **expected_values, "recipe": recipe}
+    # The finalizer rechecks this fingerprint against the merge commit.
+    if expected_merge_sha is not None:
+        verified["recipe_fingerprint"] = recipe_fingerprint(recipe, expected_merge_sha)
+    return verified
 
 
 def command_verify(args: argparse.Namespace) -> None:
     """Verify all candidate directories and write their trusted manifests."""
     manifests = [
-        verify_candidate(path.parent, args.head_sha, args.pr_number, args.merge_sha)
+        verify_candidate(
+            path.parent, args.head_sha, args.pr_number, args.merge_sha, args.fork_sha
+        )
         for path in sorted(Path(args.bundle).glob("*/manifest.json"))
     ]
     if not manifests:
@@ -998,7 +1022,7 @@ def verify_published_metadata(
         )
         source_only_change = (
             expected_merge_sha is not None
-            and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
+            and unseen_recipe_changes_are_source_only(recipe, expected_merge_sha)
         )
         if fingerprint_changed and not source_only_change:
             if not exclude_superseded:
@@ -1144,6 +1168,7 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--bundle", required=True)
     verify.add_argument("--head-sha", required=True)
     verify.add_argument("--merge-sha", required=True)
+    verify.add_argument("--fork-sha")
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)
