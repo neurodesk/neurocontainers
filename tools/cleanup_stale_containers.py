@@ -58,7 +58,9 @@ def parse_iso8601(timestamp: str) -> Optional[datetime]:
 def load_domain_catalog(catalog_root: Path) -> Tuple[Set[str], Set[str]]:
     """Read image identities from each domain's apps.json."""
     try:
-        registry = json.loads((catalog_root / "domains.json").read_text(encoding="utf-8"))
+        registry = json.loads(
+            (catalog_root / "domains.json").read_text(encoding="utf-8")
+        )
         domains = registry["domains"]
     except (OSError, ValueError, KeyError) as exc:
         raise SystemExit(f"[ERROR] Invalid catalog domains.json: {exc}") from exc
@@ -84,14 +86,20 @@ def load_domain_catalog(catalog_root: Path) -> Tuple[Set[str], Set[str]]:
         try:
             catalog = json.loads(apps_path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            raise SystemExit(f"[ERROR] Cannot read {domain} apps catalog: {exc}") from exc
+            raise SystemExit(
+                f"[ERROR] Cannot read {domain} apps catalog: {exc}"
+            ) from exc
         if not isinstance(catalog, dict):
             raise SystemExit(f"[ERROR] Invalid {domain} apps catalog")
         domain_images: Set[str] = set()
         for tool, entry in catalog.items():
-            if not isinstance(tool, str) or not isinstance(entry, dict) or \
-                    not isinstance(entry.get("apps"), dict) or not entry["apps"] or \
-                    not isinstance(entry.get("categories"), list):
+            if (
+                not isinstance(tool, str)
+                or not isinstance(entry, dict)
+                or not isinstance(entry.get("apps"), dict)
+                or not entry["apps"]
+                or not isinstance(entry.get("categories"), list)
+            ):
                 raise SystemExit(f"[ERROR] Invalid app group in {domain} apps catalog")
             primary_images = {}
             app_rows = []
@@ -99,12 +107,16 @@ def load_domain_catalog(catalog_root: Path) -> Tuple[Set[str], Set[str]]:
                 if not isinstance(name, str) or not isinstance(app, dict):
                     raise SystemExit(f"[ERROR] Invalid app in {domain} apps catalog")
                 builddate = app.get("version")
-                if not isinstance(builddate, str) or not re.fullmatch(r"[0-9]{8}", builddate):
+                if not isinstance(builddate, str) or not re.fullmatch(
+                    r"[0-9]{8}", builddate
+                ):
                     raise SystemExit(f"[ERROR] Invalid build date for {tool}/{name}")
                 try:
                     datetime.strptime(builddate, "%Y%m%d")
                 except ValueError as exc:
-                    raise SystemExit(f"[ERROR] Invalid build date for {tool}/{name}") from exc
+                    raise SystemExit(
+                        f"[ERROR] Invalid build date for {tool}/{name}"
+                    ) from exc
                 parts = name.rsplit(" ", 1)
                 app_rows.append((name, app, parts))
                 if len(parts) == 2 and parts[0] == tool:
@@ -120,7 +132,8 @@ def load_domain_catalog(catalog_root: Path) -> Tuple[Set[str], Set[str]]:
                 else:
                     image = (
                         primary_images.get((parts[-1], app["version"]))
-                        if len(parts) == 2 else None
+                        if len(parts) == 2
+                        else None
                     )
                     if image is None:
                         raise SystemExit(f"[ERROR] Image required for {tool}/{name}")
@@ -145,8 +158,14 @@ def load_source_release_keys(
             if sources_root is None:
                 source = Path(temporary) / quote(repository, safe="")
                 subprocess.run(
-                    ["git", "clone", "--quiet", "--depth=1",
-                     f"https://github.com/{repository}.git", str(source)],
+                    [
+                        "git",
+                        "clone",
+                        "--quiet",
+                        "--depth=1",
+                        f"https://github.com/{repository}.git",
+                        str(source),
+                    ],
                     check=True,
                 )
             else:
@@ -417,10 +436,17 @@ def main() -> None:
     parser.add_argument(
         "--remote-root", default="nectar:/neurodesk/", help="Nectar remote path"
     )
-    parser.add_argument("--catalog-root", type=Path, required=True,
-        help="Domain catalog checkout; protect every domain and configured source")
-    parser.add_argument("--sources-root", type=Path,
-        help="Local source checkouts for validation instead of cloning")
+    parser.add_argument(
+        "--catalog-root",
+        type=Path,
+        required=True,
+        help="Domain catalog checkout; protect every domain and configured source",
+    )
+    parser.add_argument(
+        "--sources-root",
+        type=Path,
+        help="Local source checkouts for validation instead of cloning",
+    )
     parser.add_argument(
         "--retention-days", type=int, default=30, help="Retention period in days"
     )
@@ -446,8 +472,10 @@ def main() -> None:
     published, repositories = load_domain_catalog(args.catalog_root)
     source_keys = load_source_release_keys(repositories, args.sources_root)
     expected_keys = published | source_keys
-    print(f"[DEBUG] Protected {len(published)} published images and "
-          f"{len(source_keys)} source release images")
+    print(
+        f"[DEBUG] Protected {len(published)} published images and "
+        f"{len(source_keys)} source release images"
+    )
 
     print(f"[DEBUG] Retention window for stale deletions: {args.retention_days} day(s)")
     if args.dry_run:
