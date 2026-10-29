@@ -358,16 +358,19 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     monkeypatch.setattr(
         one_pr_release,
         "unseen_recipe_changes_are_source_only",
-        lambda recipe, merge_sha, fork_sha: recipe == "demo"
-        and merge_sha == "merge123",
+        lambda recipe, merge_sha, fork_sha: (
+            recipe == "demo" and merge_sha == "merge123"
+        ),
     )
     working_tree_fingerprint = one_pr_release.recipe_fingerprint
     monkeypatch.setattr(
         one_pr_release,
         "recipe_fingerprint",
-        lambda recipe, revision=None: "merged-fingerprint"
-        if revision == "merge123"
-        else working_tree_fingerprint(recipe),
+        lambda recipe, revision=None: (
+            "merged-fingerprint"
+            if revision == "merge123"
+            else working_tree_fingerprint(recipe)
+        ),
     )
     verified = one_pr_release.verify_candidate(candidate_dir, "abc123", 42, "merge123")
     assert verified["recipe"] == "demo"
@@ -587,8 +590,16 @@ def test_verify_published_metadata_allows_only_source_changes_since_merge(
     ("main_field", "main_value", "accepted"),
     [
         ("domains", ["neuroimaging"], True),
-        ("build", {"kind": "neurodocker", "base-image": "ubuntu:24.10",
-                   "pkg-manager": "apt", "directives": []}, False),
+        (
+            "build",
+            {
+                "kind": "neurodocker",
+                "base-image": "ubuntu:24.10",
+                "pkg-manager": "apt",
+                "directives": [],
+            },
+            False,
+        ),
     ],
 )
 def test_promotion_judges_main_changes_the_candidate_never_saw(
