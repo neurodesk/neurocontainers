@@ -1,5 +1,6 @@
 name: pcntoolkit
 version: "1.4.0"
+epoch: 1
 architectures:
   - x86_64
   - aarch64
