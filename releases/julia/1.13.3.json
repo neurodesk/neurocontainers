@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "julia 1.13.3": {
+      "version": "20261029",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "vscodeGUI-julia 1.13.3": {
+      "version": "20261029",
+      "exec": "code",
+      "apptainer_args": []
+    },
+    "REPLGUI-julia 1.13.3": {
+      "version": "20261029",
+      "exec": "julia",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}
