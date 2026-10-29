@@ -287,53 +287,69 @@ def release_plan(base: str, head: str) -> ReleasePlan:
     return plan
 
 
-def recipe_change_action(recipe: str, base: str, head: str) -> str | None:
-    """Classify recipe edits between two trusted commits, or None without edits."""
-    base_recipe = load_recipe_at(base, recipe)
-    head_recipe = load_recipe_at(head, recipe)
+def recipe_change_action(
+    recipe: str, base: str, head: str, consumers: tuple[str, ...] = ()
+) -> str | None:
+    """Classify recipe edits between two trusted commits, or None without edits.
+
+    Shared inputs count when the recipe at base, head, or any consumer
+    revision uses them.
+    """
+    revisions = (base, head, *consumers)
+    recipes = {revision: load_recipe_at(revision, recipe) for revision in revisions}
+    dependencies = SharedInputs(
+        tuple(
+            sorted(
+                {
+                    root
+                    for revision, data in recipes.items()
+                    for root in shared_inputs_at(data, revision).roots
+                }
+            )
+        )
+    )
     recipe_prefix = f"recipes/{recipe}/"
     relevant_paths = [
         path
         for path in changed_files(base, head)
-        if path.startswith(recipe_prefix)
-        or shared_inputs_at(base_recipe, base).contains(path)
-        or shared_inputs_at(head_recipe, head).contains(path)
+        if path.startswith(recipe_prefix) or dependencies.contains(path)
     ]
     if not relevant_paths:
         return None
 
     plan = plan_recipe_changes(
         relevant_paths,
-        {recipe: base_recipe},
-        {recipe: head_recipe},
-        shared_dependencies={
-            recipe: SharedInputs(
-                tuple(
-                    sorted(
-                        set(shared_inputs_at(base_recipe, base).roots)
-                        | set(shared_inputs_at(head_recipe, head).roots)
-                    )
-                )
-            )
-        },
+        {recipe: recipes[base]},
+        {recipe: recipes[head]},
+        shared_dependencies={recipe: dependencies},
     )
     return "source_only" if plan.source_only_recipes == [recipe] else "candidate"
 
 
 def unseen_recipe_changes_are_source_only(
-    recipe: str, merge_sha: str, fork_sha: str | None = None
+    recipe: str,
+    merge_sha: str,
+    fork_sha: str | None = None,
+    integration_base: str | None = None,
 ) -> bool:
     """Allow a candidate past main's recipe edits it never saw if they keep the image.
 
-    A candidate is built from its PR head, which forked from main at fork_sha.
-    Main's edits between that fork and the merge's first parent reach the
-    merged recipe without ever being tested, as do edits after the merge.
+    A candidate is built from its PR head, which last took main at fork_sha.
+    Main's edits from there to integration_base, main just before the merge,
+    reach the merged recipe untested, as do edits after the merge. Shared
+    inputs the merged recipe uses count even if the PR introduced them.
     """
-    ranges = [(merge_sha, "HEAD")]
+    ranges: list[tuple[str, str, tuple[str, ...]]] = [(merge_sha, "HEAD", ())]
     if fork_sha is not None:
-        run_git("merge-base", "--is-ancestor", fork_sha, f"{merge_sha}^1")
-        ranges.append((fork_sha, f"{merge_sha}^1"))
-    actions = {recipe_change_action(recipe, base, head) for base, head in ranges}
+        if integration_base is None:
+            raise RuntimeError("A fork point requires the merge's integration base")
+        run_git("merge-base", "--is-ancestor", fork_sha, integration_base)
+        run_git("merge-base", "--is-ancestor", integration_base, merge_sha)
+        ranges.append((fork_sha, integration_base, (merge_sha,)))
+    actions = {
+        recipe_change_action(recipe, base, head, consumers)
+        for base, head, consumers in ranges
+    }
     return "candidate" not in actions and "source_only" in actions
 
 
@@ -793,6 +809,7 @@ def verify_candidate(
     expected_pr_number: int | None = None,
     expected_merge_sha: str | None = None,
     fork_sha: str | None = None,
+    integration_base: str | None = None,
 ) -> dict[str, Any]:
     """Verify a candidate against its PR identity and the merged recipe."""
     manifest = load_candidate_manifest(candidate_dir)
@@ -827,7 +844,7 @@ def verify_candidate(
     if manifest["recipe_fingerprint"] != recipe_fingerprint(recipe) and (
         expected_merge_sha is None
         or not unseen_recipe_changes_are_source_only(
-            recipe, expected_merge_sha, fork_sha
+            recipe, expected_merge_sha, fork_sha, integration_base
         )
     ):
         raise RuntimeError(f"Merged recipe differs from tested candidate: {container}")
@@ -891,7 +908,12 @@ def command_verify(args: argparse.Namespace) -> None:
     """Verify all candidate directories and write their trusted manifests."""
     manifests = [
         verify_candidate(
-            path.parent, args.head_sha, args.pr_number, args.merge_sha, args.fork_sha
+            path.parent,
+            args.head_sha,
+            args.pr_number,
+            args.merge_sha,
+            args.fork_sha,
+            args.integration_base,
         )
         for path in sorted(Path(args.bundle).glob("*/manifest.json"))
     ]
@@ -1169,6 +1191,7 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--head-sha", required=True)
     verify.add_argument("--merge-sha", required=True)
     verify.add_argument("--fork-sha")
+    verify.add_argument("--integration-base")
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)

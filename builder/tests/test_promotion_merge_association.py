@@ -10,7 +10,8 @@ import yaml
 
 MERGE = "b" * 40
 HEAD = "a" * 40
-BASE = "e" * 40
+BEFORE = "e" * 40
+PARENT = "d" * 40
 FORK = "f" * 40
 
 
@@ -19,7 +20,7 @@ def pull(number=7, merge=MERGE, merged=True, base="main"):
         "number": number,
         "merge_commit_sha": merge,
         "merged_at": "2026-10-14T05:55:39Z" if merged else None,
-        "base": {"ref": base, "sha": BASE},
+        "base": {"ref": base},
         "head": {"sha": HEAD},
     }
 
@@ -44,8 +45,13 @@ const github = {rest: {
     if (input.api_error) throw new Error(input.api_error);
     return {data: input.responses[Math.min(polls - 1, input.responses.length - 1)]};
   },
+  getCommit: async query => {
+    if (query.ref !== input.merge) throw new Error(`Unexpected commit ${query.ref}`);
+    return {data: {parents: [{sha: input.parent}, {sha: input.head}]}};
+  },
   compareCommitsWithBasehead: async query => {
-    if (query.basehead !== `${input.base}...${input.head}`)
+    const base = input.event === 'push' ? input.before : input.parent;
+    if (query.basehead !== `${base}...${input.head}`)
       throw new Error(`Unexpected comparison ${query.basehead}`);
     return {data: {merge_base_commit: {sha: input.fork}}};
   }},
@@ -62,7 +68,7 @@ global.setTimeout = (callback, delay) => {delays.push(delay); callback(); return
     await new AsyncFunction('github', 'context', 'core', input.script)(github, {
       eventName: input.event, sha: input.merge,
       repo: {owner: 'example', repo: 'containers'},
-      payload: {inputs: {pr_number: '7'}}
+      payload: {inputs: {pr_number: '7'}, before: input.before}
     }, {info: () => {}, notice: () => {}, setOutput: (k, v) => {outputs[k] = v;}});
   } catch (failure) {error = failure.message;}
   process.stdout.write(JSON.stringify({outputs, polls, gets, delays, error}));
@@ -77,7 +83,8 @@ global.setTimeout = (callback, delay) => {delays.push(delay); callback(); return
                 {
                     "responses": responses,
                     "merge": MERGE,
-                    "base": BASE,
+                    "before": BEFORE,
+                    "parent": PARENT,
                     "head": HEAD,
                     "fork": FORK,
                     "event": event,
@@ -115,6 +122,7 @@ def test_delayed_merge_is_promoted_with_exact_candidate_identity(responses, poll
         "head_sha": HEAD,
         "merge_sha": MERGE,
         "fork_sha": FORK,
+        "integration_base": BEFORE,
     }
 
 
@@ -148,6 +156,8 @@ def test_explicit_recovery_keeps_its_existing_merged_pr_checks():
     assert actual["gets"] == 1 and actual["polls"] == 0
     assert actual["delays"] == []
     assert actual["outputs"]["head_sha"] == HEAD
+    assert actual["outputs"]["integration_base"] == PARENT
+    assert actual["outputs"]["fork_sha"] == FORK
     rejected = resolve([], event="workflow_dispatch", dispatch=pull(merged=False))
     assert "is not merged into main" in rejected["error"]
     assert rejected["outputs"] == {}

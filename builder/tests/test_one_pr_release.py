@@ -358,9 +358,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     monkeypatch.setattr(
         one_pr_release,
         "unseen_recipe_changes_are_source_only",
-        lambda recipe, merge_sha, fork_sha: (
-            recipe == "demo" and merge_sha == "merge123"
-        ),
+        lambda recipe, merge_sha, *_: recipe == "demo" and merge_sha == "merge123",
     )
     working_tree_fingerprint = one_pr_release.recipe_fingerprint
     monkeypatch.setattr(
@@ -587,23 +585,19 @@ def test_verify_published_metadata_allows_only_source_changes_since_merge(
 
 
 @pytest.mark.parametrize(
-    ("main_field", "main_value", "accepted"),
+    ("scenario", "merge", "accepted"),
     [
-        ("domains", ["neuroimaging"], True),
-        (
-            "build",
-            {
-                "kind": "neurodocker",
-                "base-image": "ubuntu:24.10",
-                "pkg-manager": "apt",
-                "directives": [],
-            },
-            False,
-        ),
+        ("catalog", "squash", True),
+        ("image", "squash", False),
+        ("new-dependency", "squash", False),
+        ("new-dependency", "merge", False),
+        ("new-dependency", "rebase", False),
+        ("catalog-after-multi-commit-pr", "rebase", True),
+        ("pr-merged-main", "merge", True),
     ],
 )
 def test_promotion_judges_main_changes_the_candidate_never_saw(
-    tmp_path: Path, monkeypatch, main_field: str, main_value: object, accepted: bool
+    tmp_path: Path, monkeypatch, scenario: str, merge: str, accepted: bool
 ) -> None:
     """A PR built on an older main is tested without main's later recipe edits."""
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
@@ -611,29 +605,74 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
     git("init", "-b", "main")
     git("config", "user.email", "test@example.com")
     git("config", "user.name", "test")
-    recipe_dir = write_recipe(tmp_path, version="1.2.2")
-    build_yaml = recipe_dir / "build.yaml"
-    git("add", ".")
-    git("commit", "-m", "Fork point")
-    fork_sha = git("rev-parse", "HEAD")
+    build_yaml = write_recipe(tmp_path, version="1.2.2") / "build.yaml"
+    macro = tmp_path / "macros" / "shared.yaml"
+    macro.parent.mkdir()
+    macro.write_text("directives:\n- run: echo old > /opt/runtime\n")
 
+    def edit(change) -> None:
+        recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8"))
+        change(recipe)
+        build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
+
+    def commit(message: str) -> str:
+        git("add", ".")
+        git("commit", "-m", message)
+        return git("rev-parse", "HEAD")
+
+    commit("Fork point")
     git("checkout", "-b", "pr")
-    recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8"))
-    recipe["version"] = "1.2.3"
-    build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
-    git("commit", "-am", "Bump demo")
+    edit(lambda recipe: recipe.update(version="1.2.3"))
+    if scenario == "new-dependency":
+        edit(
+            lambda recipe: recipe["build"].update(
+                directives=[{"include": "shared.yaml"}]
+            )
+        )
+    pr_commits = [commit("Bump demo")]
+    if scenario == "catalog-after-multi-commit-pr":
+        edit(lambda recipe: recipe["build"].update({"base-image": "ubuntu:24.10"}))
+        pr_commits.append(commit("Move demo to a newer base"))
+    if scenario == "pr-merged-main":
+        git("checkout", "main")
+        edit(lambda recipe: recipe["build"].update({"base-image": "ubuntu:24.10"}))
+        commit("Main image change the PR then tests")
+        git("checkout", "pr")
+        git("merge", "--no-edit", "main")
     head_sha = git("rev-parse", "HEAD")
     tested_fingerprint = one_pr_release.recipe_fingerprint("demo")
-    tested_release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
+    tested_release = release_data(
+        "demo",
+        "1.2.3",
+        yaml.safe_load(build_yaml.read_text(encoding="utf-8")),
+        "20260721",
+        "x86_64",
+    )
 
     git("checkout", "main")
-    recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8"))
-    recipe[main_field] = main_value
-    build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
-    git("commit", "-am", "Concurrent main change")
-    git("merge", "--squash", "pr")
-    git("commit", "-m", "Bump demo (#42)")
+    if scenario == "image":
+        edit(lambda recipe: recipe["build"].update({"base-image": "ubuntu:25.04"}))
+    elif scenario != "pr-merged-main":
+        edit(lambda recipe: recipe.update(domains=["neuroimaging"]))
+    if scenario == "new-dependency":
+        macro.write_text("directives:\n- run: echo new > /opt/runtime\n")
+    integration_base = (
+        git("rev-parse", "HEAD")
+        if scenario == "pr-merged-main"
+        else commit("Concurrent main change")
+    )
+    if merge == "squash":
+        git("merge", "--squash", "pr")
+        commit("Bump demo (#42)")
+    elif merge == "merge":
+        git("merge", "--no-ff", "--no-edit", "pr")
+    else:
+        git("cherry-pick", *pr_commits)
     merge_sha = git("rev-parse", "HEAD")
+    if scenario == "pr-merged-main":
+        edit(lambda recipe: recipe.update(domains=["neuroimaging"]))
+        commit("Catalog edit after the merge")
+    fork_sha = git("merge-base", integration_base, head_sha)
 
     candidate_dir = tmp_path / "bundle" / "demo"
     candidate_dir.mkdir(parents=True)
@@ -662,23 +701,26 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
     }
     (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="differs from tested candidate"):
-        one_pr_release.verify_candidate(candidate_dir, head_sha, 42, merge_sha)
+    def verify() -> dict:
+        return one_pr_release.verify_candidate(
+            candidate_dir, head_sha, 42, merge_sha, fork_sha, integration_base
+        )
+
     if not accepted:
         with pytest.raises(RuntimeError, match="differs from tested candidate"):
-            one_pr_release.verify_candidate(
-                candidate_dir, head_sha, 42, merge_sha, fork_sha
-            )
+            verify()
         return
 
-    verified = one_pr_release.verify_candidate(
-        candidate_dir, head_sha, 42, merge_sha, fork_sha
-    )
     manifests_path = tmp_path / "verified-manifests.json"
-    manifests_path.write_text(json.dumps([verified]), encoding="utf-8")
+    manifests_path.write_text(json.dumps([verify()]), encoding="utf-8")
     assert one_pr_release.verify_published_metadata(
-        candidate_dir.parent, manifests_path, head_sha, 42, merge_sha
-    ) == [verified]
+        candidate_dir.parent,
+        manifests_path,
+        head_sha,
+        42,
+        merge_sha,
+        exclude_superseded=True,
+    ) == json.loads(manifests_path.read_text(encoding="utf-8"))
 
 
 def test_detect_targets_expands_declared_architectures(
