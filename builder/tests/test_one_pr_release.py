@@ -572,6 +572,93 @@ def test_verify_published_metadata_allows_only_source_changes_since_merge(
         )
 
 
+@pytest.mark.parametrize(
+    ("main_field", "main_value", "accepted"),
+    [
+        ("domains", ["neuroimaging"], True),
+        ("build", {"kind": "neurodocker", "base-image": "ubuntu:24.10",
+                   "pkg-manager": "apt", "directives": []}, False),
+    ],
+)
+def test_promotion_judges_main_changes_the_candidate_never_saw(
+    tmp_path: Path, monkeypatch, main_field: str, main_value: object, accepted: bool
+) -> None:
+    """A PR built on an older main is tested without main's later recipe edits."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    recipe_dir = write_recipe(tmp_path, version="1.2.2")
+    build_yaml = recipe_dir / "build.yaml"
+    git("add", ".")
+    git("commit", "-m", "Fork point")
+    fork_sha = git("rev-parse", "HEAD")
+
+    git("checkout", "-b", "pr")
+    recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8"))
+    recipe["version"] = "1.2.3"
+    build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    git("commit", "-am", "Bump demo")
+    head_sha = git("rev-parse", "HEAD")
+    tested_fingerprint = one_pr_release.recipe_fingerprint("demo")
+    tested_release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
+
+    git("checkout", "main")
+    recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8"))
+    recipe[main_field] = main_value
+    build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    git("commit", "-am", "Concurrent main change")
+    git("merge", "--squash", "pr")
+    git("commit", "-m", "Bump demo (#42)")
+    merge_sha = git("rev-parse", "HEAD")
+
+    candidate_dir = tmp_path / "bundle" / "demo"
+    candidate_dir.mkdir(parents=True)
+    (candidate_dir / "demo_1.2.3_20260721.docker.tar").write_bytes(b"docker-image")
+    (candidate_dir / "demo_1.2.3_20260721.simg").write_bytes(b"sif-image")
+    (candidate_dir / "1.2.3.json").write_text(
+        json.dumps(tested_release), encoding="utf-8"
+    )
+    manifest = {
+        "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_1.2.3",
+        "pr_number": 42,
+        "head_sha": head_sha,
+        "candidate_tag": f"nd-candidate-demo:{head_sha[:12]}",
+        "recipe_fingerprint": tested_fingerprint,
+        "docker_archive": "demo_1.2.3_20260721.docker.tar",
+        "docker_sha256": hashlib.sha256(b"docker-image").hexdigest(),
+        "sif": "demo_1.2.3_20260721.simg",
+        "sif_sha256": hashlib.sha256(b"sif-image").hexdigest(),
+        "release_json": "1.2.3.json",
+    }
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="differs from tested candidate"):
+        one_pr_release.verify_candidate(candidate_dir, head_sha, 42, merge_sha)
+    if not accepted:
+        with pytest.raises(RuntimeError, match="differs from tested candidate"):
+            one_pr_release.verify_candidate(
+                candidate_dir, head_sha, 42, merge_sha, fork_sha
+            )
+        return
+
+    verified = one_pr_release.verify_candidate(
+        candidate_dir, head_sha, 42, merge_sha, fork_sha
+    )
+    manifests_path = tmp_path / "verified-manifests.json"
+    manifests_path.write_text(json.dumps([verified]), encoding="utf-8")
+    assert one_pr_release.verify_published_metadata(
+        candidate_dir.parent, manifests_path, head_sha, 42, merge_sha
+    ) == [verified]
+
+
 def test_detect_targets_expands_declared_architectures(
     tmp_path: Path, monkeypatch
 ) -> None:
