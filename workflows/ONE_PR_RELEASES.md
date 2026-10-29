@@ -43,11 +43,11 @@ artifacts after merge. They no longer create a second release-metadata PR.
    release metadata before publishing the tested files.
    A PR branched from an older `main` is tested without the recipe edits `main`
    gained before the merge. GitHub reports the last `main` commit the PR head
-   contains, and the merge push reports `main` just before the merge. Edits
-   between the two may only be ones the release planner classifies as
-   source-only, such as `domains`, and they count shared inputs the merged
-   recipe uses. A manual dispatch uses the merge's first parent instead, so it
-   rejects such edits after a multi-commit rebase merge.
+   contains. Edits from there to the merge's first parent may only be ones the
+   release planner classifies as source-only, such as `domains`, and they count
+   shared inputs the merged recipe uses. Recipes may not use YAML anchors or
+   aliases, which could feed a source-only field into the image. A multi-commit
+   rebase merge places PR commits in that range, so promotion rejects it.
    The variant a candidate claims is re-resolved against the merged recipe, so a
    candidate cannot promote itself into an identity the recipe never declared.
 6. The promoter commits the generated JSON to `releases/` on `main`. That push

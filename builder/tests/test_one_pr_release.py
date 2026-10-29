@@ -585,19 +585,21 @@ def test_verify_published_metadata_allows_only_source_changes_since_merge(
 
 
 @pytest.mark.parametrize(
-    ("scenario", "merge", "accepted"),
+    ("scenario", "merge", "rejection"),
     [
-        ("catalog", "squash", True),
-        ("image", "squash", False),
-        ("new-dependency", "squash", False),
-        ("new-dependency", "merge", False),
-        ("new-dependency", "rebase", False),
-        ("catalog-after-multi-commit-pr", "rebase", True),
-        ("pr-merged-main", "merge", True),
+        ("catalog", "squash", None),
+        ("image", "squash", "differs from tested candidate"),
+        ("new-dependency", "squash", "differs from tested candidate"),
+        ("new-dependency", "merge", "differs from tested candidate"),
+        ("new-dependency", "rebase", "differs from tested candidate"),
+        ("batch-pushed-dependency", "squash", "differs from tested candidate"),
+        ("catalog-after-multi-commit-pr", "rebase", "differs from tested candidate"),
+        ("pr-merged-main", "merge", None),
+        ("aliased-readme", "squash", "anchors or aliases"),
     ],
 )
 def test_promotion_judges_main_changes_the_candidate_never_saw(
-    tmp_path: Path, monkeypatch, scenario: str, merge: str, accepted: bool
+    tmp_path: Path, monkeypatch, scenario: str, merge: str, rejection: str | None
 ) -> None:
     """A PR built on an older main is tested without main's later recipe edits."""
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
@@ -615,6 +617,12 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
         change(recipe)
         build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
 
+    def replace(old: str, new: str) -> None:
+        build_yaml.write_text(build_yaml.read_text(encoding="utf-8").replace(old, new))
+
+    if scenario == "aliased-readme":
+        replace("architectures:", "readme: &runtime_value old-runtime\narchitectures:")
+
     def commit(message: str) -> str:
         git("add", ".")
         git("commit", "-m", message)
@@ -622,8 +630,13 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
 
     commit("Fork point")
     git("checkout", "-b", "pr")
-    edit(lambda recipe: recipe.update(version="1.2.3"))
-    if scenario == "new-dependency":
+    replace("version: 1.2.2", "version: 1.2.3")
+    if scenario == "aliased-readme":
+        replace(
+            "  directives: []",
+            "  directives:\n  - environment:\n      RUNTIME_VALUE: *runtime_value",
+        )
+    if scenario in ("new-dependency", "batch-pushed-dependency"):
         edit(
             lambda recipe: recipe["build"].update(
                 directives=[{"include": "shared.yaml"}]
@@ -652,15 +665,17 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
     git("checkout", "main")
     if scenario == "image":
         edit(lambda recipe: recipe["build"].update({"base-image": "ubuntu:25.04"}))
+    elif scenario == "aliased-readme":
+        replace("old-runtime", "new-runtime")
     elif scenario != "pr-merged-main":
         edit(lambda recipe: recipe.update(domains=["neuroimaging"]))
     if scenario == "new-dependency":
         macro.write_text("directives:\n- run: echo new > /opt/runtime\n")
-    integration_base = (
-        git("rev-parse", "HEAD")
-        if scenario == "pr-merged-main"
-        else commit("Concurrent main change")
-    )
+    if scenario != "pr-merged-main":
+        commit("Concurrent main change")
+    if scenario == "batch-pushed-dependency":
+        macro.write_text("directives:\n- run: echo new > /opt/runtime\n")
+        commit("Macro change pushed together with the merge")
     if merge == "squash":
         git("merge", "--squash", "pr")
         commit("Bump demo (#42)")
@@ -672,7 +687,7 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
     if scenario == "pr-merged-main":
         edit(lambda recipe: recipe.update(domains=["neuroimaging"]))
         commit("Catalog edit after the merge")
-    fork_sha = git("merge-base", integration_base, head_sha)
+    fork_sha = git("merge-base", f"{merge_sha}^1", head_sha)
 
     candidate_dir = tmp_path / "bundle" / "demo"
     candidate_dir.mkdir(parents=True)
@@ -703,11 +718,11 @@ def test_promotion_judges_main_changes_the_candidate_never_saw(
 
     def verify() -> dict:
         return one_pr_release.verify_candidate(
-            candidate_dir, head_sha, 42, merge_sha, fork_sha, integration_base
+            candidate_dir, head_sha, 42, merge_sha, fork_sha
         )
 
-    if not accepted:
-        with pytest.raises(RuntimeError, match="differs from tested candidate"):
+    if rejection is not None:
+        with pytest.raises(RuntimeError, match=rejection):
             verify()
         return
 

@@ -10,7 +10,6 @@ import yaml
 
 MERGE = "b" * 40
 HEAD = "a" * 40
-BEFORE = "e" * 40
 PARENT = "d" * 40
 FORK = "f" * 40
 
@@ -50,8 +49,7 @@ const github = {rest: {
     return {data: {parents: [{sha: input.parent}, {sha: input.head}]}};
   },
   compareCommitsWithBasehead: async query => {
-    const base = input.event === 'push' ? input.before : input.parent;
-    if (query.basehead !== `${base}...${input.head}`)
+    if (query.basehead !== `${input.parent}...${input.head}`)
       throw new Error(`Unexpected comparison ${query.basehead}`);
     return {data: {merge_base_commit: {sha: input.fork}}};
   }},
@@ -68,7 +66,7 @@ global.setTimeout = (callback, delay) => {delays.push(delay); callback(); return
     await new AsyncFunction('github', 'context', 'core', input.script)(github, {
       eventName: input.event, sha: input.merge,
       repo: {owner: 'example', repo: 'containers'},
-      payload: {inputs: {pr_number: '7'}, before: input.before}
+      payload: {inputs: {pr_number: '7'}}
     }, {info: () => {}, notice: () => {}, setOutput: (k, v) => {outputs[k] = v;}});
   } catch (failure) {error = failure.message;}
   process.stdout.write(JSON.stringify({outputs, polls, gets, delays, error}));
@@ -83,7 +81,6 @@ global.setTimeout = (callback, delay) => {delays.push(delay); callback(); return
                 {
                     "responses": responses,
                     "merge": MERGE,
-                    "before": BEFORE,
                     "parent": PARENT,
                     "head": HEAD,
                     "fork": FORK,
@@ -122,7 +119,6 @@ def test_delayed_merge_is_promoted_with_exact_candidate_identity(responses, poll
         "head_sha": HEAD,
         "merge_sha": MERGE,
         "fork_sha": FORK,
-        "integration_base": BEFORE,
     }
 
 
@@ -156,7 +152,6 @@ def test_explicit_recovery_keeps_its_existing_merged_pr_checks():
     assert actual["gets"] == 1 and actual["polls"] == 0
     assert actual["delays"] == []
     assert actual["outputs"]["head_sha"] == HEAD
-    assert actual["outputs"]["integration_base"] == PARENT
     assert actual["outputs"]["fork_sha"] == FORK
     rejected = resolve([], event="workflow_dispatch", dispatch=pull(merged=False))
     assert "is not merged into main" in rejected["error"]

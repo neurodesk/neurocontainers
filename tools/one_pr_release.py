@@ -173,8 +173,18 @@ def load_recipe_at(revision: str, recipe: str) -> dict[str, Any] | None:
     present = run_git("ls-tree", "--name-only", revision, "--", relative)
     if present != relative:
         return None
+    text = run_git("show", f"{revision}:{relative}")
     try:
-        data = yaml.safe_load(run_git("show", f"{revision}:{relative}"))
+        # An alias lets a source-only field such as readme feed an image field,
+        # which would defeat field-level change classification.
+        if any(
+            isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None)
+            for event in yaml.parse(text, Loader=yaml.SafeLoader)
+        ):
+            raise RuntimeError(
+                f"Recipe {relative} at {revision} uses YAML anchors or aliases"
+            )
+        data = yaml.safe_load(text)
     except yaml.YAMLError as error:
         raise RuntimeError(
             f"Unable to parse {relative} at {revision}: {error}"
@@ -327,24 +337,20 @@ def recipe_change_action(
 
 
 def unseen_recipe_changes_are_source_only(
-    recipe: str,
-    merge_sha: str,
-    fork_sha: str | None = None,
-    integration_base: str | None = None,
+    recipe: str, merge_sha: str, fork_sha: str | None = None
 ) -> bool:
     """Allow a candidate past main's recipe edits it never saw if they keep the image.
 
     A candidate is built from its PR head, which last took main at fork_sha.
-    Main's edits from there to integration_base, main just before the merge,
-    reach the merged recipe untested, as do edits after the merge. Shared
-    inputs the merged recipe uses count even if the PR introduced them.
+    Main's edits from there to the merge's first parent reach the merged
+    recipe untested, as do edits after the merge. Shared inputs the merged
+    recipe uses count even if the PR introduced them. A multi-commit rebase
+    merge puts PR commits in that range, so it fails closed.
     """
     ranges: list[tuple[str, str, tuple[str, ...]]] = [(merge_sha, "HEAD", ())]
     if fork_sha is not None:
-        if integration_base is None:
-            raise RuntimeError("A fork point requires the merge's integration base")
+        integration_base = f"{merge_sha}^1"
         run_git("merge-base", "--is-ancestor", fork_sha, integration_base)
-        run_git("merge-base", "--is-ancestor", integration_base, merge_sha)
         ranges.append((fork_sha, integration_base, (merge_sha,)))
     actions = {
         recipe_change_action(recipe, base, head, consumers)
@@ -809,7 +815,6 @@ def verify_candidate(
     expected_pr_number: int | None = None,
     expected_merge_sha: str | None = None,
     fork_sha: str | None = None,
-    integration_base: str | None = None,
 ) -> dict[str, Any]:
     """Verify a candidate against its PR identity and the merged recipe."""
     manifest = load_candidate_manifest(candidate_dir)
@@ -844,7 +849,7 @@ def verify_candidate(
     if manifest["recipe_fingerprint"] != recipe_fingerprint(recipe) and (
         expected_merge_sha is None
         or not unseen_recipe_changes_are_source_only(
-            recipe, expected_merge_sha, fork_sha, integration_base
+            recipe, expected_merge_sha, fork_sha
         )
     ):
         raise RuntimeError(f"Merged recipe differs from tested candidate: {container}")
@@ -913,7 +918,6 @@ def command_verify(args: argparse.Namespace) -> None:
             args.pr_number,
             args.merge_sha,
             args.fork_sha,
-            args.integration_base,
         )
         for path in sorted(Path(args.bundle).glob("*/manifest.json"))
     ]
@@ -1191,7 +1195,6 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--head-sha", required=True)
     verify.add_argument("--merge-sha", required=True)
     verify.add_argument("--fork-sha")
-    verify.add_argument("--integration-base")
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)
