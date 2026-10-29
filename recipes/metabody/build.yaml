@@ -20,8 +20,8 @@ variables:
     openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
     openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-    openrecon_ismrmrd_version: "1.14.2"
-    upstream_commit: "9e55ef71c2124ef322fdb942af2627432bebd266"
+    openrecon_ismrmrd_version: "1.15.0"
+    upstream_commit: "0a3871ab1b92e9b0c473dcc55115f708134f61b4"
     conda_version: "23.11.0-2"
     conda_download_url:
         try:
