@@ -1,0 +1,81 @@
+name: Validate cleanup storage dry run
+
+on:
+  push:
+    branches: [fix/3789-safe-cleanup]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: validate-cleanup-storage
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.repository == 'neurodesk/neurocontainers'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Check out published domain catalogs
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+          path: apps-catalog
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37
+        with:
+          aws-region: us-east-2
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      - name: Install storage clients
+        run: |
+          set -euo pipefail
+          if ! command -v rclone >/dev/null; then
+            curl -fsSL https://rclone.org/install.sh | sudo bash
+          fi
+          if ! command -v aws >/dev/null; then
+            curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+              -o "$RUNNER_TEMP/awscliv2.zip"
+            unzip -q "$RUNNER_TEMP/awscliv2.zip" -d "$RUNNER_TEMP"
+            sudo "$RUNNER_TEMP/aws/install"
+          fi
+      - name: Preview stale SIFs without deleting objects
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          OS_AUTH_TYPE: v3applicationcredential
+          OS_IDENTITY_API_VERSION: '3'
+        run: |
+          set -euo pipefail
+          rclone config create nectar swift env_auth true
+          python3 tools/cleanup_stale_containers.py \
+            --s3-bucket neurocontainers \
+            --catalog-root apps-catalog \
+            --retention-days 7 \
+            --dry-run | tee cleanup-dry-run.log
+      - name: Verify Nectar candidates are top-level images
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          prefix = "[DRY-RUN] Would delete unreferenced Nectar object: nectar:/neurodesk/"
+          lines = Path("cleanup-dry-run.log").read_text().splitlines()
+          candidates = [line.removeprefix(prefix) for line in lines if line.startswith(prefix)]
+          assert all("/" not in key and key.endswith(".simg") for key in candidates), candidates
+          print(f"Verified {len(candidates)} top-level Nectar deletion candidates; no deletions executed.")
+          PYTHON
+      - name: Save dry-run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleanup-storage-dry-run
+          path: cleanup-dry-run.log
+          if-no-files-found: warn
