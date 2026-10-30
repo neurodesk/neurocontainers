@@ -4,7 +4,7 @@
 #This script runs on the CVMFS STRATUM 0 server every 5 minutes
 
 #sudo vi /etc/cron.d/sync_containers_to_cvmfs
-#*/5 * * * * ec2-user cd ~ && bash /home/rocky/neurocontainers/cvmfs/sync_containers_to_cvmfs.sh
+#*/5 * * * * rocky cd ~ && { git -C /home/rocky/neurocontainers fetch -q origin; git -C /home/rocky/neurocontainers reset -q --hard origin/main; bash /home/rocky/neurocontainers/cvmfs/sync_containers_to_cvmfs.sh >> /home/rocky/cronjob.log 2>&1; }
 
 #The cronjob logfile is rotated after every run that reaches the end
 
@@ -335,7 +335,10 @@ import json, sys, urllib.request, pathlib
 base, domains_str, out = sys.argv[1], sys.argv[2], sys.argv[3]
 merged = {}
 for d in domains_str.split():
-    with urllib.request.urlopen(f'{base}/{d}/apps.json') as r:
+    # Cloudflare rejects the default Python-urllib user agent (error 1010).
+    req = urllib.request.Request(f'{base}/{d}/apps.json',
+                                 headers={'User-Agent': 'neurodesk-cvmfs-sync'})
+    with urllib.request.urlopen(req) as r:
         merged.update(json.load(r))
 pathlib.Path(out).write_text(json.dumps(merged))
 " "$CATALOG_BASE_URL" "$CATALOG_DOMAINS" "$CATALOG_TEMP" || {
