@@ -2,6 +2,8 @@ variables:
   upstream_version: "1.11.0"
   traits_version: 6.4.3
   libmamba_version: 1.5.8
+  vscode_version: "1.144.0"
+  vscode_sha256: "b8fbff92d8d95908990eed0acf004c980f29003725469e794ddbd017ea511a20"
 
 name: nipype
 version: "1.11.0"
@@ -39,6 +41,19 @@ auto_update:
       version_regex: '^libmambapy-(?P<version>1[.]5[.][0-9]+)$'
       target:
         variable: libmamba_version
+    - id: vscode
+      dependency: true
+      method: webpage
+      url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+      version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+      target:
+        variable: vscode_version
+    - id: vscode-deb
+      dependency: true
+      method: http_digest
+      url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+      target:
+        variable: vscode_sha256
 
 build:
   kind: neurodocker
@@ -255,7 +270,8 @@ files:
     url: https://github.com/sylabs/singularity/releases/download/v3.10.2/singularity-ce-3.10.2.tar.gz
 
   - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+    sha256: "{{ context.vscode_sha256 }}"
 
   - name: spm12_r7771_Linux_R2019b_zip
     url: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
