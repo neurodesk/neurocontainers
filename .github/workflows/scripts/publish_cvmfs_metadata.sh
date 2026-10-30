@@ -10,7 +10,7 @@ LAG_SECONDS="${CVMFS_METADATA_LAG_SECONDS:-86400}"
 [[ "$LAG_SECONDS" =~ ^[0-9]+$ ]] || { echo "[ERROR] Invalid CVMFS_METADATA_LAG_SECONDS"; exit 1; }
 
 catalog_root="${CATALOG_ROOT:-apps-catalog}"
-start_time="$(git -C "$catalog_root" log -1 --format=%ct -- domains.json ':glob:*/apps.json')"
+start_time="$(git -C "$catalog_root" log -1 --format=%ct -- domains.json ':(glob)*/apps.json')"
 [[ "$start_time" =~ ^[0-9]+$ ]] || { echo "[ERROR] Missing catalog change time"; exit 1; }
 
 report() {
