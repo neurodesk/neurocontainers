@@ -1115,3 +1115,133 @@ def test_template_revision_dependencies_control_candidates_fingerprints_and_date
     template.unlink()
     git("commit", "-am", "Delete template")
     assert one_pr_release.release_plan(previous, "HEAD").candidate_recipes == ["demo"]
+
+
+def test_freshness_flags_recipes_a_merge_would_publish_untested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    macros = tmp_path / "macros"
+    macros.mkdir()
+    for macro in ("common", "adopted", "dropped", "pr"):
+        (macros / f"{macro}.yaml").write_text("directives: []\n")
+
+    def build(name: str) -> Path:
+        return tmp_path / f"recipes/{name}/build.yaml"
+
+    def depend(name: str, *macro_names: str) -> None:
+        recipe = yaml.safe_load(build(name).read_text())
+        recipe.pop("auto_update", None)
+        if macro_names:
+            recipe["auto_update"] = {
+                "local": [f"macros/{macro}.yaml" for macro in macro_names]
+            }
+        build(name).write_text(yaml.safe_dump(recipe))
+
+    def bump(name: str) -> None:
+        build(name).write_text(build(name).read_text().replace("1.2.3", "1.2.4"))
+
+    bumped = ("edited", "shared", "reverted", "untouched", "adopts", "drops", "same")
+    for name in (*bumped, "macro_user"):
+        write_recipe(tmp_path, name)
+    depend("shared", "common")
+    depend("drops", "dropped")
+    depend("macro_user", "pr")
+    git("add", ".")
+    git("commit", "-m", "Initial recipes")
+    base = git("rev-parse", "HEAD")
+
+    git("checkout", "-b", "pr")
+    for name in bumped:
+        bump(name)
+    depend("adopts", "adopted")
+    depend("drops")
+    write_recipe(tmp_path, "added")
+    (macros / "pr.yaml").write_text("directives: [{run: [pr]}]\n")
+    git("add", ".")
+    git("commit", "-m", "Bump recipes and change a macro")
+    tested = one_pr_release.release_plan(base, "pr").candidate_recipes
+    assert "new_consumer" not in tested
+
+    git("checkout", "main")
+    build("edited").write_text(
+        "domains:\n- neuroimaging\n" + build("edited").read_text()
+    )
+    for macro in ("common", "adopted", "dropped"):
+        (macros / f"{macro}.yaml").write_text("directives: [{run: [main]}]\n")
+    reverted = tmp_path / "recipes/reverted/fulltest.yaml"
+    reverted.write_text("tests: [changed]\n")
+    bump("same")
+    write_recipe(tmp_path, "new_consumer")
+    depend("new_consumer", "pr")
+    git("add", ".")
+    git("commit", "-m", "Concurrent main edits")
+    reverted.write_text("tests: []\n")
+    (tmp_path / "releases/untouched").mkdir(parents=True)
+    (tmp_path / "releases/untouched/1.2.3.json").write_text("{}\n")
+    git("add", ".")
+    git("commit", "-m", "Revert and publish metadata")
+
+    git("checkout", "-b", "gate")
+    git("merge", "--no-ff", "--no-edit", "pr")
+    assert one_pr_release.stale_candidate_recipes(tested, "pr", "HEAD") == [
+        "adopts",
+        "edited",
+        "new_consumer",
+        "shared",
+    ]
+
+    git("checkout", "pr")
+    git("merge", "--no-edit", "main")
+    tested = one_pr_release.release_plan("main", "pr").candidate_recipes
+    git("checkout", "-B", "gate", "main")
+    git("merge", "--no-ff", "--no-edit", "pr")
+    assert one_pr_release.stale_candidate_recipes(tested, "pr", "HEAD") == []
+
+
+def test_freshness_checks_prs_without_candidates_and_skips_mixed_prs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    (tmp_path / "macros").mkdir()
+    (tmp_path / "macros/unused.yaml").write_text("directives: []\n")
+    (tmp_path / "README.md").write_text("docs\n")
+    git("add", ".")
+    git("commit", "-m", "Initial")
+
+    git("checkout", "-b", "pr")
+    (tmp_path / "macros/unused.yaml").write_text("directives: [{run: [pr]}]\n")
+    git("commit", "-am", "Change an unused macro")
+    assert one_pr_release.release_plan("main", "pr").candidate_recipes == []
+
+    git("checkout", "main")
+    recipe_dir = write_recipe(tmp_path, "consumer")
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text())
+    recipe["auto_update"] = {"local": ["macros/unused.yaml"]}
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
+    git("add", ".")
+    git("commit", "-m", "First consumer of the macro")
+
+    def freshness() -> None:
+        git("checkout", "-B", "gate", "main")
+        git("merge", "--no-ff", "--no-edit", "pr")
+        one_pr_release.command_freshness(
+            SimpleNamespace(recipes="[]", head="pr", merged="HEAD")
+        )
+
+    with pytest.raises(RuntimeError, match="would publish consumer"):
+        freshness()
+
+    git("checkout", "pr")
+    (tmp_path / "README.md").write_text("changed docs\n")
+    git("commit", "-am", "Also change repository code")
+    freshness()
+    assert "Promotion skips this PR" in capsys.readouterr().out

@@ -1,0 +1,50 @@
+name: Recheck candidate freshness
+
+# A passing "Container release gate" compares the PR's candidates with main as
+# it was when the gate ran. When main later changes a recipe's build inputs, a
+# squash merge would publish a recipe no candidate built, and promotion rejects
+# it. Rerun every passing gate so that PR goes red before anyone merges it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "recipes/**"
+      - "macros/**"
+      - "builder/templates/**"
+
+permissions:
+  actions: write
+  checks: read
+  pull-requests: read
+
+concurrency:
+  group: recheck-candidate-freshness
+  cancel-in-progress: false
+
+jobs:
+  rerun-gates:
+    if: github.repository == 'neurodesk/neurocontainers'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Rerun passing release gates on open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          failed=0
+          pulls="$(gh pr list --repo "$REPOSITORY" --base main --state open --limit 500 \
+            --json number,headRefOid --jq '.[] | "\(.number) \(.headRefOid)"')"
+          while read -r number head; do
+            [ -n "$number" ] || continue
+            job="$(gh api "repos/${REPOSITORY}/commits/${head}/check-runs?check_name=Container%20release%20gate" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | max_by(.started_at) | select(.conclusion == "success") | .id')"
+            if [ -n "$job" ]; then
+              echo "Rerunning the release gate for #${number}"
+              if ! gh api -X POST "repos/${REPOSITORY}/actions/jobs/${job}/rerun" </dev/null; then
+                echo "::error::Could not rerun the release gate for #${number}; its green check may be stale."
+                failed=1
+              fi
+            fi
+          done <<< "$pulls"
+          exit "$failed"

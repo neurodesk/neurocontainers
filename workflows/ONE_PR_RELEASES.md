@@ -35,6 +35,19 @@ artifacts after merge. They no longer create a second release-metadata PR.
    commenting. The reporter downloads only compact, schema-checked JSON summaries;
    it never opens candidate images or test logs.
 4. `Container release gate` is the stable required check for branch rules.
+   Its last step merges the PR head into current main and runs
+   `one_pr_release.py freshness`. That step applies promotion's own rule: every
+   recipe the merge would publish needs a candidate built from the same
+   fingerprint. The step fails when main has changed a candidate recipe or one
+   of its `macros/` or `builder/templates/` inputs since the branch was cut, or
+   when main added a recipe that consumes a macro the PR changes. It runs even
+   when the PR needed no candidates, and passes mixed recipe-and-code PRs,
+   which promotion skips. Update the branch to rebuild the candidates. `Recheck candidate freshness` reruns every
+   passing gate when main changes those paths, so a green PR turns red before
+   it is merged. A merge in the minute before that rerun finishes still fails
+   at promotion; recover it with an `epoch` bump. A rerun uses the workflow
+   file from the run it repeats, so PRs whose last candidate run predates this
+   check need a branch update to gain it.
 5. After merge, `Promote merged container candidate` runs the same trusted
    release planner over the merge commit. It exits successfully when no
    candidate was required; otherwise a GitHub-hosted job waits for the candidate
