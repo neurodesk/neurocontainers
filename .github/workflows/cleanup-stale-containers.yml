@@ -2,6 +2,11 @@ name: Cleanup stale container images
 
 on:
   workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete stale images (otherwise only preview)
+        type: boolean
+        default: false
   schedule:
     - cron: '25 11 * * *'
   workflow_run:
@@ -22,8 +27,8 @@ jobs:
   cleanup:
     if: |
       github.repository == 'neurodesk/neurocontainers' &&
-      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_run') &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+      ((github.ref == 'refs/heads/main' || github.event_name == 'workflow_run') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -58,6 +63,7 @@ jobs:
           fi
       - name: Remove old SIFs from Nectar and S3
         env:
+          APPLY: ${{ github.event_name != 'workflow_dispatch' || inputs.apply }}
           OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
           OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
           OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
@@ -66,8 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           rclone config create nectar swift env_auth true
+          mode=--dry-run
+          if [ "$APPLY" = "true" ]; then mode=--apply; fi
           python3 tools/cleanup_stale_containers.py \
             --s3-bucket neurocontainers \
             --catalog-root apps-catalog \
             --retention-days 7 \
-            --apply
+            "$mode"

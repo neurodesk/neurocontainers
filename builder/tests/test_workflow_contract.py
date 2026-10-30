@@ -619,6 +619,43 @@ def test_nectar_registry_username_is_explicit() -> None:
     assert "REGISTRY_RC_NECTAR_ORG_AU_USERNAME" not in workflow
 
 
+def test_update_apps_json_syncs_neurocommand_icons() -> None:
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert "python -m pip install cairosvg" in workflow
+    assert "python .github/workflows/scripts/sync_neurocontainer_icons.py" in workflow
+    assert "--neurocontainers-path .." in workflow
+    assert "git diff --quiet neurodesk/apps.json neurodesk/icons" in workflow
+    assert "git add neurodesk/apps.json neurodesk/icons" in workflow
+
+
+def test_update_apps_json_pushes_fixed_branch_without_per_release_pr() -> None:
+    # apps.json updates flow through the fixed update-apps-json branch that
+    # neurocommand's consolidation queue consumes; opening a PR per release
+    # floods subscribers with notifications.
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert 'BRANCH_NAME="update-apps-json"' in workflow
+    assert 'git push --force origin "$BRANCH_NAME"' in workflow
+    assert "gh pr create" not in workflow
+    assert "group: update-apps-json" in workflow
+
+
+def test_update_apps_json_runs_for_release_file_pushes() -> None:
+    # Release metadata can be removed directly from main as well as merged via
+    # a PR. A main-branch push trigger covers both paths and avoids leaving the
+    # fixed update branch with a stale release snapshot.
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert (
+        '  push:\n    branches: [main]\n    paths:\n      - "releases/**/*.json"'
+        in workflow
+    )
+    assert '      - "recipes/**/build.yaml"' in workflow
+    assert "pull_request:" not in workflow
+    assert "github.event.pull_request.merged" not in workflow
+
+
 def test_release_tests_select_native_runners_and_keep_artifacts_separate() -> None:
     import yaml
 

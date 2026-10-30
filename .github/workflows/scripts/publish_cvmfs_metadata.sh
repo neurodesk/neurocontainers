@@ -9,7 +9,9 @@ OBJECT_STORES="${CVMFS_METADATA_OBJECT_STORES:-https://object-store.rc.nectar.or
 LAG_SECONDS="${CVMFS_METADATA_LAG_SECONDS:-86400}"
 [[ "$LAG_SECONDS" =~ ^[0-9]+$ ]] || { echo "[ERROR] Invalid CVMFS_METADATA_LAG_SECONDS"; exit 1; }
 
-start_time="$(date +%s)"
+catalog_root="${CATALOG_ROOT:-apps-catalog}"
+start_time="$(git -C "$catalog_root" log -1 --format=%ct -- domains.json ':glob:*/apps.json')"
+[[ "$start_time" =~ ^[0-9]+$ ]] || { echo "[ERROR] Missing catalog change time"; exit 1; }
 
 report() {
     echo "$1"
@@ -66,6 +68,6 @@ for name, data in entries.items():
     fi
 }
 
-missing_images
+missing_images || publication_pending
 require_publication
 echo "[INFO] All containers published."

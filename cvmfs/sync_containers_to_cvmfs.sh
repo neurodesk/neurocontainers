@@ -4,7 +4,7 @@
 #This script runs on the CVMFS STRATUM 0 server every 5 minutes
 
 #sudo vi /etc/cron.d/sync_containers_to_cvmfs
-#*/5 * * * * ec2-user cd ~ && bash /home/rocky/neurocommand/cvmfs/sync_containers_to_cvmfs.sh
+#*/5 * * * * ec2-user cd ~ && bash /home/rocky/neurocontainers/cvmfs/sync_containers_to_cvmfs.sh
 
 #The cronjob logfile is rotated after every run that reaches the end
 
@@ -289,6 +289,7 @@ trap cleanup_lockfile EXIT
 export RCLONE_VERBOSE=2
 # rclone copy  nectar:/neurodesk/ aws:/neurodesk
 
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 NEUROCOMMAND_LOCAL_REPO="$HOME/neurocommand"
 CATALOG_LOCAL_REPO="${APPS_CATALOG_LOCAL_REPO:-$HOME/scigetorg-apps-json}"
 CATALOG_URL="${APPS_CATALOG_GIT_URL:-https://github.com/scigetorg/apps.json.git}"
@@ -315,7 +316,7 @@ else
     GIT_TERMINAL_PROMPT=0 git clone --quiet "$CATALOG_URL" "$CATALOG_LOCAL_REPO" \
         || echo "[WARNING] Could not clone catalog; retirement protection may be incomplete."
 fi
-if PUBLIC_PROTECTION=$(python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/retention_inventory.py" \
+if PUBLIC_PROTECTION=$(python3 "$SCRIPT_DIR/retention_inventory.py" \
     --repo "$CATALOG_LOCAL_REPO" --revision origin/main); then
     while IFS= read -r image; do
         KEEP_IMAGES["$image"]=1
@@ -348,7 +349,7 @@ sys.path.insert(0, sys.argv[1])
 from cvmfs.generate_metadata import log_lines
 apps = json.loads(pathlib.Path(sys.argv[2]).read_text())
 pathlib.Path(sys.argv[3]).write_text(''.join(f'{l}\n' for l in log_lines(apps)))
-" "$NEUROCOMMAND_LOCAL_REPO" "$CATALOG_TEMP" "$LOG_TEMP" || {
+" "$SCRIPT_DIR/.." "$CATALOG_TEMP" "$LOG_TEMP" || {
     echo "[ERROR] Failed to generate inventory from Cloudflare catalog."
     exit 2
 }
@@ -396,7 +397,7 @@ do
         # transparent-singularity executes commands inside the unpacked image
         # to generate wrappers. Ensure a foreign-architecture image can run on
         # this publisher before opening a transaction or downloading the SIF.
-        if ! "$NEUROCOMMAND_LOCAL_REPO/cvmfs/ensure_binfmt.sh" "$IMAGENAME_BUILDDATE"; then
+        if ! "$SCRIPT_DIR/ensure_binfmt.sh" "$IMAGENAME_BUILDDATE"; then
             echo "[ERROR] Cannot deploy $IMAGENAME_BUILDDATE without working QEMU/binfmt support."
             mark_install_failed "$IMAGENAME_BUILDDATE"
             continue
@@ -482,7 +483,7 @@ do
 done < "$LOG_TEMP"
 
 echo "[INFO] Checking that module files point to the latest kept container builds."
-if python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/reconcile_module_files.py" \
+if python3 "$SCRIPT_DIR/reconcile_module_files.py" \
     --repo-root /cvmfs/neurodesk.ardc.edu.au \
     --log "$LOG_TEMP" \
     --check; then
@@ -494,7 +495,7 @@ fi
 if [[ $RECONCILE_STATUS -eq 1 ]]; then
     echo "[INFO] Reconciling canonical and public module files before stale containers are disabled."
     open_cvmfs_transaction neurodesk.ardc.edu.au
-    if python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/reconcile_module_files.py" \
+    if python3 "$SCRIPT_DIR/reconcile_module_files.py" \
         --repo-root /cvmfs/neurodesk.ardc.edu.au \
         --log "$LOG_TEMP"; then
         publish_cvmfs_transaction neurodesk.ardc.edu.au "reconciled module files to latest kept containers"
@@ -535,7 +536,7 @@ UPSTREAM=$(git -C "$NEUROCOMMAND_LOCAL_REPO" rev-parse --abbrev-ref --symbolic-f
 if [[ $CLEANUP_ALLOWED -eq 1 ]] &&
     GIT_TERMINAL_PROMPT=0 git -C "$NEUROCOMMAND_LOCAL_REPO" fetch --prune "${UPSTREAM%%/*}" &&
     GIT_TERMINAL_PROMPT=0 git -C "$CATALOG_LOCAL_REPO" fetch --prune origin &&
-    PUBLIC_PROTECTION=$(python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/retention_inventory.py" \
+    PUBLIC_PROTECTION=$(python3 "$SCRIPT_DIR/retention_inventory.py" \
         --repo "$CATALOG_LOCAL_REPO" --revision origin/main); then
     while IFS= read -r image; do
         KEEP_IMAGES["$image"]=1
@@ -566,7 +567,7 @@ done
 if [[ ${#STALE_IMAGES[@]} -eq 0 ]]; then
     echo "[INFO] No stale container directories found to disable."
 else
-    if ! REFERENCED_CONTAINER_NAMES=$(python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/reconcile_module_files.py" \
+    if ! REFERENCED_CONTAINER_NAMES=$(python3 "$SCRIPT_DIR/reconcile_module_files.py" \
         --repo-root /cvmfs/neurodesk.ardc.edu.au --referenced-containers); then
         echo "[ERROR] Cannot scan module references; stale container cleanup stopped." >&2
         exit 2
@@ -592,7 +593,7 @@ else
         STALE_CONTAINER_IMAGE="$STALE_CONTAINER_PATH/$STALE_IMAGE.simg"
         DOCKER_IMAGE_REF="${STALE_IMAGE%_*}:${STALE_IMAGE##*_}"
         CONTAINER_CHANGES_MADE=0
-        DISABLED_WRAPPER="$NEUROCOMMAND_LOCAL_REPO/cvmfs/write_disabled_wrapper.sh"
+        DISABLED_WRAPPER="$SCRIPT_DIR/write_disabled_wrapper.sh"
 
         # If the stale image payload was already removed in an earlier run and
         # every wrapper is already in the current disabled form, skip the
@@ -669,7 +670,7 @@ fi
 # install loop above. Reconcile XAUTHORITY forwarding and NVIDIA defaults
 # without downloading or unpacking their container images again.
 WRAPPER_RECONCILE_STATUS=0
-python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/reconcile_wrapper_xauthority.py" \
+python3 "$SCRIPT_DIR/reconcile_wrapper_xauthority.py" \
     --repo-root /cvmfs/neurodesk.ardc.edu.au \
     --check || WRAPPER_RECONCILE_STATUS=$?
 
@@ -677,9 +678,9 @@ if [[ $WRAPPER_RECONCILE_STATUS -eq 1 ]]; then
     echo "[INFO] Reconciling container wrapper XAUTHORITY forwarding and NVIDIA defaults."
     open_cvmfs_transaction neurodesk.ardc.edu.au
 
-    if python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/reconcile_wrapper_xauthority.py" \
+    if python3 "$SCRIPT_DIR/reconcile_wrapper_xauthority.py" \
         --repo-root /cvmfs/neurodesk.ardc.edu.au && \
-       python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/reconcile_wrapper_xauthority.py" \
+       python3 "$SCRIPT_DIR/reconcile_wrapper_xauthority.py" \
         --repo-root /cvmfs/neurodesk.ardc.edu.au \
         --check; then
         if ! publish_cvmfs_transaction neurodesk.ardc.edu.au "reconciled container wrapper XAUTHORITY forwarding and NVIDIA defaults"; then
@@ -702,14 +703,14 @@ fi
 # Reconcile startup bundles even for images installed by an earlier sync.
 prefetch_args=(--repo-root /cvmfs/neurodesk.ardc.edu.au
     --log "$LOG_TEMP")
-if python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/prefetch_filebundles.py" "${prefetch_args[@]}" --check; then
+if python3 "$SCRIPT_DIR/prefetch_filebundles.py" "${prefetch_args[@]}" --check; then
     PREFETCH_STATUS=0
 else
     PREFETCH_STATUS=$?
 fi
 if [[ $PREFETCH_STATUS -eq 1 ]]; then
     open_cvmfs_transaction neurodesk.ardc.edu.au
-    if python3 "$NEUROCOMMAND_LOCAL_REPO/cvmfs/prefetch_filebundles.py" "${prefetch_args[@]}"; then
+    if python3 "$SCRIPT_DIR/prefetch_filebundles.py" "${prefetch_args[@]}"; then
         publish_cvmfs_transaction neurodesk.ardc.edu.au "published FSL startup file bundle"
     else
         echo "[ERROR] Startup bundle publication failed. Aborting CVMFS transaction."

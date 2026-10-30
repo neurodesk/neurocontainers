@@ -83,6 +83,9 @@ def test_repository_guard_cannot_be_bypassed_by_an_outer_or(
         "publish-dashboard",
         "report-container-candidate",
         "test-release-pr",
+        "update-apps-json",
+        "update-neurocontainers",
+        "cleanup-stale-containers",
         "update-webapps-json",
     ],
 )
