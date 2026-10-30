@@ -343,3 +343,38 @@ jobs:
             exit 0
           fi
           test "${CANDIDATE_RESULT}" = success
+      # Promotion only publishes a candidate whose recipe a squash merge leaves
+      # unchanged. Compare against main as it is now, not the PR's base, and
+      # recheck-candidate-freshness.yml reruns this job whenever main moves.
+      - name: Checkout current main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Require candidates to match what a merge would publish
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          RECIPES: ${{ needs.detect.outputs.recipes }}
+        run: |
+          pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0 packaging requests
+          # Until the PR that adds this check lands, main's tool lacks it.
+          if ! python tools/one_pr_release.py freshness --help >/dev/null 2>&1; then
+            echo "::notice::Main's release tool has no freshness check yet; skipping."
+            exit 0
+          fi
+          cp -R tools builder "${RUNNER_TEMP}/"
+          git fetch --no-tags "https://github.com/${HEAD_REPOSITORY}.git" "${HEAD_SHA}"
+          if git merge-base --is-ancestor "${HEAD_SHA}" HEAD; then
+            echo "Main already contains this PR head."
+            exit 0
+          fi
+          git -c user.name=release-gate -c user.email=release-gate@invalid \
+            merge --no-ff --no-edit "${HEAD_SHA}" ||
+            { echo "::error::This branch conflicts with main. Update the branch."; exit 1; }
+          python "${RUNNER_TEMP}/tools/one_pr_release.py" --repo-root . freshness \
+            --recipes "${RECIPES}" --head "${HEAD_SHA}" --merged HEAD
