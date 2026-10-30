@@ -22,6 +22,9 @@ jobs:
     if: github.repository == 'neurodesk/neurocontainers' && (github.ref == 'refs/heads/main')
     runs-on: self-hosted
     timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upload-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       id-token: write
       contents: read
@@ -29,6 +32,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
+        path: upload-${{ github.run_id }}-${{ github.run_attempt }}
         ref: main
         fetch-depth: 0
     - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
@@ -48,7 +52,7 @@ jobs:
       uses: actions/checkout@v5
       with:
         repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
-        path: apps-catalog
+        path: upload-${{ github.run_id }}-${{ github.run_attempt }}/apps-catalog
         fetch-depth: 0
         persist-credentials: false
     - name: Merge configured domain catalogs
