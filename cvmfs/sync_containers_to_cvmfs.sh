@@ -291,6 +291,8 @@ export RCLONE_VERBOSE=2
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 NEUROCOMMAND_LOCAL_REPO="$HOME/neurocommand"
+# The cvmfs/*.py helpers import transparent-singularity from this checkout.
+export NEUROCOMMAND_DIR="$NEUROCOMMAND_LOCAL_REPO"
 CATALOG_LOCAL_REPO="${APPS_CATALOG_LOCAL_REPO:-$HOME/scigetorg-apps-json}"
 CATALOG_URL="${APPS_CATALOG_GIT_URL:-https://github.com/scigetorg/apps.json.git}"
 CATALOG_BASE_URL="${APPS_CATALOG_BASE_URL:-https://apps-json.scigetorg.workers.dev}"

@@ -11,9 +11,12 @@ import stat
 import tempfile
 import sys
 
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[1] / "neurodesk/transparent-singularity")
+# transparent-singularity is maintained in the neurocommand checkout.
+TRANSPARENT_SINGULARITY_DIR = (
+    Path(os.environ.get("NEUROCOMMAND_DIR", Path.home() / "neurocommand"))
+    / "neurodesk/transparent-singularity"
 )
+sys.path.insert(0, str(TRANSPARENT_SINGULARITY_DIR))
 from artifact_renderer import render_wrapper, write_artifact
 from wrapper_legacy import classify_relocated_wrapper
 from wrapper_legacy import (
@@ -210,9 +213,7 @@ def plan_wrapper_reconciliation(repo_root: Path) -> ReconciliationPlan:
     rewrites: list[PlannedRewrite] = []
     diagnostics: list[Diagnostic] = []
     helpers = []
-    helper_dir = (
-        Path(__file__).resolve().parents[1] / "neurodesk/transparent-singularity"
-    )
+    helper_dir = TRANSPARENT_SINGULARITY_DIR
 
     try:
         container_dirs = _container_directories(containers_root)
