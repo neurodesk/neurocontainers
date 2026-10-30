@@ -1,0 +1,106 @@
+name: Update neurocontainers
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/update-neurocontainers.yml'
+      - '.github/workflows/upload_containers_simg.sh'
+      - '.github/workflows/scripts/publish_cvmfs_metadata.sh'
+      - 'cvmfs/**'
+      - 'tools/merge_domain_catalogs.py'
+  workflow_dispatch:
+
+jobs:
+  upload_containers_simg:
+    concurrency:
+      group: update-neurocontainers
+      cancel-in-progress: false
+    if: github.repository == 'neurodesk/neurocontainers' && (github.ref == 'refs/heads/main')
+    runs-on: self-hosted
+    timeout-minutes: 360
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+      with:
+        python-version: "3.12"
+    - name: Install the Swift upload client
+      run: python -m pip install -r maintenance/upload-requirements.txt
+    - name: Configure AWS Credentials 1
+      id: creds
+      uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37
+      with:
+        aws-region: us-east-2
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        output-credentials: true
+        role-duration-seconds: 28800 # 8 hours
+    - name: Check out published domain catalogs
+      uses: actions/checkout@v5
+      with:
+        repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+        path: apps-catalog
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Merge configured domain catalogs
+      run: python3 tools/merge_domain_catalogs.py apps-catalog
+    - name : Check if singularity container files exist in nectar cloud and build & upload if not there
+      timeout-minutes: 330
+      env:
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN }}
+        OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+        OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+        OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+        OS_AUTH_TYPE: v3applicationcredential
+        OS_AUTH_VERSION: '3'
+        OS_IDENTITY_API_VERSION: '3'
+      run: |
+        rclone config create aws-neurocontainers-new s3 config_is_local false provider AWS env_auth true region us-east-2 no_check_bucket true
+        /bin/bash .github/workflows/upload_containers_simg.sh
+
+  publish_metadata:
+    needs: upload_containers_simg
+    if: github.repository == 'neurodesk/neurocontainers' && (always() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || needs.upload_containers_simg.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: main
+        fetch-depth: 0
+    - name: Check out published domain catalogs
+      uses: actions/checkout@v5
+      with:
+        repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+        path: apps-catalog
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Merge configured domain catalogs
+      run: python3 tools/merge_domain_catalogs.py apps-catalog
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+      with:
+        python-version: "3.12"
+    - name: Install the CVMFS client
+      uses: cvmfs-contrib/github-action-cvmfs@72f2a8d366043978d6aebee154bc9ed321c2f2a8
+      with:
+        cvmfs_repositories: ''
+        cvmfs_public_key: ${{ github.workspace }}/cvmfs/neurodesk.ardc.edu.au.pub
+        cvmfs_server_url: http://stratum0.neurodesk.cloud.edu.au/cvmfs/@fqrn@
+        cvmfs_auto_update: 'no'
+    - name: Publish CVMFS metadata for the uploaded revision
+      # Confirms every image is uploaded and CVMFS is consistent with the catalog.
+      run: bash .github/workflows/scripts/publish_cvmfs_metadata.sh

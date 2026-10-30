@@ -1,10 +1,14 @@
-"""Delete Nectar registry images that apps.json no longer publishes.
+"""Delete Nectar registry images that the domain catalog no longer publishes.
 
 The Nectar Harbor project mirrors every container build as
 ``<name>_<version>:<build date>`` plus ``latest``. Neurodesk only serves the
-builds listed in neurocommand's apps.json, so every other artifact only
-consumes the project's storage quota. Artifacts pushed within ``--min-age-days``
-are kept so an in-flight build or promotion staging tag is never removed.
+builds listed in the domain catalog, so every other artifact only consumes the
+project's storage quota. Artifacts pushed within ``--min-age-days`` are kept so
+an in-flight build or promotion staging tag is never removed.
+
+Pass ``--catalog-root`` pointing to a checkout of the scigetorg/apps.json
+catalog (preferred). The legacy ``--apps-json`` flag still accepts a path or
+URL to a single flat apps.json for backward compatibility.
 
 Runs as a dry run unless ``--apply`` is given. A dry run prints a plan hash;
 ``--apply --expect-plan <hash>`` deletes only if the recomputed plan matches
@@ -26,6 +30,7 @@ import urllib.request
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 HARBOR_API = "https://registry.rc.nectar.org.au/api/v2.0"
 PROJECT = "ssdsorg"
@@ -67,6 +72,58 @@ def published_images(apps: dict) -> set[tuple[str, str]]:
             if " " not in app or not details.get("version"):
                 raise ValueError(f"Unexpected apps.json entry: {app!r}")
             images.add((f"{image}_{version}".lower(), str(details["version"])))
+    return images
+
+
+def published_images_from_catalog(catalog_root: Path) -> set[tuple[str, str]]:
+    """Return (repository, tag) pairs from a domains.json catalog checkout.
+
+    Mirrors the image-identity logic of cleanup_stale_containers.py, but
+    produces Harbor (repository, tag) pairs instead of SIF keys.
+    """
+    try:
+        registry = json.loads(
+            (catalog_root / "domains.json").read_text(encoding="utf-8")
+        )
+        domains = registry["domains"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise SystemExit(f"Cannot read catalog domains.json: {exc}") from exc
+    if not isinstance(domains, dict) or not domains:
+        raise SystemExit("Catalog has no configured domains")
+
+    images: set[tuple[str, str]] = set()
+    for domain in sorted(domains):
+        apps_path = catalog_root / domain / "apps.json"
+        try:
+            catalog = json.loads(apps_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"Cannot read {domain} apps catalog: {exc}") from exc
+        if not isinstance(catalog, dict):
+            raise SystemExit(f"Invalid {domain} apps catalog")
+        for tool, entry in catalog.items():
+            apps = entry.get("apps") or {}
+            # First pass: resolve the primary image name for each (version, builddate).
+            primary: dict[tuple[str, str], str] = {}
+            for name, app in apps.items():
+                parts = name.rsplit(" ", 1)
+                if len(parts) == 2 and parts[0] == tool:
+                    builddate = str(app.get("version", ""))
+                    image = app.get("image") or f"{tool}_{parts[1]}"
+                    primary[(parts[1], builddate)] = image
+            # Second pass: emit one (repository, tag) pair per app row.
+            for name, app in apps.items():
+                builddate = str(app.get("version", ""))
+                if not builddate:
+                    raise SystemExit(f"Missing version for {tool}/{name}")
+                parts = name.rsplit(" ", 1)
+                if "image" in app:
+                    image = app["image"]
+                else:
+                    key = (parts[-1], builddate) if len(parts) == 2 else None
+                    image = (primary.get(key) if key else None) or f"{tool}_{parts[-1]}"
+                images.add((image.lower(), builddate))
+    if not images:
+        raise SystemExit("All published domain catalogs are empty")
     return images
 
 
@@ -238,7 +295,17 @@ def non_negative_int(value: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apps-json", default=APPS_JSON_URL)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--catalog-root",
+        type=Path,
+        help="Path to a domains.json catalog checkout (preferred)",
+    )
+    source.add_argument(
+        "--apps-json",
+        default=APPS_JSON_URL,
+        help="Path or URL to a single apps.json (legacy fallback)",
+    )
     parser.add_argument("--api", default=HARBOR_API)
     parser.add_argument("--project", default=PROJECT)
     parser.add_argument("--min-age-days", type=non_negative_int, default=14)
@@ -260,7 +327,10 @@ def main(argv: list[str] | None = None) -> int:
             "--apply needs NECTAR_REGISTRY_USERNAME and NECTAR_REGISTRY_PASSWORD"
         )
 
-    published = published_images(load_apps(args.apps_json))
+    if args.catalog_root is not None:
+        published = published_images_from_catalog(args.catalog_root)
+    else:
+        published = published_images(load_apps(args.apps_json))
     started = datetime.now(timezone.utc)
     harbor = Harbor(args.api, args.project, username, password)
     artifacts = [
