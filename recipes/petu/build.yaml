@@ -242,6 +242,8 @@ deploy:
   bins:
     - petu
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

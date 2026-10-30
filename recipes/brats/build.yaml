@@ -1,5 +1,6 @@
 name: brats
-version: 0.1.13
+version: 0.1.14
+epoch: 1
 
 description: BraTS orchestrates the winning BraTS challenge algorithms for tumour segmentation, inpainting and missing-MRI synthesis.
 
@@ -448,6 +449,8 @@ deploy:
   path:
     - "{{ context.venv }}/bin"
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

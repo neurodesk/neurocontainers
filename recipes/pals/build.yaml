@@ -17,7 +17,8 @@ name: pals
 version: 2.0.1
 
 copyright:
-  - license: custom
+  - license: other-closed
+    name: PALS (upstream does not declare a license)
     url: https://github.com/npnl/PALS
 
 architectures:
@@ -187,6 +188,8 @@ deploy:
   bins:
     - python
  
+domains:
+  - neuroimaging
 categories:
   - image segmentation
  

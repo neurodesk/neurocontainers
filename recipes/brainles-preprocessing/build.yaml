@@ -2,6 +2,7 @@ name: brainles-preprocessing
 version: "0.6.14"
 
 variables:
+  cblas_ubuntu_snapshot: 20261025T000000Z
   cblas_torch_commit: cf30153c4c131c8164ee7798e5022d810682e2cb
   cblas_acl_commit: 007264fa740de5723ebddef16b7bb3657692c088
   cblas_ideep_commit: e087b6e4b32a7ba684db82231d1558123968ac1d
@@ -25,8 +26,8 @@ variables:
   cblas_debs_libgmp10_version: 2:6.3.0+dfsg-2ubuntu6.1
   cblas_debs_libzstd1_sha256: ea7d6e9fde577ea14dbf07fdfb74d6287eb09c6cba4a9d63abdcb87b0ec54bcc
   cblas_debs_libzstd1_version: 1.5.5+dfsg2-2build1.1
-  cblas_debs_zlib1g_sha256: e55ab3b4fb7b6edc4a628e28ec13f8780b08abe427d33ae148f030d8586d0e9a
-  cblas_debs_zlib1g_version: 1:1.3.dfsg-3.1ubuntu2.2
+  cblas_debs_zlib1g_sha256: 84536bcf440cf0f988899b24b6c7df32cb9ff9f0dfa97d5e7efcc2dc088d15dc
+  cblas_debs_zlib1g_version: 1:1.3.dfsg-3.1ubuntu2.3
   cblas_debs_libstdc__6_sha256: f84a05ac45a6884109b6527e911081a38263b89e042fc94a338cf975f61a330c
   cblas_debs_libstdc__6_version: 14.2.0-4ubuntu2~24.04.1
   cblas_debs_libjansson4_sha256: a9d513eae76f4efb1c7370413bd21634fcfc0955e103d26af95f298af6c90abd
@@ -252,259 +253,259 @@ auto_update:
     - id: cblas-debs-gcc-14-base
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_gcc_14_base_sha256
     - id: cblas-debs-libgcc-s1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libgcc_s1_sha256
     - id: cblas-debs-libc6
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb
       target:
         variable: cblas_debs_libc6_sha256
     - id: cblas-debs-libcrypt1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_arm64.deb
       target:
         variable: cblas_debs_libcrypt1_sha256
     - id: cblas-debs-libgmp10
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
       target:
         variable: cblas_debs_libgmp10_sha256
     - id: cblas-debs-libzstd1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
       target:
         variable: cblas_debs_libzstd1_sha256
     - id: cblas-debs-zlib1g
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.3_arm64.deb
       target:
         variable: cblas_debs_zlib1g_sha256
     - id: cblas-debs-libstdc--6
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libstdc__6_sha256
     - id: cblas-debs-libjansson4
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/j/jansson/libjansson4_2.14-2build2_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/j/jansson/libjansson4_2.14-2build2_arm64.deb
       target:
         variable: cblas_debs_libjansson4_sha256
     - id: cblas-debs-binutils-common
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-common_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/binutils-common_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_binutils_common_sha256
     - id: cblas-debs-libsframe1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libsframe1_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libsframe1_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_libsframe1_sha256
     - id: cblas-debs-libbinutils
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libbinutils_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libbinutils_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_libbinutils_sha256
     - id: cblas-debs-libctf-nobfd0
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_libctf_nobfd0_sha256
     - id: cblas-debs-libctf0
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf0_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libctf0_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_libctf0_sha256
     - id: cblas-debs-libgprofng0
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libgprofng0_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libgprofng0_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_libgprofng0_sha256
     - id: cblas-debs-binutils-aarch64-linux-gnu
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_binutils_aarch64_linux_gnu_sha256
     - id: cblas-debs-binutils
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils_2.42-4ubuntu2.10_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/binutils_2.42-4ubuntu2.10_arm64.deb
       target:
         variable: cblas_debs_binutils_sha256
     - id: cblas-debs-gcc-13-base
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_gcc_13_base_sha256
     - id: cblas-debs-libisl23
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/i/isl/libisl23_0.26-3build1.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/i/isl/libisl23_0.26-3build1.1_arm64.deb
       target:
         variable: cblas_debs_libisl23_sha256
     - id: cblas-debs-libmpfr6
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpfr4/libmpfr6_4.2.1-1build1.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/m/mpfr4/libmpfr6_4.2.1-1build1.1_arm64.deb
       target:
         variable: cblas_debs_libmpfr6_sha256
     - id: cblas-debs-libmpc3
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpclib3/libmpc3_1.3.1-1build1.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/m/mpclib3/libmpc3_1.3.1-1build1.1_arm64.deb
       target:
         variable: cblas_debs_libmpc3_sha256
     - id: cblas-debs-cpp-13-aarch64-linux-gnu
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_cpp_13_aarch64_linux_gnu_sha256
     - id: cblas-debs-cpp-13
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_cpp_13_sha256
     - id: cblas-debs-libcc1-0
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libcc1_0_sha256
     - id: cblas-debs-libgomp1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libgomp1_sha256
     - id: cblas-debs-libitm1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libitm1_sha256
     - id: cblas-debs-libatomic1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libatomic1_sha256
     - id: cblas-debs-libasan8
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libasan8_sha256
     - id: cblas-debs-liblsan0
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_liblsan0_sha256
     - id: cblas-debs-libtsan2
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libtsan2_sha256
     - id: cblas-debs-libubsan1
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libubsan1_sha256
     - id: cblas-debs-libhwasan0
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libhwasan0_sha256
     - id: cblas-debs-libgcc-13-dev
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libgcc_13_dev_sha256
     - id: cblas-debs-gcc-13-aarch64-linux-gnu
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_gcc_13_aarch64_linux_gnu_sha256
     - id: cblas-debs-libc-dev-bin
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/glibc/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
       target:
         variable: cblas_debs_libc_dev_bin_sha256
     - id: cblas-debs-linux-libc-dev
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-libc-dev_6.8.0-147.147_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/l/linux/linux-libc-dev_6.8.0-147.147_arm64.deb
       target:
         variable: cblas_debs_linux_libc_dev_sha256
     - id: cblas-debs-libcrypt-dev
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt-dev_4.4.36-4build1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/libx/libxcrypt/libcrypt-dev_4.4.36-4build1_arm64.deb
       target:
         variable: cblas_debs_libcrypt_dev_sha256
     - id: cblas-debs-rpcsvc-proto
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
       target:
         variable: cblas_debs_rpcsvc_proto_sha256
     - id: cblas-debs-libc6-dev
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.9_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.9_arm64.deb
       target:
         variable: cblas_debs_libc6_dev_sha256
     - id: cblas-debs-libstdc---13-dev
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_libstdc___13_dev_sha256
     - id: cblas-debs-g---13-aarch64-linux-gnu
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_g___13_aarch64_linux_gnu_sha256
     - id: cblas-debs-gcc-13
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_gcc_13_sha256
     - id: cblas-debs-g---13
       dependency: true
       method: http_digest
-      url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+      url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
       target:
         variable: cblas_debs_g___13_sha256
     - id: cblas-wheels-markupsafe
@@ -862,7 +863,7 @@ build:
           cp {{ get_file("cblas/debs/libcrypt1_4.4.36-4build1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libcrypt1_4.4.36-4build1_arm64.deb &&
           cp {{ get_file("cblas/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb &&
           cp {{ get_file("cblas/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb &&
-          cp {{ get_file("cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb &&
+          cp {{ get_file("cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.3_arm64.deb") }} /opt/brainles-cblas-inputs/debs/zlib1g_1.3.dfsg-3.1ubuntu2.3_arm64.deb &&
           cp {{ get_file("cblas/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb &&
           cp {{ get_file("cblas/debs/libjansson4_2.14-2build2_arm64.deb") }} /opt/brainles-cblas-inputs/debs/libjansson4_2.14-2build2_arm64.deb &&
           cp {{ get_file("cblas/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb") }} /opt/brainles-cblas-inputs/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb &&
@@ -955,175 +956,175 @@ files:
     sha256: '{{ context.cblas_provider_sha256 }}'
   - name: cblas/debs/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/gcc-14-base_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_gcc_14_base_sha256 }}'
   - name: cblas/debs/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libgcc_s1_sha256 }}'
   - name: cblas/debs/libc6_2.39-0ubuntu8.9_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_arm64.deb
     sha256: '{{ context.cblas_debs_libc6_sha256 }}'
   - name: cblas/debs/libcrypt1_4.4.36-4build1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_arm64.deb
     sha256: '{{ context.cblas_debs_libcrypt1_sha256 }}'
   - name: cblas/debs/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_arm64.deb
     sha256: '{{ context.cblas_debs_libgmp10_sha256 }}'
   - name: cblas/debs/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_arm64.deb
     sha256: '{{ context.cblas_debs_libzstd1_sha256 }}'
-  - name: cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
+  - name: cblas/debs/zlib1g_1.3.dfsg-3.1ubuntu2.3_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.3_arm64.deb
     sha256: '{{ context.cblas_debs_zlib1g_sha256 }}'
   - name: cblas/debs/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libstdc__6_sha256 }}'
   - name: cblas/debs/libjansson4_2.14-2build2_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/j/jansson/libjansson4_2.14-2build2_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/j/jansson/libjansson4_2.14-2build2_arm64.deb
     sha256: '{{ context.cblas_debs_libjansson4_sha256 }}'
   - name: cblas/debs/binutils-common_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-common_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/binutils-common_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_binutils_common_sha256 }}'
   - name: cblas/debs/libsframe1_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libsframe1_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libsframe1_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_libsframe1_sha256 }}'
   - name: cblas/debs/libbinutils_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libbinutils_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libbinutils_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_libbinutils_sha256 }}'
   - name: cblas/debs/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libctf-nobfd0_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_libctf_nobfd0_sha256 }}'
   - name: cblas/debs/libctf0_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libctf0_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libctf0_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_libctf0_sha256 }}'
   - name: cblas/debs/libgprofng0_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/libgprofng0_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/libgprofng0_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_libgprofng0_sha256 }}'
   - name: cblas/debs/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/binutils-aarch64-linux-gnu_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_binutils_aarch64_linux_gnu_sha256 }}'
   - name: cblas/debs/binutils_2.42-4ubuntu2.10_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/b/binutils/binutils_2.42-4ubuntu2.10_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/b/binutils/binutils_2.42-4ubuntu2.10_arm64.deb
     sha256: '{{ context.cblas_debs_binutils_sha256 }}'
   - name: cblas/debs/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/gcc-13-base_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_gcc_13_base_sha256 }}'
   - name: cblas/debs/libisl23_0.26-3build1.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/i/isl/libisl23_0.26-3build1.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/i/isl/libisl23_0.26-3build1.1_arm64.deb
     sha256: '{{ context.cblas_debs_libisl23_sha256 }}'
   - name: cblas/debs/libmpfr6_4.2.1-1build1.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpfr4/libmpfr6_4.2.1-1build1.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/m/mpfr4/libmpfr6_4.2.1-1build1.1_arm64.deb
     sha256: '{{ context.cblas_debs_libmpfr6_sha256 }}'
   - name: cblas/debs/libmpc3_1.3.1-1build1.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/m/mpclib3/libmpc3_1.3.1-1build1.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/m/mpclib3/libmpc3_1.3.1-1build1.1_arm64.deb
     sha256: '{{ context.cblas_debs_libmpc3_sha256 }}'
   - name: cblas/debs/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/cpp-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_cpp_13_aarch64_linux_gnu_sha256 }}'
   - name: cblas/debs/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/cpp-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_cpp_13_sha256 }}'
   - name: cblas/debs/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libcc1-0_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libcc1_0_sha256 }}'
   - name: cblas/debs/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libgomp1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libgomp1_sha256 }}'
   - name: cblas/debs/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libitm1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libitm1_sha256 }}'
   - name: cblas/debs/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libatomic1_sha256 }}'
   - name: cblas/debs/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libasan8_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libasan8_sha256 }}'
   - name: cblas/debs/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/liblsan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_liblsan0_sha256 }}'
   - name: cblas/debs/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libtsan2_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libtsan2_sha256 }}'
   - name: cblas/debs/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libubsan1_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libubsan1_sha256 }}'
   - name: cblas/debs/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-14/libhwasan0_14.2.0-4ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libhwasan0_sha256 }}'
   - name: cblas/debs/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libgcc_13_dev_sha256 }}'
   - name: cblas/debs/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/gcc-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_gcc_13_aarch64_linux_gnu_sha256 }}'
   - name: cblas/debs/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/glibc/libc-dev-bin_2.39-0ubuntu8.9_arm64.deb
     sha256: '{{ context.cblas_debs_libc_dev_bin_sha256 }}'
   - name: cblas/debs/linux-libc-dev_6.8.0-147.147_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-libc-dev_6.8.0-147.147_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/l/linux/linux-libc-dev_6.8.0-147.147_arm64.deb
     sha256: '{{ context.cblas_debs_linux_libc_dev_sha256 }}'
   - name: cblas/debs/libcrypt-dev_4.4.36-4build1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcrypt/libcrypt-dev_4.4.36-4build1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/libx/libxcrypt/libcrypt-dev_4.4.36-4build1_arm64.deb
     sha256: '{{ context.cblas_debs_libcrypt_dev_sha256 }}'
   - name: cblas/debs/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/r/rpcsvc-proto/rpcsvc-proto_1.4.2-0ubuntu7_arm64.deb
     sha256: '{{ context.cblas_debs_rpcsvc_proto_sha256 }}'
   - name: cblas/debs/libc6-dev_2.39-0ubuntu8.9_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.9_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8.9_arm64.deb
     sha256: '{{ context.cblas_debs_libc6_dev_sha256 }}'
   - name: cblas/debs/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_libstdc___13_dev_sha256 }}'
   - name: cblas/debs/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/g++-13-aarch64-linux-gnu_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_g___13_aarch64_linux_gnu_sha256 }}'
   - name: cblas/debs/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/gcc-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_gcc_13_sha256 }}'
   - name: cblas/debs/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
     condition: arch == "aarch64"
-    url: https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
+    url: https://snapshot.ubuntu.com/ubuntu/{{ context.cblas_ubuntu_snapshot }}/pool/main/g/gcc-13/g++-13_13.3.0-6ubuntu2~24.04.1_arm64.deb
     sha256: '{{ context.cblas_debs_g___13_sha256 }}'
   - name: cblas/wheels/MarkupSafe-3.0.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
     condition: arch == "aarch64"
@@ -1336,7 +1337,7 @@ files:
             {
               "name": "zlib1g",
               "version": "{{ context.cblas_debs_zlib1g_version }}",
-              "filename": "zlib1g_1.3.dfsg-3.1ubuntu2.2_arm64.deb",
+              "filename": "zlib1g_1.3.dfsg-3.1ubuntu2.3_arm64.deb",
               "sha256": "{{ context.cblas_debs_zlib1g_sha256 }}"
             },
             {
@@ -1869,6 +1870,8 @@ tests:
     script: |
       python -c "import brainles_preprocessing; from brainles_preprocessing.preprocessor import Preprocessor; print('ok')"
 
+domains:
+  - neuroimaging
 categories:
   - image registration
   - structural imaging

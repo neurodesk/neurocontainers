@@ -199,6 +199,8 @@ files:
   - name: julia_archive
     url: https://julialang-s3.julialang.org/bin/linux/x64/1.12/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
     sha256: '{{ context.julia_sha256 }}'
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
   - quantitative imaging

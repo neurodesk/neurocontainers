@@ -569,6 +569,8 @@ deploy:
     - ROBEX
     - runROBEX.sh
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

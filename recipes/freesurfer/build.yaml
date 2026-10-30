@@ -502,6 +502,8 @@ files:
        *CgH0liqb0e9g
        FSVt2Z862iDJk
 
+domains:
+  - neuroimaging
 categories:
   - "image segmentation"
   - "structural imaging"

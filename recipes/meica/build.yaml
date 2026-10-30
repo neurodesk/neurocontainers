@@ -142,6 +142,8 @@ tests:
       test -f /opt/code/python-ismrmrd-server/OpenReconLabel.json
       test -f /opt/code/python-ismrmrd-server/OpenReconREADME.md
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - image reconstruction

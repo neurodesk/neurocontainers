@@ -152,6 +152,8 @@ readme: |-
   
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - machine learning

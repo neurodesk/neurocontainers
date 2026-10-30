@@ -11,9 +11,16 @@ architectures:
 variables:
   relion_version: "5.1.1"
   compute_capability: "75"
+  # Patched Pillow and filelock releases require Python 3.11; Ubuntu 22.04 only
+  # ships a 3.11 release candidate, so the venv uses a python-build-standalone build.
+  python_version: "3.11.18"
+  python_minor: "3.11"
+  python_build: "20261026"
+  python_sha256: "17c4978a36c496dc53c08899ef8dad1ad2734f6325f08d6033a1e66419e0af26"
+  python_home: /opt/relion-{{ context.version }}/python-runtime
   torch_version: "2.7.1+cu128"
-  torch_cuda_sha256: "d6c3cba198dc93f93422a8545f48a6697890366e4b9701f54351fc27e2304bd3"
-  torch_wheel: torch-{{ context.torch_version }}-cp310-cp310-manylinux_2_28_x86_64.whl
+  torch_cuda_sha256: "c301dc280458afd95450af794924c98fe07522dd148ff384739b810e3e3179f2"
+  torch_wheel: torch-{{ context.torch_version }}-cp311-cp311-manylinux_2_28_x86_64.whl
   classranker_commit: "352adf8b690ba56e9f4073cfee41c8fcad3dfb81"
   blush_commit: "ab48e6380e66b9aaf52362e86e060e9b9d8a40fd"
   dynamight_commit: "358db04d5c2ec2997f3f17060a456293f0b02185"
@@ -43,10 +50,16 @@ auto_update:
       variable: relion_commit
       variables:
         relion_version: version
+  - id: python_runtime
+    method: http_digest
+    dependency: true
+    url: https://github.com/astral-sh/python-build-standalone/releases/download/{{ context.python_build }}/cpython-{{ context.python_version }}%2B{{ context.python_build }}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+    target:
+      variable: python_sha256
   - id: torch_cuda
     method: http_digest
     dependency: true
-    url: https://download.pytorch.org/whl/cu128/torch-2.7.1%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl
+    url: https://download.pytorch.org/whl/cu128/torch-2.7.1%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl
     target:
       variable: torch_cuda_sha256
   - id: classranker
@@ -115,7 +128,6 @@ build:
         - libwxgtk3.0-gtk3-dev
         - lmod
         - tcsh
-        - python3-venv
 
     - workdir: /tmp
 
@@ -132,17 +144,19 @@ build:
     - copy: python-requirements.txt /tmp/relion-python-requirements.txt
 
     - run:
-        - python3 -m venv /opt/relion-{{ context.version }}/python
+        - mkdir -p {{ context.python_home }}
+        - tar -xzf {{ get_file("python_runtime") }} --strip-components=1 -C {{ context.python_home }}
+        - "{{ context.python_home }}/bin/python3 -m venv /opt/relion-{{ context.version }}/python"
         - cp {{ get_file("torch_cuda_wheel") }} /tmp/{{ context.torch_wheel }}
         - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps /tmp/{{ context.torch_wheel }}
         - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir -r /tmp/relion-python-requirements.txt
         - SETUPTOOLS_SCM_PRETEND_VERSION=0+g{{ context.dynamight_commit[:7] }} /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps {{ get_file("classranker_source") }} {{ get_file("blush_source") }} {{ get_file("dynamight_source") }} {{ get_file("topaz_source") }} {{ get_file("modelangelo_source") }}
-        - patch --batch --forward --fuzz=0 -d /opt/relion-{{ context.version }}/python/lib/python3.10/site-packages -p1 < {{ get_file("topaz_resources.patch") }}
+        - patch --batch --forward --fuzz=0 -d /opt/relion-{{ context.version }}/python/lib/python{{ context.python_minor }}/site-packages -p1 < {{ get_file("topaz_resources.patch") }}
         - /opt/relion-{{ context.version }}/python/bin/pip check
         - rm /tmp/relion-python-requirements.txt /tmp/{{ context.torch_wheel }}
         - mkdir -p relion
         - tar -xzf {{ get_file("relion_source") }} --strip-components=1 -C relion
-        - cp -r relion/src/tomography_python_programs /opt/relion-{{ context.version }}/python/lib/python3.10/site-packages/
+        - cp -r relion/src/tomography_python_programs /opt/relion-{{ context.version }}/python/lib/python{{ context.python_minor }}/site-packages/
         - sed -i '1c\#!/opt/relion-{{ context.version }}/python/bin/python' relion/scripts/trace_amyloids.py
         - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.version }}/ -DPYTHON_EXE_PATH=/opt/relion-{{ context.version }}/python/bin/python -DFETCH_WEIGHTS=OFF -DFORCE_OWN_FLTK=ON .. && make && make install
 
@@ -206,6 +220,8 @@ deploy:
   path:
     - /opt/relion-{{ context.version }}/bin/
 
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 
@@ -262,8 +278,11 @@ files:
   - name: python-requirements.txt
     filename: python-requirements.txt
   - name: torch_cuda_wheel
-    url: https://download.pytorch.org/whl/cu128/torch-{{ context.torch_version | replace("+", "%2B") }}-cp310-cp310-manylinux_2_28_x86_64.whl
+    url: https://download.pytorch.org/whl/cu128/torch-{{ context.torch_version | replace("+", "%2B") }}-cp311-cp311-manylinux_2_28_x86_64.whl
     sha256: "{{ context.torch_cuda_sha256 }}"
+  - name: python_runtime
+    url: https://github.com/astral-sh/python-build-standalone/releases/download/{{ context.python_build }}/cpython-{{ context.python_version }}%2B{{ context.python_build }}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+    sha256: "{{ context.python_sha256 }}"
   - name: classranker_source
     url: https://github.com/3dem/relion-classranker/archive/{{ context.classranker_commit }}.tar.gz
   - name: blush_source

@@ -113,7 +113,27 @@ Recipes are split into a few sections...
 
 This is `name`, `version`, `architectures`, and `readme`.
 
-You can optionally add `copyright` with license information. The license has to be a SPDX identifier from https://spdx.org/licenses/.
+The optional `copyright` list records upstream license information. The `license`
+field accepts an [SPDX identifier or expression](https://spdx.org/licenses/).
+Custom `LicenseRef-` identifiers require a `url`. SPDX values `NOASSERTION` and
+`NONE` also require a URL and do not identify a license for DOI publication.
+
+For a custom license, `name` and `url` preserve its title and terms. To publish
+that recipe through Neurocommand's Zenodo integration, also set `license` to
+`other-open` or `other-closed`, according to the upstream terms:
+
+```yaml
+copyright:
+  - license: other-closed
+    name: Academic non-commercial research license
+    url: https://example.org/LICENSE
+```
+
+Zenodo uses a controlled license vocabulary. The publisher validates its license
+ID before it creates a draft and includes the original title and URL in the
+record description. A `LicenseRef-` identifier or SPDX expression can be valid
+recipe metadata without being a supported Zenodo ID. Suggested IDs in an error
+message are candidates for review, not replacements for the upstream terms.
 
 ```yaml
 name: qsmxt

@@ -94,6 +94,8 @@ readme: |-
   To run container outside of this environment: ml segmentator/{{ context.version }}
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - image segmentation

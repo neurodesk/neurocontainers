@@ -134,6 +134,8 @@ deploy:
     - brainnet
     - topofit-openrecon
 
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - shape analysis

@@ -7,7 +7,7 @@ variables:
   mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
   pyedflib_version: "0.1.42"
-  vscode_version: "1.142.0"
+  vscode_version: "1.143.1"
   vscode_platform:
     try:
       - value: linux-deb-x64
@@ -16,10 +16,11 @@ variables:
         condition: arch == "aarch64"
   flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
   openneuro_version: "2026.9.1"
-  pipeline_commit: "e2a34cf44ab8d2df3646aaedc93de6c042e1b00a"
+  pipeline_commit: "0c061f3702fc203742877fb60c2e160551ce3725"
 
 name: mneextended
 version: "1.2.0"
+epoch: 1
 
 architectures:
   - x86_64
@@ -317,6 +318,8 @@ files:
 - name: mne_bids_pipeline_tar_gz
   url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.pipeline_commit }}.tar.gz
 
+domains:
+  - neuroimaging
 categories:
   - electrophysiology
   - programming

@@ -62,6 +62,8 @@ files:
 deploy:
   bins:
     - ctffind
+domains:
+  - neuroimaging
 categories:
   - cryo EM
 readme: |

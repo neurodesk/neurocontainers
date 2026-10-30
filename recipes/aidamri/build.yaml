@@ -185,6 +185,8 @@ deploy:
   - /opt/aidamri-{{ context.upstream_version }}/NiftyReg/bin
   - /opt/fsl-{{ context.fsl_version }}/bin
   - /opt/miniconda-4.7.12.1/bin
+domains:
+  - neuroimaging
 categories:
 - rodent imaging
 - structural imaging

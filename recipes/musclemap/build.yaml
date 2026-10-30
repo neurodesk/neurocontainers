@@ -1,5 +1,6 @@
 name: musclemap
 version: 1.4.0
+epoch: 1
 architectures:
     - x86_64
 
@@ -7,11 +8,11 @@ variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-  openrecon_ismrmrd_version: "1.14.2"
+  openrecon_ismrmrd_version: "1.15.0"
   musclemap_model_version: '1.4'
   musclemap_regional_model_version: '0.0'
   musclemap_software_version: '2.0'
-  musclemap_source_revision: 6e1e1eb6732337c13cab53bd5cc800c69024774f
+  musclemap_source_revision: "35a2138a4a3a63be713bae5584632ffc6433b960"
   musclemap_archive_url: https://github.com/MuscleMap/MuscleMap/archive/{{ context.musclemap_source_revision }}.zip
   wholebody_model_record: '21929873'
   abdomen_model_record: '19631081'
@@ -20,7 +21,7 @@ variables:
   pelvis_model_record: '19632902'
   thigh_model_record: '19633000'
   abdomen_template_record: '20043148'
-  spinalcordtoolbox_version: '6.5'
+  spinalcordtoolbox_version: "7.3"
   spinalcordtoolbox_archive_url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.spinalcordtoolbox_version
     }}.tar.gz
   abdomen_model_version: '0.0'
@@ -361,6 +362,8 @@ readme: |-
 
   ----------------------------------
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAB/ElEQVR4AbSUS8tpURzGn+1e5BYGKIpiZqbMTQyUAV/WJ5CJZOSSJHIXueTueNab98z81+m8r/ayN2uv57ee9b+YADx1RzgcfkajUe33qUvA6653FYtFVCoVmEz6y/TffO1hv99jNBrh+aSJ1x8alzYgEAjgfr/DbDbD6/VqSH+9IgKsVitKpRLK5TLm8zlmsxny+TwKhcKXgvAtAoLBoDqSbreLzWaD3W6H4/GoQDpORADPnS4sFgt8Ph8SiYQ6osfjAcMwIH1EAMUZWIrTDWOQyWRgt9txOp0kfYgA7jQUCiGVSiGdTsPtdmO1WuFVE7jdbv8PYEput1uVQc1mE3zu9XoYDoegO4kgOqDA9XrFeDxWDpLJJKbTKc7n8884YNXmcjlEIhG1ezrIZrPq9+VyIf/jEB0wqNxxtVpFp9NBq9VCvV6HzWaD0+n8KM5JEcDqZd5z58wcj8ejgrxYLFTaUuTTEAEsrFqtBr/fr9oEz54F1mg0VF/6JM45EcAATyYTxGIxrNdrsPBeLVsFmQLSEAFvATqIx+NgFhmGXMHvddoAxoKpOhgMtNLznwHsoqxg3tlV3wLSXdvBcrkE48H+czgcJN3veW0Ai4riPCr2p28F4UEbYBiG6j0OhwMul0uQ/TutDWA9cBkBvxKDdrsNdlG2in6/T5bW+AMAAP//wtg5bQAAAAZJREFUAwAZcfw0V/0rGAAAAABJRU5ErkJggg==
+domains:
+  - neuroimaging
 categories:
   - body
 copyright:

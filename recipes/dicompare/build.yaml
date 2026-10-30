@@ -1,6 +1,8 @@
 name: dicompare
 version: 0.15.4
 
+domains:
+  - neuroimaging
 categories:
   - "quality control"
   - "data organisation"

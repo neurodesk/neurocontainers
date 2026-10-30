@@ -19,6 +19,7 @@ from builder.validation import (
     SPDXCopyrightInfo,
     GUIApp,
     FileInfo,
+    parse_copyright_from_dict,
 )
 
 VALID_ICON = (
@@ -30,6 +31,49 @@ VALID_SVG_ICON = (
 )
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"license": "custom"},
+        {"license": "Not-A-Real-License"},
+        {"license": "MIT OR"},
+        {"license": 42},
+        {"license": "other-open"},
+        {"license": "other-closed", "url": ""},
+        {"license": "LicenseRef-Example"},
+        {"license": "NOASSERTION"},
+        {"license": "NONE"},
+        {"name": "Custom license"},
+    ],
+)
+def test_invalid_copyright_metadata_is_rejected(entry):
+    with pytest.raises(ValueError):
+        parse_copyright_from_dict(entry)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"license": "MIT"},
+        {"license": "MIT OR Apache-2.0"},
+        {"license": "{{ context.license_id }}"},
+        {"license": "LicenseRef-Example", "url": "https://example.com/LICENSE"},
+        {"license": "NOASSERTION", "url": "https://example.com"},
+        {"name": "Custom license", "url": "https://example.com/LICENSE"},
+        {
+            "license": "other-closed",
+            "name": "Custom research license",
+            "url": "https://example.com/LICENSE",
+        },
+        {"license": "other-open", "url": "https://example.com/LICENSE"},
+    ],
+)
+def test_valid_copyright_metadata_is_preserved(entry):
+    result = parse_copyright_from_dict(entry)
+    for field, value in entry.items():
+        assert getattr(result, field) == value
+
+
 def test_valid_minimal_recipe():
     """Test validation of a minimal valid recipe"""
     recipe = {
@@ -37,6 +81,7 @@ def test_valid_minimal_recipe():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["fetal imaging"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -54,6 +99,27 @@ def test_valid_minimal_recipe():
     assert result.categories == ["fetal imaging"]
 
 
+def test_missing_or_duplicate_domains_fail_published_recipe_validation():
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["fetal imaging"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+    }
+    with pytest.raises(ValueError, match="domains is required"):
+        validate_recipe_dict(recipe)
+    recipe["domains"] = ["neuroimaging", "neuroimaging"]
+    with pytest.raises(ValueError, match="unique lowercase domain IDs"):
+        validate_recipe_dict(recipe)
+
+
 def test_valid_complex_recipe():
     """Test validation of a complex recipe with many fields"""
     recipe = {
@@ -66,6 +132,7 @@ def test_valid_complex_recipe():
             {"name": "Custom License", "url": "https://example.com/license"},
         ],
         "categories": ["image registration", "machine learning"],
+        "domains": ["neuroimaging"],
         "gui_apps": [{"name": "GUI App", "exec": "/usr/bin/gui-app"}],
         "deploy": {"path": ["/opt/app/bin"], "bins": ["app-binary"]},
         "build": {
@@ -106,6 +173,7 @@ def test_nested_test_directive_is_rejected(directives):
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["fetal imaging"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -126,6 +194,7 @@ def test_top_level_tests_remain_valid_for_the_embedded_fallback():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["fetal imaging"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -158,6 +227,7 @@ def test_invalid_recipe_empty_name():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -179,6 +249,7 @@ def test_invalid_recipe_name_with_underscore():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -201,6 +272,7 @@ def test_invalid_architecture():
         "version": "1.0.0",
         "architectures": ["invalid-arch"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -243,6 +315,7 @@ def test_invalid_category():
         "architectures": ["x86_64"],
         "icon": VALID_ICON,
         "categories": ["invalid-category"],
+        "domains": ["neuroimaging"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -264,6 +337,7 @@ def test_legacy_category_rejected_in_strict_metadata():
         "architectures": ["x86_64"],
         "icon": VALID_ICON,
         "categories": ["statistical analysis"],
+        "domains": ["neuroimaging"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -284,6 +358,7 @@ def test_legacy_metadata_mode_allows_existing_recipe_gaps():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["other"],
+        "domains": ["neuroimaging"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -303,6 +378,7 @@ def test_invalid_recipe_missing_icon():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -323,6 +399,7 @@ def test_invalid_recipe_icon_url():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": "https://example.com/icon.png",
         "build": {
             "kind": "neurodocker",
@@ -344,6 +421,7 @@ def test_invalid_recipe_icon_base64():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": "data:image/png;base64,not-valid-base64",
         "build": {
             "kind": "neurodocker",
@@ -365,6 +443,7 @@ def test_validate_recipe_file():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -392,6 +471,7 @@ def write_recipe_with_fulltest(tmp_path, fulltest: dict) -> str:
         "version": "1.2.3",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -487,6 +567,7 @@ def test_directive_validation():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -519,6 +600,7 @@ def test_structured_readme_allows_missing_optional_fields():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "structured_readme": {
             "description": "Example tool",
@@ -558,6 +640,7 @@ def test_invalid_jinja_template_in_file_url():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -587,6 +670,7 @@ def test_non_string_file_name_fails_validation():
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -616,6 +700,7 @@ def test_two_digit_version_yaml_parsing():
         "version": "1.1",  # This will be parsed as float by YAML
         "architectures": ["x86_64"],
         "categories": ["programming"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -667,6 +752,7 @@ def test_flatten_base_image_requires_boolean(value):
         "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["workflows"],
+        "domains": ["neuroimaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",

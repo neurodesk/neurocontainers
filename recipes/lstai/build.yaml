@@ -107,6 +107,8 @@ files:
     url: https://zenodo.org/record/2540695/files/4.model?download=1
     sha256: 567689e4dff87debe357b30e4414c412485207657d1e99c33bf0bf587d28bf32
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - machine learning

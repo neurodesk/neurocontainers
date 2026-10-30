@@ -45,6 +45,8 @@ deploy:
     - cpac
     - cpac-run
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - workflows

@@ -45,6 +45,8 @@ readme: |-
   License: 3-clause BSD license, https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
 
   ----------------------------------
+domains:
+  - neuroimaging
 categories:
   - arterial spin labelling
   - quantitative imaging

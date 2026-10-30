@@ -181,6 +181,8 @@ gui_apps:
   - name: nnInteractive
     exec: napari-nninteractive
 
+domains:
+  - neuroimaging
 categories:
   - visualization
   - image segmentation

@@ -27,20 +27,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Fetch domain catalogs from Cloudflare
-        env:
-          CATALOG_BASE_URL: ${{ vars.APPS_CATALOG_URL || 'https://apps-json.scigetorg.workers.dev' }}
-          CATALOG_DOMAINS: ${{ vars.APPS_CATALOG_DOMAINS || 'neuroimaging' }}
-        run: |
-          set -euo pipefail
-          for domain in $CATALOG_DOMAINS; do
-            mkdir -p "apps-catalog/$domain"
-            curl -fsSL "$CATALOG_BASE_URL/$domain/apps.json" \
-              -o "apps-catalog/$domain/apps.json"
-          done
-          python3 -c 'import json,pathlib; merged={}; [merged.update(json.loads((d/"apps.json").read_text())) for d in pathlib.Path("apps-catalog").iterdir() if d.is_dir() and (d/"apps.json").exists()]; print(json.dumps(merged))' > apps-catalog/apps.json
-          python3 -c 'import json,pathlib; print(json.dumps({"domains":{d.name:{} for d in pathlib.Path("apps-catalog").iterdir() if d.is_dir() and (d/"apps.json").exists()}}))' > apps-catalog/domains.json
-
+      - name: Check out published domain catalogs
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+          path: apps-catalog
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v6
         with:

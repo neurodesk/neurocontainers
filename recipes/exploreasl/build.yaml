@@ -39,6 +39,8 @@ build:
           - /opt/run.sh
           - /usr/local/bin/ExploreASL
           - /usr/local/bin/ExploreASL_test
+domains:
+  - neuroimaging
 categories:
   - arterial spin labelling
   - workflows

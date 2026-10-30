@@ -382,6 +382,8 @@ deploy:
     - aurora
     - aurora-python
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

@@ -115,6 +115,8 @@ deploy:
   bins:
     - LN2_FRISGO
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - image reconstruction

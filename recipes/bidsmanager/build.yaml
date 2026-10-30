@@ -1,5 +1,6 @@
 name: bidsmanager
-version: 1.5.1
+version: 1.5.2
+epoch: 1
 
 copyright:
   - license: MIT
@@ -111,6 +112,8 @@ readme: |-
 
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - "data organisation"
   - "bids apps"

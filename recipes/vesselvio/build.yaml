@@ -126,6 +126,8 @@ files:
       cd "$runtime_dir"
       /opt/miniforge/envs/vesselvio/bin/python "$source_dir/VesselVio.py" "$@"
 
+domains:
+  - neuroimaging
 categories:
   - quantitative imaging
   - visualization

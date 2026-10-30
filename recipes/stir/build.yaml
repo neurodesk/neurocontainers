@@ -87,6 +87,8 @@ files:
     url: https://github.com/fmtlib/fmt/archive/{{ context.fmt_commit }}.tar.gz
   - name: cuvec
     url: https://github.com/AMYPAD/CuVec/archive/{{ context.cuvec_commit }}.tar.gz
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
 readme: |

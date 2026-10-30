@@ -3,7 +3,7 @@ version: 8.2.0
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
 
 copyright:
-  - license: FreeSurfer Software License Agreement
+  - name: FreeSurfer Software License Agreement
     url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
 
 architectures:
@@ -56,6 +56,8 @@ deploy:
   bins:
     - mri_synthstrip
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

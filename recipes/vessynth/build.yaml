@@ -166,6 +166,8 @@ deploy:
   bins:
     - vessynth
     - openrecon-vessynth
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - machine learning

@@ -129,6 +129,8 @@ files:
 deploy:
   bins:
     - chimera
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

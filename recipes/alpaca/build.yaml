@@ -175,6 +175,8 @@ files:
     url: https://github.com/hufengling/ALPaCA/releases/download/1.1.4/models_6_10.zip
     sha256: 85e56051bed034121413a6d7ba35806abe5eee59641a551cbe9f9ee196763512
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

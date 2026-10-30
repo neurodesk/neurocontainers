@@ -96,6 +96,8 @@ build:
 deploy:
   bins:
     - frisgokspace
+domains:
+  - neuroimaging
 categories:
   - image reconstruction
 readme: |

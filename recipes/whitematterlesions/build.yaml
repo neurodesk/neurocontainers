@@ -130,6 +130,8 @@ files:
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
 
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - machine learning

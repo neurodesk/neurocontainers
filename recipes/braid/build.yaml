@@ -102,6 +102,8 @@ build:
     - run:
         - git lfs install
         - git clone https://huggingface.co/chenyugoal/braid-v1.0 /opt/braid-v1.0 && git -C /opt/braid-v1.0 checkout {{ context.model_commit }}
+domains:
+  - neuroimaging
 categories:
   - diffusion imaging
   - machine learning

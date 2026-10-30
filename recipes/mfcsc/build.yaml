@@ -86,6 +86,8 @@ readme: |-
   
   ----------------------------------
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - diffusion imaging

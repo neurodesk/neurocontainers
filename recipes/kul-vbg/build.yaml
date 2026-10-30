@@ -97,6 +97,8 @@ build:
 deploy:
   bins:
     - KUL_VBG.sh
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - structural imaging

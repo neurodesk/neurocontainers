@@ -95,6 +95,8 @@ files:
         install.packages(tarball, repos = NULL, type = "source")
       }
 
+domains:
+  - neuroimaging
 categories:
   - statistics
   - machine learning

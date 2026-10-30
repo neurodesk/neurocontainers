@@ -48,6 +48,14 @@ jobs:
       - name: Validate OpenRecon labels
         run: python workflows/validate_openrecon_labels.py --experimental-raw-return
 
+      - name: Validate catalog domains
+        env:
+          APPS_CATALOG_REGISTRY: ${{ vars.APPS_CATALOG_REGISTRY || 'https://raw.githubusercontent.com/scigetorg/apps.json/main/domains.json' }}
+        run: >-
+          python tools/validate_domains.py
+          --repository NeuroDesk/neurocontainers
+          --registry "$APPS_CATALOG_REGISTRY"
+
       - name: Validate changed recipes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

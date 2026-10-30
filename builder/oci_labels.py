@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 
 PREFIX = "org.opencontainers.image."
+# Zenodo license categories accepted in recipe metadata; not SPDX expressions.
+ZENODO_LICENSE_CATEGORIES = frozenset({"other-open", "other-closed"})
 
 
 def recipe_labels(
@@ -48,6 +50,7 @@ def recipe_labels(
             str(item["license"]).strip()
             for item in compiled.metadata.get("copyright") or []
             if item.get("license")
+            and str(item["license"]).strip() not in ZENODO_LICENSE_CATEGORIES
         )
     )
     license_expression = " AND ".join(

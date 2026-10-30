@@ -84,6 +84,18 @@ def test_missing_license_is_not_misattributed_to_base_image():
     )
 
 
+def test_zenodo_license_categories_are_not_emitted_as_spdx():
+    recipe = compiled()
+    recipe.metadata = {
+        "copyright": [{"license": "other-closed"}, {"license": "MIT"}],
+    }
+    labels = oci_labels.recipe_labels(recipe, "20261003", "a" * 40)
+    assert labels[oci_labels.PREFIX + "licenses"] == "MIT"
+    recipe.metadata = {"copyright": [{"license": "other-open"}]}
+    labels = oci_labels.recipe_labels(recipe, "20261003", "a" * 40)
+    assert labels[oci_labels.PREFIX + "licenses"] == "NOASSERTION"
+
+
 @pytest.mark.parametrize("date,revision", [("20260230", "a" * 40), ("20261003", "abc")])
 def test_invalid_identity_fails_before_build(date, revision):
     with pytest.raises(ValueError):

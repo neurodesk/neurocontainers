@@ -20,6 +20,7 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
     "build_default": frozenset({"candidate"}),
     "auto_update": frozenset({"source_only"}),
     "icon": frozenset({"catalog"}),
+    "domains": frozenset({"catalog"}),
     "copyright": frozenset({"source_only"}),
     "readme": frozenset({"source_only"}),
     "readme_url": frozenset({"source_only"}),
@@ -41,7 +42,7 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
 
 # Fields outside these proven non-image groups remain candidate-required.
 ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update", "copyright", "draft"})
-ENABLED_CATALOG_FIELDS = frozenset({"icon"})
+ENABLED_CATALOG_FIELDS = frozenset({"icon", "domains"})
 DOCUMENTATION_FIELDS = frozenset({"readme", "readme_url", "structured_readme"})
 KNOWN_NON_IMAGE_FILES = frozenset({"fulltest.yaml"})
 

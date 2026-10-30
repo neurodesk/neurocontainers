@@ -5,6 +5,7 @@
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 - make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
+- Declare `domains:` in every recipe. The apps.json catalog repository's `domains.json` is the allowed list; a domain-only change updates catalog routing without a container build.
 - these are the available categories: functional imaging, arterial spin labelling, fetal imaging, image reconstruction, spectroscopy, rodent imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
 
 ## Environment Setup
@@ -123,6 +124,8 @@ files:                              # Declare files for build context
 
 categories:                         # NeuroDesk UI categories
   - "structural imaging"
+domains:                            # Catalog domains for every app version
+  - neuroimaging
 
 readme: |                           # Inline documentation (supports Jinja2)
   ## toolname/{{ context.version }}
@@ -221,12 +224,12 @@ Recipe validation (`builder/validation.py`) enforces:
 - **Architectures**: Must be `x86_64` or `aarch64`
 - **Categories**: Must match the 27-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
 - **Licenses**: Should use SPDX identifiers
-- **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `icon`
+- **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `domains`, `icon`
 - **Optional**: `deploy` — omitting it is valid, though most recipes want it
 
-`icon` and `categories` are required and are the two most common validation
-failures on a new recipe: `sf-init` does not scaffold either, so add both before
-running validation.
+`icon`, `categories`, and `domains` are required. `sf-init` does not scaffold
+them. CI checks domain IDs and repository mappings against the catalog's
+`domains.json`.
 
 The validation schema matches the Zod schema from `neurocontainers-ui`.
 
@@ -259,8 +262,8 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 ### Add a New Container Recipe
 1. `sf-init <toolname> <version>` to scaffold
 2. Edit `recipes/<toolname>/build.yaml` with build instructions, and replace the
-   `TODO` placeholders. Add `categories:` and `icon:` — `sf-init` omits both and
-   validation fails without them.
+   `TODO` placeholders. Add `categories:`, `domains:`, and `icon:` — `sf-init`
+   omits them and validation fails without them.
 3. Configure `auto_update` with explicit targets for the installed software and
    shared dependencies. Bind source variables in install commands or declared
    downloads; derive the container label from the primary software version. Dependency-only

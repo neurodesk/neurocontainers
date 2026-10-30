@@ -257,6 +257,8 @@ deploy:
     - deep-quality-estimation
     - dqe-python
 
+domains:
+  - neuroimaging
 categories:
   - quality control
   - image segmentation

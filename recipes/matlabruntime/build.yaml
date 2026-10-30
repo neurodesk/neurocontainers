@@ -2,7 +2,8 @@ name: matlabruntime
 version: 2026b
 
 copyright:
-  - name: MATLAB Runtime
+  - license: other-closed
+    name: MATLAB Runtime
     url: https://www.mathworks.com/products/compiler/matlab-runtime.html
 
 architectures:
@@ -68,6 +69,8 @@ files:
       printf 'MATLABCMD: %s\n' "${matlab_cmd}"
       printf 'AGREE_TO_MATLAB_RUNTIME_LICENSE: %s\n' "${AGREE_TO_MATLAB_RUNTIME_LICENSE:-unset}"
 
+domains:
+  - neuroimaging
 categories:
   - programming
 

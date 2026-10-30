@@ -76,6 +76,8 @@ deploy:
     - Rscript
     - python
 
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - workflows

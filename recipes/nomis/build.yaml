@@ -138,6 +138,8 @@ files:
       esac
       exec python /opt/nomis/NOMIS.py "$@"
 
+domains:
+  - neuroimaging
 categories:
   - structural imaging
   - statistics

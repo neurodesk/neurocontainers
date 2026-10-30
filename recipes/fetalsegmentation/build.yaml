@@ -75,6 +75,8 @@ structured_readme:
     aUtomated parcellatioN for 3D feTal MRI. bioRxiv 2023.04.18.537347.
     https://doi.org/10.1101/2023.04.18.537347
 
+domains:
+  - neuroimaging
 categories:
   - fetal imaging
   - image segmentation

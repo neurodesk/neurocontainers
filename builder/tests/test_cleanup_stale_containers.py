@@ -32,8 +32,9 @@ def release(sources: Path, repository: str, tool: str, date: str) -> None:
     )
 
 
-def test_apply_protects_every_domain_and_source_release(
-    tmp_path: Path, monkeypatch
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_cleanup_protects_every_domain_and_source_release(
+    tmp_path: Path, monkeypatch, capsys, dry_run: bool
 ) -> None:
     catalog = tmp_path / "catalog"
     catalog.mkdir()
@@ -83,6 +84,13 @@ def test_apply_protects_every_domain_and_source_release(
         lambda _: [
             {"Path": key, "ModTime": recent if key.startswith("recent") else old}
             for key in objects
+            + [
+                "promotion-staging/"
+                + "a" * 40
+                + "/published/published_1.0_20250101.simg",
+                "orphan_1.0_20200101.simg/slo/segment",
+                "nested/unreferenced_1.0_20200101.simg",
+            ]
         ],
     )
     monkeypatch.setattr(
@@ -93,7 +101,6 @@ def test_apply_protects_every_domain_and_source_release(
             for key in objects
         ],
     )
-    monkeypatch.setattr(cleanup, "check_orphaned_segments", lambda *args: None)
     calls = []
     monkeypatch.setattr(
         cleanup.subprocess, "run", lambda command, **_: calls.append(command)
@@ -111,11 +118,22 @@ def test_apply_protects_every_domain_and_source_release(
             str(sources),
             "--retention-days",
             "7",
-            "--apply",
+            "--dry-run" if dry_run else "--apply",
         ],
     )
 
     cleanup.main()
+
+    if dry_run:
+        assert calls == []
+        output = capsys.readouterr().out
+        assert (
+            "Would delete unreferenced Nectar object: nectar:/neurodesk/stale_1.0_20200101.simg"
+            in output
+        )
+        assert "promotion-staging" not in output
+        assert "nested/" not in output
+        return
 
     assert calls == [
         ["rclone", "deletefile", "nectar:/neurodesk/stale_1.0_20200101.simg"],

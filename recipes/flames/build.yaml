@@ -219,6 +219,8 @@ build:
         - mkdir -p /opt/flames/bin
         - cp {{ get_file("flames_cli") }} /opt/flames/bin/flames
         - chmod +x /opt/flames/bin/flames
+domains:
+  - neuroimaging
 categories:
   - image segmentation
   - machine learning

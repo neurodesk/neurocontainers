@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove old SIFs absent from every published domain and source release."""
+"""Remove stale images absent from catalogs and releases; keep nested Swift objects."""
 
 import argparse
 import json
@@ -259,137 +259,6 @@ def list_nectar_objects(remote_root: str) -> List[dict]:
     return json.loads(lsjson)
 
 
-def list_nectar_objects_optional(remote_root: str) -> Optional[List[dict]]:
-    result = subprocess.run(
-        ["rclone", "lsjson", "--recursive", "--files-only", remote_root],
-        text=True,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        err = (
-            result.stderr.strip()
-            or result.stdout.strip()
-            or f"exit status {result.returncode}"
-        )
-        print(f"[DEBUG] Unable to list {remote_root}; skipping optional check ({err})")
-        return None
-
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        print(
-            f"[DEBUG] Unable to parse lsjson output for {remote_root}; skipping optional check ({exc})"
-        )
-        return None
-
-
-def parse_remote_container(remote_root: str) -> Optional[Tuple[str, str]]:
-    if ":" not in remote_root:
-        return None
-
-    remote, path = remote_root.split(":", 1)
-    path = path.lstrip("/")
-    if not remote or not path:
-        return None
-
-    container = path.split("/", 1)[0]
-    if not container:
-        return None
-
-    return remote, container
-
-
-def check_orphaned_segments(
-    remote_root: str, dry_run: bool, protected_keys: Set[str], cutoff: datetime
-) -> None:
-    parsed = parse_remote_container(remote_root)
-    if parsed is None:
-        print(
-            f"[DEBUG] Could not infer Swift container from {remote_root}; skipping orphaned-segment check"
-        )
-        return
-
-    remote, container = parsed
-    segments_remote = f"{remote}:/{container}_segments/"
-
-    manifests = list_nectar_objects_optional(remote_root)
-    if manifests is None:
-        return
-
-    legacy_segments = list_nectar_objects_optional(segments_remote)
-    if legacy_segments is None:
-        print(
-            f"[DEBUG] Segment container {segments_remote} is not available; "
-            "skipping legacy orphaned-segment check"
-        )
-
-    manifest_keys = {obj.get("Path", "") for obj in manifests if obj.get("Path")}
-    orphaned_segments = []
-    for source, segments in (
-        (remote_root, manifests),
-        (segments_remote, legacy_segments or []),
-    ):
-        for obj in segments:
-            segment_path = obj.get("Path", "")
-            if not segment_path:
-                continue
-            manifest_candidate = segment_path.split("/", 1)[0]
-            if source == remote_root:
-                if not segment_path.startswith(manifest_candidate + "/slo/"):
-                    continue
-                if (
-                    not manifest_candidate.endswith(".simg")
-                    or manifest_candidate in protected_keys
-                ):
-                    continue
-                # Failed uploads may leave SLO segments in the public container.
-                # Protect active images and allow the same retention window as images.
-                modified = parse_iso8601(obj.get("ModTime", ""))
-                if modified is None or modified >= cutoff:
-                    continue
-            if manifest_candidate and manifest_candidate not in manifest_keys:
-                orphaned_segments.append(f"{source.rstrip('/')}/{segment_path}")
-
-    print(
-        f"[DEBUG] Orphaned-segment scan: checked {len(manifests)} public objects "
-        f"and {len(legacy_segments or [])} legacy segments"
-    )
-    if not orphaned_segments:
-        print("[DEBUG] Orphaned-segment scan: no orphaned segment objects found")
-        return
-
-    print(
-        f"[WARNING] Orphaned-segment scan: found {len(orphaned_segments)} orphaned segment object(s)"
-    )
-    orphaned_segments = sorted(orphaned_segments)
-
-    if dry_run:
-        preview_limit = 20
-        for segment_path in orphaned_segments[:preview_limit]:
-            print(f"[DRY-RUN] Would delete orphaned segment: {segment_path}")
-        if len(orphaned_segments) > preview_limit:
-            print(
-                f"[DRY-RUN] ... and {len(orphaned_segments) - preview_limit} more "
-                "orphaned segment object(s)"
-            )
-        return
-
-    deleted = 0
-    failed = 0
-    for segment_obj in orphaned_segments:
-        try:
-            print(f"[DEBUG] Deleting orphaned segment: {segment_obj}")
-            subprocess.run(["rclone", "deletefile", segment_obj], check=True)
-            deleted += 1
-        except subprocess.CalledProcessError as exc:
-            failed += 1
-            print(f"[WARNING] Failed to delete orphaned segment {segment_obj}: {exc}")
-
-    print(f"[DEBUG] Deleted {deleted} orphaned segment object(s)")
-    if failed:
-        print(f"[WARNING] Failed deleting {failed} orphaned segment object(s)")
-
-
 def list_s3_objects(bucket: str) -> List[dict]:
     objects = []
     continuation_token = None
@@ -486,7 +355,8 @@ def main() -> None:
     nectar_to_delete = []
     for obj in list_nectar_objects(args.remote_root):
         key = obj.get("Path", "")
-        if not key.endswith(".simg") or key in expected_keys:
+        # Copied Swift manifests can share staging segments; leave nested objects alone.
+        if "/" in key or not key.endswith(".simg") or key in expected_keys:
             continue
 
         mod_time = parse_iso8601(obj.get("ModTime", ""))
@@ -573,8 +443,6 @@ def main() -> None:
         print(
             f"[DEBUG] Deleted {len(aws_to_delete)} stale object(s) from AWS S3 bucket {args.s3_bucket}"
         )
-
-    check_orphaned_segments(args.remote_root, args.dry_run, expected_keys, cutoff)
 
 
 if __name__ == "__main__":

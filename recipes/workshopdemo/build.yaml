@@ -42,6 +42,8 @@ deploy:
   bins:
     - hello
 
+domains:
+  - neuroimaging
 categories:
   - functional imaging
   - workflows

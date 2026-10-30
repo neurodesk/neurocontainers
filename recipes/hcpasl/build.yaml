@@ -94,6 +94,8 @@ deploy:
     - PerfusionCIFTIProcessingPipelineASL.sh
     - CreateDenseScalarASL.sh
 
+domains:
+  - neuroimaging
 categories:
   - arterial spin labelling
   - functional imaging

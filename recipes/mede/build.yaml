@@ -2,7 +2,8 @@ name: mede
 version: 0.0.12
 
 copyright:
-  - license: LicenseRef-Apache-2.0-Commons-Clause
+  - license: other-closed
+    name: Apache License 2.0 with Commons Clause and attribution terms
     url: https://github.com/TIO-IKIM/medical_image_deidentification/blob/main/LICENSE
 
 architectures:
@@ -129,6 +130,8 @@ files:
       wadler_lindig==0.1.7
       wrapt==2.2.0
 
+domains:
+  - neuroimaging
 categories:
   - data organisation
 
