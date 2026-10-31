@@ -1,0 +1,70 @@
+name: Prune candidate artifacts
+
+# Deletes PR candidate bundles whose head no promotion can select: superseded
+# pushes and PRs closed without merging. Every bundle of an open PR head or a
+# merged PR final head is kept until it expires, so recovery and republishing
+# work.
+# See tools/prune_candidate_artifacts.py. Scheduled runs delete; manual runs
+# only report unless apply is ticked.
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete the planned bundles (otherwise only report them)
+        type: boolean
+        default: false
+      min_age_hours:
+        description: Keep bundles created within this many hours
+        type: number
+        default: 6
+
+permissions: {}
+
+concurrency:
+  group: prune-candidate-artifacts
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prune:
+    # Run only main's reviewed copy of the script with a deleting token.
+    if: github.repository == 'neurodesk/neurocontainers' && (github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Plan and prune
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+          # Scheduled runs have no inputs; a manual 0 must stay 0.
+          MIN_AGE_HOURS: ${{ github.event_name == 'schedule' && 6 || inputs.min_age_hours }}
+        run: |
+          set -o pipefail
+          args=(--min-age-hours "${MIN_AGE_HOURS}" --report candidate-prune-plan.json)
+          if [ "${APPLY}" = "true" ]; then
+            args+=(--apply)
+          fi
+          python tools/prune_candidate_artifacts.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload plan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-prune-plan
+          path: candidate-prune-plan.json
+          retention-days: 7
+          if-no-files-found: ignore
