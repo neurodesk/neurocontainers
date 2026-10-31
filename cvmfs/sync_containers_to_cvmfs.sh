@@ -4,7 +4,9 @@
 #This script runs on the CVMFS STRATUM 0 server every 5 minutes
 
 #sudo vi /etc/cron.d/sync_containers_to_cvmfs
-#*/5 * * * * ec2-user cd ~ && bash /home/rocky/neurocontainers/cvmfs/sync_containers_to_cvmfs.sh
+# Skip the checkout update while a run holds the lock, so a running sync
+# never loads helpers from a newer commit than its own script.
+#*/5 * * * * rocky cd ~ && { [ -f /home/rocky/ISRUNNING.lock ] || { git -C /home/rocky/neurocontainers fetch -q origin && git -C /home/rocky/neurocontainers reset -q --hard origin/main; }; bash /home/rocky/neurocontainers/cvmfs/sync_containers_to_cvmfs.sh; } >> /home/rocky/cronjob.log 2>&1
 
 #The cronjob logfile is rotated after every run that reaches the end
 
@@ -291,6 +293,8 @@ export RCLONE_VERBOSE=2
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 NEUROCOMMAND_LOCAL_REPO="$HOME/neurocommand"
+# The cvmfs/*.py helpers import transparent-singularity from this checkout.
+export NEUROCOMMAND_DIR="$NEUROCOMMAND_LOCAL_REPO"
 CATALOG_LOCAL_REPO="${APPS_CATALOG_LOCAL_REPO:-$HOME/scigetorg-apps-json}"
 CATALOG_URL="${APPS_CATALOG_GIT_URL:-https://github.com/scigetorg/apps.json.git}"
 CATALOG_BASE_URL="${APPS_CATALOG_BASE_URL:-https://apps-json.scigetorg.workers.dev}"
@@ -335,7 +339,10 @@ import json, sys, urllib.request, pathlib
 base, domains_str, out = sys.argv[1], sys.argv[2], sys.argv[3]
 merged = {}
 for d in domains_str.split():
-    with urllib.request.urlopen(f'{base}/{d}/apps.json') as r:
+    # Cloudflare rejects the default Python-urllib user agent (error 1010).
+    req = urllib.request.Request(f'{base}/{d}/apps.json',
+                                 headers={'User-Agent': 'neurodesk-cvmfs-sync'})
+    with urllib.request.urlopen(req) as r:
         merged.update(json.load(r))
 pathlib.Path(out).write_text(json.dumps(merged))
 " "$CATALOG_BASE_URL" "$CATALOG_DOMAINS" "$CATALOG_TEMP" || {
@@ -354,7 +361,8 @@ pathlib.Path(sys.argv[3]).write_text(''.join(f'{l}\n' for l in log_lines(apps)))
     exit 2
 }
 
-cd cvmfs || exit
+# Leave the neurocommand checkout; nothing below depends on its cvmfs/ folder.
+cd "$SCRIPT_DIR" || exit
 
 # check if there is enough free space - otherwise don't do anything:
 FREE=$(df -k --output=avail / | tail -n1)

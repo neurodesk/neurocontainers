@@ -13,9 +13,12 @@ import sys
 from typing import Optional
 
 
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[1] / "neurodesk/transparent-singularity")
+# transparent-singularity is maintained in the neurocommand checkout.
+TRANSPARENT_SINGULARITY_DIR = (
+    Path(os.environ.get("NEUROCOMMAND_DIR", Path.home() / "neurocommand"))
+    / "neurodesk/transparent-singularity"
 )
+sys.path.insert(0, str(TRANSPARENT_SINGULARITY_DIR))
 from artifact_renderer import (
     ContainerSpec,
     read_container_inventory,
@@ -26,10 +29,7 @@ from artifact_renderer import (
 
 EXPOSED_COMMANDS_MARKER = "neurodesk-exposed-commands"
 MANUAL_MODULE_BEGIN = "-- neurodesk-manual-module-begin"
-DEFAULT_MANUAL_MODULE_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "neurodesk/transparent-singularity/manual_module_files"
-)
+DEFAULT_MANUAL_MODULE_DIR = TRANSPARENT_SINGULARITY_DIR / "manual_module_files"
 LEGACY_MANUAL_HEADERS = {
     "freesurfer": "Append custom paths",
     "matlab": "Append custom license paths so that a license can be stored outside the container",
