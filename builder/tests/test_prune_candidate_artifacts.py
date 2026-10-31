@@ -96,12 +96,14 @@ def test_only_candidate_bundles_are_considered(name: str, expected: str | None) 
 
 
 class FakeGitHub:
-    def __init__(self, bundles, runs, pulls, busy=()):
+    def __init__(self, bundles, runs, pulls, busy=(), later_pulls=None, promoting_after=None):
         self.store = {b.id: b for b in bundles}
         self.runs = {run.id: run for run in runs}
-        self.pull_list = pulls
+        self.pull_lists = [pulls, pulls if later_pulls is None else later_pulls]
         self.busy = set(busy)
         self.looked_up: list[int] = []
+        self.promoting_after = promoting_after
+        self.deletes = 0
 
     def bundles(self):
         return list(self.store.values())
@@ -114,10 +116,14 @@ class FakeGitHub:
         return head_sha in self.busy
 
     def pulls(self):
-        return self.pull_list
+        return self.pull_lists.pop(0) if len(self.pull_lists) > 1 else self.pull_lists[0]
+
+    def promotion_active(self):
+        return self.promoting_after is not None and self.deletes >= self.promoting_after
 
     def delete_artifact(self, artifact_id):
         del self.store[artifact_id]
+        self.deletes += 1
 
 
 OPEN_PR = [{"state": "open", "head": {"sha": HEAD}, "merged_at": None}]
@@ -168,6 +174,30 @@ def test_apply_requires_a_token(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     with pytest.raises(SystemExit):
         prune.main(["--apply"])
+
+
+def run_sweep(monkeypatch, fake) -> int:
+    monkeypatch.setattr(prune, "GitHub", lambda *args: fake)
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    return prune.main(["--apply"])
+
+
+def test_keeps_a_head_reopened_and_merged_during_the_sweep(monkeypatch) -> None:
+    """The PR comes back to the dead head after planning, then merges."""
+    merged = [{"state": "closed", "head": {"sha": STALE}, "merged_at": "2026-10-31T00:00:00Z"}]
+    fake = FakeGitHub([bundle(STALE, 1)], [prune.Run(1, STALE)], OPEN_PR, later_pulls=merged)
+    assert run_sweep(monkeypatch, fake) == 0
+    assert fake.store
+
+
+def test_stops_deleting_once_a_promotion_starts(monkeypatch) -> None:
+    """Only a running promotion downloads bundles; never delete under one."""
+    other = "c" * 40
+    dead = [bundle(STALE, 1), bundle(other, 2)]
+    runs = [prune.Run(1, STALE), prune.Run(2, other)]
+    fake = FakeGitHub(dead, runs, OPEN_PR, promoting_after=1)
+    assert run_sweep(monkeypatch, fake) == 0
+    assert len(fake.store) == 1
 
 
 class FakeResponse:

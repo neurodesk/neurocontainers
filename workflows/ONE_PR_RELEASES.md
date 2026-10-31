@@ -200,7 +200,10 @@ bundles for a merged PR's final head SHA, and an open PR's head can still become
 one. Every six hours `prune-candidate-artifacts.yml` deletes bundles whose head
 SHA is neither, such as a superseded push or a PR closed without merging.
 Reopening the PR or pushing back to that SHA starts a new candidate run, which
-promotion would select instead.
+promotion would select instead. Only a running promotion downloads bundles, and
+a reopen-and-merge could reach one before the new run is visible, so the sweep
+re-reads PRs after planning and stops deleting whenever a promotion run is
+unfinished. The next sweep continues.
 
 Every bundle of an open PR head or a merged PR final head is kept until it
 expires, including older runs for the same head, because a running promotion

@@ -17,6 +17,13 @@ candidate workflow for their head, and dead heads with a candidate run still in
 progress are kept too. ``candidate-report-*`` and every other artifact are
 never touched.
 
+Only a running promotion downloads bundles. A PR reopened or pushed back to a
+dead head and merged mid-sweep could let that promotion select an old run
+before the new candidate run is visible. So ``--apply`` re-reads the PRs after
+planning, and before every delete it stops if any promotion run is unfinished;
+a promotion needs far longer than one delete to reach bundle selection. The
+next sweep picks up what was left.
+
 Runs as a dry run unless ``--apply`` is given. Needs ``GITHUB_TOKEN`` with
 ``actions: write`` to delete, and read access to Actions and pull requests.
 """
@@ -39,6 +46,7 @@ from datetime import datetime, timedelta, timezone
 API = "https://api.github.com"
 REPOSITORY = "neurodesk/neurocontainers"
 CANDIDATE_WORKFLOW = "pr-container-candidate.yml"
+PROMOTION_WORKFLOW = "promote-container-candidate.yml"
 BUNDLE_NAME = re.compile(r"^candidate-(?!report-).+-(?P<sha>[0-9a-f]{40})$")
 
 
@@ -178,6 +186,14 @@ class GitHub:
         )
         return any(run["status"] != "completed" for run in runs)
 
+    def promotion_active(self) -> bool:
+        # Promotions finish within hours, far inside the newest 100 runs.
+        data, _ = self._request(
+            "GET", f"{self.base}/actions/workflows/{PROMOTION_WORKFLOW}/runs?per_page=100"
+        )
+        assert isinstance(data, dict)
+        return any(run["status"] != "completed" for run in data["workflow_runs"])
+
     def pulls(self) -> list[dict]:
         return list(self._pages("/pulls?state=all&per_page=100"))
 
@@ -254,16 +270,25 @@ def main(argv: list[str] | None = None) -> int:
     if not args.apply:
         print("Dry run: nothing deleted. Pass --apply to delete.")
         return 0
-    failures = 0
+    # A head may have come back to life while the plan was being made.
+    revived = live_heads(github.pulls())
+    deleted = failures = 0
     for decision in plan.delete:
+        if decision.bundle.head_sha in revived:
+            print(f"Skipping {decision.bundle.name}: its head is live again")
+            continue
+        if github.promotion_active():
+            print("A promotion is running; leaving the rest for the next sweep.")
+            break
         try:
             github.delete_artifact(decision.bundle.id)
+            deleted += 1
         except urllib.error.HTTPError as error:
             if error.code == 404:
                 continue  # expired or deleted since planning
             failures += 1
             print(f"::warning::{decision.bundle.name}: HTTP {error.code}")
-    print(f"Deleted {len(plan.delete) - failures} bundles; {failures} failed")
+    print(f"Deleted {deleted} of {len(plan.delete)} planned bundles; {failures} failed")
     return 1 if failures else 0
 
 
