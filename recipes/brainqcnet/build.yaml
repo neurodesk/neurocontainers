@@ -181,8 +181,8 @@ readme: |
   select the `brainqcnet` configuration. The adapter scores each reconstructed T1w
   magnitude volume. It returns the originals in a new series labelled
   `BrainQCNet_PASS` or `BrainQCNet_FAIL` (SequenceDescriptionAdditional), with the
-  probabilities in the image comments, and a one-page `<series>-brainqcnet-report`
-  image. See OpenReconREADME.md for parameters.
+  probabilities in the image comments, and a one-page report image named with the
+  verdict, probability and method. See OpenReconREADME.md for parameters.
 
   The trained weights are distributed by the authors without a license statement;
   the code is Apache-2.0. Research use only.

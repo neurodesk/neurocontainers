@@ -64,13 +64,59 @@ def fake_app(mode, seen):
         if mode != 'missing':
             result = out / 'sub-scan/ses-single_session/single_run'
             result.mkdir(parents=True)
-            proba = {'valid': '0.83', 'invalid': '1.7'}[mode]
+            proba = {'valid': '0.83', 'other': '0.42', 'invalid': '1.7'}[mode]
             with (result / 'tot_df.csv').open('w', newline='') as handle:
                 writer = csv.writer(handle)
                 writer.writerow(['subid', 'proba', 't', 'slices', 'axes', 'x_proba', 'y_proba', 'z_proba', 'pred'])
                 writer.writerow(['sub-scan', proba, '12.5', '[]', '[]', '0.7', '0.9', '0.8', '1'])
         return subprocess.CompletedProcess(command, 0, '')
     return run
+
+
+def oriented(orientation, z):
+    """Single slice of a scanner-like sagittal or coronal acquisition (LPS directions)."""
+    read, phase = {'sagittal': ([0, 1, 0], [0, 0, -1]), 'coronal': ([1, 0, 0], [0, 0, -1])}[orientation]
+    image = source(z)
+    header = image.getHead()
+    header.read_dir[:] = read
+    header.phase_dir[:] = phase
+    header.slice_dir[:] = np.cross(read, phase)
+    header.position[:] = np.array([10, 20, 30]) + z * 3 * np.cross(read, phase)
+    image.setHead(header)
+    return image
+
+
+def verify_voxel_world_mapping(volume):
+    """Every voxel holds the source pixel found at its world position."""
+    for i, j, k in np.ndindex(volume.voxels.shape):
+        ras = volume.affine @ [i, j, k, 1]
+        lps = np.array([-ras[0], -ras[1], ras[2]])
+        matches = []
+        for image in volume.images:
+            header = image.getHead()
+            offset = lps - np.asarray(header.position)
+            if abs(offset @ np.asarray(header.slice_dir)) > 1e-4:
+                continue
+            ny, nx = image.data.shape[-2:]
+            spacing = np.asarray(header.field_of_view[:2]) / [nx, ny]
+            col = offset @ np.asarray(header.read_dir) / spacing[0] + (nx - 1) / 2
+            row = offset @ np.asarray(header.phase_dir) / spacing[1] + (ny - 1) / 2
+            matches.append(image.data[0, 0, int(round(row)), int(round(col))])
+            assert np.allclose([row, col], np.round([row, col]), atol=1e-4), (row, col)
+        assert matches == [volume.voxels[i, j, k]], (i, j, k, matches)
+
+
+def verify_uid_identity():
+    def uids(mode, config):
+        connection = Connection([source(0), source(1)])
+        with patch.object(adapter.subprocess, 'run', fake_app(mode, [])):
+            adapter.process(connection, config, None)
+        assert not connection.errors, connection.errors
+        return [ismrmrd.Meta.deserialize(batch[0].attribute_string)['SOPInstanceUID'] for batch in connection.outputs]
+    first = uids('valid', {})
+    assert uids('valid', {}) == first, 'a repeated run must reproduce its UIDs'
+    for changed in (uids('other', {}), uids('valid', {'predmethod': 'mean'})):
+        assert not set(changed) & set(first), 'another result must not reuse UIDs'
 
 
 def assert_failure(images, config, text, mode='valid'):
@@ -85,16 +131,15 @@ def assert_failure(images, config, text, mode='valid'):
 def verify_adapter():
     assert adapter.Settings.parse({'parameters': {'predmethod': 'mean'}}).predmethod == 'mean'
     volume = adapter.SourceVolume.from_images([source(2), source(0), source(1)])
-    assert volume.voxels.shape == (5, 4, 3)
     assert [image.slice for image in volume.images] == [0, 1, 2]
-    plane = np.asarray(volume.images[0].data[0, 0])
-    np.testing.assert_array_equal(volume.voxels[:, :, 0], plane.T[:, ::-1])
-    for i, j, k in [(0, 0, 0), (4, 3, 2), (2, 1, 1)]:
-        header = volume.images[k].getHead()
-        row = 3 - j
-        lps = (np.asarray(header.position) + (i - 2) * 2 * np.asarray(header.read_dir)
-               + (row - 1.5) * 1.5 * np.asarray(header.phase_dir))
-        np.testing.assert_allclose(volume.affine @ [i, j, k, 1], [-lps[0], -lps[1], lps[2], 1], atol=1e-5)
+    assert nib.aff2axcodes(volume.affine) == ('R', 'A', 'S'), nib.aff2axcodes(volume.affine)
+    assert sorted(volume.voxels.shape) == [3, 4, 5]
+    verify_voxel_world_mapping(volume)
+    for orientation in ('sagittal', 'coronal'):
+        volume = adapter.SourceVolume.from_images([oriented(orientation, z) for z in (1, 0, 2)])
+        assert nib.aff2axcodes(volume.affine) == ('R', 'A', 'S'), (orientation, nib.aff2axcodes(volume.affine))
+        verify_voxel_world_mapping(volume)
+    verify_uid_identity()
 
     seen = []
     images = [source(z) for z in [2, 0, 1]] + [source(z, 8) for z in [1, 0, 2]] + [source(z, 7, 1) for z in [0, 1, 2]]
@@ -116,7 +161,7 @@ def verify_adapter():
             assert 'artifact probability 0.83' in meta['ImageComments']
         np.testing.assert_array_equal(np.sort([o.getHead().position[2] for o in originals]), [30, 33, 36])
         report_meta = ismrmrd.Meta.deserialize(report[0].attribute_string)
-        assert report_meta['SeriesDescription'].endswith('-brainqcnet-report'), report_meta['SeriesDescription']
+        assert report_meta['SeriesDescription'].endswith('-brainqcnet-FAIL-0.83-median-report'), report_meta['SeriesDescription']
         assert report_meta['BrainQCNetProbability'] == '0.83'
         assert np.asarray(report[0].data).max() > 0
 
@@ -151,9 +196,12 @@ def verify_model():
         head = np.where(radius < 1, 400 + 200 * np.cos(grid[0] / 3) * np.sin(grid[1] / 4), 0)
         nib.save(nib.Nifti1Image(head.astype(np.int16), np.diag([1.0, 1.0, 1.0, 1.0])),
                  anat / 'sub-01_T1w.nii.gz')
-        environment = dict(os.environ, OMP_NUM_THREADS='2')
-        subprocess.run(['brainqcnet', 'bids', 'out', 'participant'], cwd=work, env=environment, check=True)
-        subprocess.run(['brainqcnet', 'bids', 'out', 'group'], cwd=work, env=environment, check=True)
+        (work / 'scratch').mkdir()
+        environment = dict(os.environ, OMP_NUM_THREADS='2', TMPDIR='scratch')
+        subprocess.run(['brainqcnet', '--pred_method', 'percentage', 'bids', 'out', 'participant',
+                        '--participant_label', '01'], cwd=work, env=environment, check=True)
+        subprocess.run(['brainqcnet', 'bids', '--n_areas=3', 'out', 'group'], cwd=work, env=environment, check=True)
+        assert not any((work / 'scratch').iterdir()), 'scratch workspace left behind'
         run = work / 'out/sub-01/ses-single_session/single_run'
         with (run / 'tot_df.csv').open(newline='') as handle:
             row = next(csv.DictReader(handle))

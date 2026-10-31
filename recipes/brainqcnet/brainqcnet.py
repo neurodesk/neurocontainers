@@ -70,6 +70,11 @@ class QCResult:
     def verdict(self):
         return "FAIL" if self.proba > FAIL_THRESHOLD else "PASS"
 
+    def label(self):
+        """Series name suffix. The shared helpers seed series and instance UIDs from it, so a
+        rerun with another result or method never reuses the UIDs of different pixels."""
+        return f"brainqcnet-{self.verdict}-{self.proba:.2f}-{self.method}"
+
     def comment(self):
         return (f"BrainQCNet {self.verdict}: artifact probability {self.proba:.2f} "
                 f"(x {self.x_proba:.2f}, y {self.y_proba:.2f}, z {self.z_proba:.2f}; {self.method})")
@@ -83,8 +88,9 @@ class SourceVolume:
 
     @classmethod
     def from_images(cls, images):
-        """Volume in dcm2niix layout, as in the BIDS datasets BrainQCNet was trained on:
-        i = columns, j = rows bottom-up, k = slices ascending along read x phase."""
+        """Volume reoriented to the closest canonical (RAS) axes, as dcm2niix does for 3D
+        acquisitions, so x, y and z are the sagittal, coronal and axial planes BrainQCNet
+        slices along."""
         for image in images:
             _validate_image(image)
         items, axis = shared._ordered_source_geometry_items(
@@ -118,7 +124,8 @@ class SourceVolume:
         affine[:3, 3] = positions[0] - read * spacing[0] * (nx - 1) / 2 + phase * spacing[1] * (ny - 1) / 2
         affine[:2, :] *= -1
         voxels = np.stack([plane.T[:, ::-1] for _, plane in items], axis=2).astype(np.float32)
-        return cls(ordered, voxels, affine)
+        canonical = nib.as_closest_canonical(nib.Nifti1Image(voxels, affine))
+        return cls(ordered, np.asarray(canonical.dataobj, dtype=np.float32), canonical.affine)
 
 
 def _validate_image(image):
@@ -196,7 +203,8 @@ def _report(volume, result, series_index):
     # The page carries its own standalone geometry, so it need not match the source matrix.
     width, height = max(int(header.matrix_size[0]), 512), max(int(header.matrix_size[1]), 512)
     page = shared._orient_metrics_report_page_for_scanner(_render_report(result, width, height))
-    identity = shared._build_output_series_identity(volume.images[0], series_index, "brainqcnet-report", "source")
+    identity = shared._build_output_series_identity(
+        volume.images[0], series_index, f"{result.label()}-report", "source")
     source = shared._metrics_report_source_image(volume.images[0], width, height)
     comment = result.comment()
     extra = {"WindowCenter": "2040", "WindowWidth": "4080", "ImageComments": comment, "ImageComment": comment,
@@ -207,8 +215,7 @@ def _report(volume, result, series_index):
 
 
 def _originals(volume, result, series_index):
-    identity = shared._build_output_series_identity(
-        volume.images[0], series_index, f"brainqcnet-{result.verdict}", "source")
+    identity = shared._build_output_series_identity(volume.images[0], series_index, result.label(), "source")
     comment = result.comment()
     outputs = []
     for index, source in enumerate(volume.images):

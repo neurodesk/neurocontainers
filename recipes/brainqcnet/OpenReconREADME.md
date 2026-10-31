@@ -23,13 +23,16 @@ A scan fails when its artifact probability is above 0.5, as in upstream
   `SequenceDescriptionAdditional` `BrainQCNet_PASS` or `BrainQCNet_FAIL`, the
   probabilities in `ImageComments`, and `BrainQCNetVerdict` and
   `BrainQCNetProbability` metadata.
-- `<series>-brainqcnet-report`, one rendered page with the verdict and the
-  probability overall and per axis. It uses the same explicit standalone output
+- `<series>-brainqcnet-<verdict>-<probability>-<method>-report`, one rendered
+  page with the verdict and the probability overall and per axis. It uses the same explicit standalone output
   path as the OpenRecon i2i example's metrics table.
 
-The volume is built in dcm2niix layout (columns, rows bottom-up, slices
-ascending along read x phase) because the model was trained on slices of BIDS
-NIfTIs. The adapter partitions header series and repeated or contrast volumes
+The volume is reoriented to the closest canonical (RAS) axes, as dcm2niix does
+for 3D acquisitions, so a sagittal, coronal or axial acquisition gives the same
+NIfTI and the x, y and z probabilities always refer to sagittal, coronal and
+axial slices. Output series names include the verdict, probability and method,
+and the shared helpers derive series and instance UIDs from them, so a rerun
+with a different result never reuses UIDs. The adapter partitions header series and repeated or contrast volumes
 before physical slice ordering. It accepts finite single-channel, single-plane
 magnitude images with regular right-handed orthonormal geometry. It rejects raw
 acquisitions, complex images, duplicate slice positions, gaps and inconsistent

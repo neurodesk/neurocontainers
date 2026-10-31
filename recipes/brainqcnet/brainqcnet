@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Upstream run.py calls its scripts by relative path and writes the cropped
 # NIfTI into the working directory, so it runs in a writable scratch copy of
-# /opt/brainqcnet made of symlinks.
+# /opt/brainqcnet made of symlinks. Paths are resolved against the caller's
+# directory first, following run.py's argparse options.
 set -euo pipefail
 
 if [[ "${1:-}" == "--version" ]]; then
@@ -11,17 +12,43 @@ fi
 
 args=()
 positional=0
+pending=""
 for arg in "$@"; do
-  if [[ ${positional} -lt 2 && "${arg}" != -* ]]; then
-    arg=$(realpath -m -- "${arg}")
-    positional=$((positional + 1))
-  elif [[ "${arg}" == -* ]]; then
-    positional=2
+  if [[ "${pending}" == "path" ]]; then
+    args+=("$(realpath -m -- "${arg}")")
+    pending=""
+    continue
+  elif [[ "${pending}" == "value" ]]; then
+    args+=("${arg}")
+    pending=""
+    continue
+  elif [[ "${pending}" == "labels" && "${arg}" != -* ]]; then
+    args+=("${arg}")
+    continue
   fi
-  args+=("${arg}")
+  pending=""
+  case "${arg}" in
+    --modeldir=*)
+      args+=("--modeldir=$(realpath -m -- "${arg#--modeldir=}")") ;;
+    --modeldir)
+      args+=("${arg}"); pending="path" ;;
+    --pythonpath|--masks|--pred_method|--n_areas)
+      args+=("${arg}"); pending="value" ;;
+    --participant_label)
+      args+=("${arg}"); pending="labels" ;;
+    -*)
+      args+=("${arg}") ;;
+    *)
+      if [[ ${positional} -lt 2 ]]; then
+        arg=$(realpath -m -- "${arg}")
+      fi
+      positional=$((positional + 1))
+      args+=("${arg}") ;;
+  esac
 done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/brainqcnet.XXXXXX")
+scratch=$(realpath -m -- "${TMPDIR:-/tmp}")
+work=$(mktemp -d "${scratch}/brainqcnet.XXXXXX")
 trap 'rm -rf "${work}"' EXIT
 ln -s /opt/brainqcnet/* "${work}/"
 export MPLCONFIGDIR="${work}/.matplotlib"
