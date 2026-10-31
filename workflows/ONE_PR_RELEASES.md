@@ -192,6 +192,27 @@ reporter falls back to verified runs and adds a reporting note. It never treats
 a title or an existing success comment as proof. This reporting contract does
 not change release validation or publication.
 
+## Candidate bundle cleanup
+
+Candidate bundles are uncompressed Docker archives and SIFs, often tens of GB
+each, kept for 30 days. Promotion selects them by head SHA alone: the newest
+`pull_request` run of the candidate workflow for the PR head. Every six hours
+`prune-candidate-artifacts.yml` deletes bundles that selection can never reach:
+
+- bundles from an older run when a newer candidate run exists for the same head;
+- bundles whose head is neither an open PR's head nor a merged PR's final head,
+  such as a superseded push or a PR closed without merging.
+
+Reopening a PR or pushing back to an old SHA starts a newer candidate run, so a
+deleted bundle is never the one promotion would pick. Bundles for merged final
+heads are kept until they expire, so staged recovery and `pr_number`
+republishing are unaffected. Bundles younger than six hours, bundles whose
+newest run is still in progress, and bundles not tied to a known candidate run
+are kept. Reports and promotion artifacts are never touched. Deleted bundles
+drop out of the download links in the PR comment.
+
+Run the workflow manually for a dry run; tick `apply` to delete.
+
 ## Required repository configuration
 
 - Make `Container release gate` a required pull-request check.
