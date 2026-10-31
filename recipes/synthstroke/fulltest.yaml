@@ -9,3 +9,12 @@ tests:
   command: command -v synthstroke-download
   expected_exit_code: 0
   expected_output_contains: synthstroke-download
+- name: baked-in baseline weights load
+  description: Verify the bundled baseline checkpoint loads into the SynthStroke model.
+  command: >-
+    PYTHONPATH=/opt/synthstroke python -c
+    "from synthstroke_model import SynthStrokeModel;
+    m = SynthStrokeModel.from_checkpoint('/opt/synthstroke/weights/baseline/model.safetensors');
+    print('loaded', type(m).__name__)"
+  expected_exit_code: 0
+  expected_output_contains: loaded SynthStrokeModel
