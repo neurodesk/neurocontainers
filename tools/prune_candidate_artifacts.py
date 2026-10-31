@@ -151,7 +151,9 @@ class GitHub:
             request.add_header("Authorization", f"Bearer {self.token}")
         with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read()
-            return (json.loads(body) if body else None), response.headers.get("Link", "")
+            return (json.loads(body) if body else None), response.headers.get(
+                "Link", ""
+            )
 
     def _pages(self, path: str, key: str | None = None) -> Iterator[dict]:
         url: str | None = f"{self.base}{path}"
@@ -214,12 +216,18 @@ def gib(decisions: Iterable[Decision]) -> float:
 def write_report(plan: Plan, path: str) -> None:
     def rows(decisions: list[Decision]) -> list[dict]:
         return [
-            {**asdict(d.bundle), "created": d.bundle.created.isoformat(), "reason": d.reason}
+            {
+                **asdict(d.bundle),
+                "created": d.bundle.created.isoformat(),
+                "reason": d.reason,
+            }
             for d in decisions
         ]
 
     with open(path, "w") as handle:
-        json.dump({"keep": rows(plan.keep), "delete": rows(plan.delete)}, handle, indent=2)
+        json.dump(
+            {"keep": rows(plan.keep), "delete": rows(plan.delete)}, handle, indent=2
+        )
 
 
 def summarize(plan: Plan) -> None:
@@ -267,7 +275,11 @@ def main(argv: list[str] | None = None) -> int:
         for run_id in {b.run_id for b in dead}
         if (run := github.candidate_run(run_id))
     }
-    busy = {sha for sha in {b.head_sha for b in dead} if github.has_active_candidate_run(sha)}
+    busy = {
+        sha
+        for sha in {b.head_sha for b in dead}
+        if github.has_active_candidate_run(sha)
+    }
     plan = plan_deletions(bundles, heads, cutoff, runs, busy)
     if args.report:
         write_report(plan, args.report)

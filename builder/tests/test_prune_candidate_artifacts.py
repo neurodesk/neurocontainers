@@ -15,7 +15,9 @@ STALE = "b" * 40
 
 
 def bundle(sha: str, run_id: int, created: datetime = OLD) -> prune.Bundle:
-    return prune.Bundle(run_id * 10, f"candidate-qsmxt-{sha}", 2**30, created, run_id, sha)
+    return prune.Bundle(
+        run_id * 10, f"candidate-qsmxt-{sha}", 2**30, created, run_id, sha
+    )
 
 
 def decide(bundles, runs=(), heads=frozenset({HEAD}), busy=frozenset()) -> dict:
@@ -66,7 +68,11 @@ def test_keeps_bundles_it_cannot_tie_to_their_candidate_run(runs) -> None:
 def test_live_heads_are_open_heads_and_merged_final_heads() -> None:
     pulls = [
         {"state": "open", "head": {"sha": "1" * 40}, "merged_at": None},
-        {"state": "closed", "head": {"sha": "2" * 40}, "merged_at": "2026-10-01T00:00:00Z"},
+        {
+            "state": "closed",
+            "head": {"sha": "2" * 40},
+            "merged_at": "2026-10-01T00:00:00Z",
+        },
         {"state": "closed", "head": {"sha": "3" * 40}, "merged_at": None},
     ]
     assert prune.live_heads(pulls) == {"1" * 40, "2" * 40}
@@ -96,7 +102,9 @@ def test_only_candidate_bundles_are_considered(name: str, expected: str | None) 
 
 
 class FakeGitHub:
-    def __init__(self, bundles, runs, pulls, busy=(), later_pulls=None, promoting_after=None):
+    def __init__(
+        self, bundles, runs, pulls, busy=(), later_pulls=None, promoting_after=None
+    ):
         self.store = {b.id: b for b in bundles}
         self.runs = {run.id: run for run in runs}
         self.pull_lists = [pulls, pulls if later_pulls is None else later_pulls]
@@ -116,7 +124,9 @@ class FakeGitHub:
         return head_sha in self.busy
 
     def pulls(self):
-        return self.pull_lists.pop(0) if len(self.pull_lists) > 1 else self.pull_lists[0]
+        return (
+            self.pull_lists.pop(0) if len(self.pull_lists) > 1 else self.pull_lists[0]
+        )
 
     def promotion_active(self):
         return self.promoting_after is not None and self.deletes >= self.promoting_after
@@ -146,15 +156,21 @@ def test_main_deletes_only_with_apply(monkeypatch, tmp_path, apply: bool) -> Non
     assert fake.looked_up == [dead.run_id]
 
 
-def test_republish_selection_survives_a_newer_run_for_the_same_head(monkeypatch) -> None:
+def test_republish_selection_survives_a_newer_run_for_the_same_head(
+    monkeypatch,
+) -> None:
     """A republish selects run 1; another PR with the same head starts run 2.
 
     The merged head stays live, so run 1's bundle survives until the queued
     publish job downloads it.
     """
-    merged = [{"state": "closed", "head": {"sha": HEAD}, "merged_at": "2026-10-20T00:00:00Z"}]
+    merged = [
+        {"state": "closed", "head": {"sha": HEAD}, "merged_at": "2026-10-20T00:00:00Z"}
+    ]
     selected, newer = bundle(HEAD, 1), bundle(HEAD, 2)
-    fake = FakeGitHub([selected, newer], [prune.Run(1, HEAD), prune.Run(2, HEAD)], merged)
+    fake = FakeGitHub(
+        [selected, newer], [prune.Run(1, HEAD), prune.Run(2, HEAD)], merged
+    )
     monkeypatch.setattr(prune, "GitHub", lambda *args: fake)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     assert prune.main(["--apply"]) == 0
@@ -184,8 +200,12 @@ def run_sweep(monkeypatch, fake) -> int:
 
 def test_keeps_a_head_reopened_and_merged_during_the_sweep(monkeypatch) -> None:
     """The PR comes back to the dead head after planning, then merges."""
-    merged = [{"state": "closed", "head": {"sha": STALE}, "merged_at": "2026-10-31T00:00:00Z"}]
-    fake = FakeGitHub([bundle(STALE, 1)], [prune.Run(1, STALE)], OPEN_PR, later_pulls=merged)
+    merged = [
+        {"state": "closed", "head": {"sha": STALE}, "merged_at": "2026-10-31T00:00:00Z"}
+    ]
+    fake = FakeGitHub(
+        [bundle(STALE, 1)], [prune.Run(1, STALE)], OPEN_PR, later_pulls=merged
+    )
     assert run_sweep(monkeypatch, fake) == 0
     assert fake.store
 
@@ -272,7 +292,10 @@ def test_client_sees_no_promotion_when_every_status_is_empty(monkeypatch) -> Non
 
 @pytest.mark.parametrize("status", prune.ACTIVE_STATUSES)
 def test_client_sees_a_promotion_in_any_unfinished_status(monkeypatch, status) -> None:
-    serve(monkeypatch, promotion_pages(**{status: [FakeResponse({"workflow_runs": [{"id": 1}]})]}))
+    serve(
+        monkeypatch,
+        promotion_pages(**{status: [FakeResponse({"workflow_runs": [{"id": 1}]})]}),
+    )
     assert prune.GitHub("token").promotion_active()
 
 
