@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Upstream run.py calls its scripts by relative path and writes the cropped
+# NIfTI into the working directory, so it runs in a writable scratch copy of
+# /opt/brainqcnet made of symlinks.
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  printf 'BrainQCNet %s\n' "${BRAINQCNET_VERSION}"
+  exit 0
+fi
+
+args=()
+positional=0
+for arg in "$@"; do
+  if [[ ${positional} -lt 2 && "${arg}" != -* ]]; then
+    arg=$(realpath -m -- "${arg}")
+    positional=$((positional + 1))
+  elif [[ "${arg}" == -* ]]; then
+    positional=2
+  fi
+  args+=("${arg}")
+done
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/brainqcnet.XXXXXX")
+trap 'rm -rf "${work}"' EXIT
+ln -s /opt/brainqcnet/* "${work}/"
+export MPLCONFIGDIR="${work}/.matplotlib"
+cd "${work}"
+venv/bin/python3 run.py "${args[@]}"
