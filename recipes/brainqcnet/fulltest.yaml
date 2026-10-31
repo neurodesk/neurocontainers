@@ -1,0 +1,28 @@
+name: brainqcnet
+version: 1.0.1
+upstream_version: "1.0.1"
+tests:
+  - name: container version
+    command: brainqcnet --version
+    expected_output_contains: "BrainQCNet ${upstream_version}"
+  - name: BIDS app help
+    command: brainqcnet --help
+    expected_output_contains: "--pred_method"
+  - name: pinned PyTorch in the BrainQCNet environment
+    command: /opt/brainqcnet/venv/bin/python3 -c "import torch, torchvision, cv2, med2image; print(torch.__version__, torchvision.__version__)"
+    expected_output_contains: "1.9.0+cpu 0.10.0+cpu"
+  - name: MRD server help
+    command: openrecon-brainqcnet --help
+    expected_output_contains: "usage:"
+  - name: scanner label and adapter import
+    command: >-
+      python3 -c "import sys,json; sys.path.insert(0,'/opt/code/python-ismrmrd-server');
+      import brainqcnet; label=json.load(open('/opt/code/python-ismrmrd-server/OpenReconLabel.json'));
+      assert label['general']['id']=='brainqcnet'; print('scanner configuration available')"
+    expected_output_contains: "scanner configuration available"
+  - name: MRD runtime contract
+    command: python3 /opt/brainqcnet/verify_runtime.py adapter
+    expected_output_contains: "MRD adapter geometry, grouping, output and errors passed"
+  - name: checkpoint inference through the BIDS app
+    command: python3 /opt/brainqcnet/verify_runtime.py model
+    expected_output_contains: "BrainQCNet ResNet152 checkpoint scored a synthetic T1w volume"
