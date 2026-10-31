@@ -1,7 +1,8 @@
-# Pinned Python dependencies for SynthStroke, resolved for Python 3.10 on x86_64
+# Pinned Python dependencies for SynthStroke, resolved for Python 3.11 on x86_64
 # from: monai torch nibabel numpy scikit-image tqdm wandb cornucopia
-# huggingface_hub safetensors scipy einops brotli>=1.2. Brotli is listed
-# explicitly because httpx2 needs >=1.2 and the Miniconda base ships an older one.
+# huggingface_hub safetensors scipy einops brotli>=1.2 pillow>=13. Brotli is listed
+# explicitly because httpx2 needs >=1.2 and the Miniconda base ships an older one;
+# Pillow 13 (Python >= 3.11) is the first release fixing its critical advisories.
 annotated-types==0.8.0
 anyio==4.15.1
 brotli==1.2.1
@@ -10,48 +11,47 @@ charset-normalizer==3.5.2
 click==8.5.0
 cornucopia==0.5.1
 cuda-bindings==13.4.4
-cuda-pathfinder==1.8.3
-cuda-toolkit==13.0.3.0
+cuda-pathfinder==1.8.5
+cuda-toolkit==13.2.2
 cwevals==0.0.1b1
 distro==1.9.0
 einops==0.8.2
-exceptiongroup==1.3.1
-filelock==4.1.0
+filelock==4.2.5
 fsspec==2026.9.0
 googleapis-common-protos==1.76.0
 h11==0.16.0
 hf-xet==1.8.0
 httpcore==1.0.9
-httpcore2==2.14.0
+httpcore2==2.16.0
 httpx==0.28.1
-httpx2==2.14.0
+httpx2==2.16.0
 huggingface-hub==2.4.0
 idna==3.20
-imageio==2.38.0
+imageio==2.38.1
 importlib-resources==7.1.0
 jinja2==3.1.6
 lazy-loader==0.6
 markupsafe==3.0.4
 monai==1.6.1
 mpmath==1.3.0
-networkx==3.4.2
+networkx==3.6.1
 nibabel==5.4.2
-numpy==2.2.6
-nvidia-cublas==13.1.1.3
-nvidia-cuda-cupti==13.0.85
-nvidia-cuda-nvrtc==13.0.88
-nvidia-cuda-runtime==13.0.96
-nvidia-cudnn-cu13==9.24.0.43
-nvidia-cufft==12.0.0.61
-nvidia-cufile==1.15.1.6
-nvidia-curand==10.4.0.35
-nvidia-cusolver==12.0.4.66
-nvidia-cusparse==12.6.3.3
+numpy==2.4.6
+nvidia-cublas==13.4.1.3
+nvidia-cuda-cccl==13.3.4.3.1
+nvidia-cuda-cupti==13.2.86
+nvidia-cuda-nvrtc==13.2.86
+nvidia-cuda-runtime==13.2.86
+nvidia-cudnn-cu13==9.26.0.51
+nvidia-cufft==12.2.0.57
+nvidia-cufile==1.17.1.22
+nvidia-cusolver==12.2.0.11
+nvidia-cusparse==12.7.10.12
 nvidia-cusparselt-cu13==0.8.1
 nvidia-nccl-cu13==2.30.7
 nvidia-nvjitlink==13.4.92
-nvidia-nvshmem-cu13==3.4.5
-nvidia-nvtx==13.0.85
+nvidia-nvshmem-cu13==3.7.2
+nvidia-nvtx==13.2.86
 opentelemetry-api==1.45.2
 opentelemetry-exporter-http-transport==0.66b2
 opentelemetry-exporter-otlp-common==0.66b2
@@ -61,26 +61,25 @@ opentelemetry-proto==1.45.2
 opentelemetry-sdk==1.45.2
 opentelemetry-semantic-conventions==0.66b2
 packaging==26.3
-pillow==12.3.0
-platformdirs==4.12.4
+pillow==13.0.0
+platformdirs==4.14.0
 protobuf==7.36.2
 pydantic==2.14.2
 pydantic-core==2.50.2
 pyyaml==6.0.3
 requests==2.34.2
 safetensors==0.8.0
-scikit-image==0.25.2
-scipy==1.15.3
+scikit-image==0.26.0
+scipy==1.17.1
 setuptools==84.2.1
 sniffio==1.3.1
 sympy==1.14.0
-tifffile==2025.5.10
-tomli==2.5.0
-torch==2.14.1
+tifffile==2026.3.3
+torch==2.15.0
 torch-distmap==0.3.0
 torch-interpol==0.3.0
 tqdm==4.70.1
-triton==3.8.0
+triton==3.9.0
 truststore==0.10.5
 typing-extensions==4.16.0
 typing-inspection==0.4.4

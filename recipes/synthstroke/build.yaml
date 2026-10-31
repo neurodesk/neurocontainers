@@ -27,7 +27,7 @@ structured_readme:
     synthstroke --input /path/to/T1w.nii.gz --outdir /path/to/output/ --weights /opt/synthstroke/weights/synth/model.safetensors --tta
   documentation: |-
     This container includes:
-    - Python 3.10 via Miniconda
+    - Python 3.11 via Miniconda
     - The Python package from https://github.com/liamchalcroft/SynthStroke
     - Additional pip packages: monai, torch, nibabel, numpy, scikit-image, tqdm, wandb, cornucopia, huggingface_hub, safetensors, scipy, einops
     - Deployed binaries: synthstroke, synthstroke-download
@@ -202,9 +202,9 @@ build:
   directives:
     - template:
         name: miniconda
-        version: py310_25.5.1-0
+        version: py311_25.5.1-0
         install_path: /opt/miniconda-latest
-        conda_install: python=3.10
+        conda_install: python=3.11
     - install: git libgl1 curl ca-certificates
     - copy: python-requirements.txt /tmp/synthstroke-python-requirements.txt
     - run:
