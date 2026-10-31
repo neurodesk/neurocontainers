@@ -18,49 +18,35 @@ def bundle(sha: str, run_id: int, created: datetime = OLD) -> prune.Bundle:
     return prune.Bundle(run_id * 10, f"candidate-qsmxt-{sha}", 2**30, created, run_id, sha)
 
 
-def decide(bundles, runs, heads=frozenset({HEAD})) -> dict[str, list[int]]:
-    plan = prune.plan_deletions(bundles, runs, set(heads), CUTOFF)
+def decide(bundles, runs=(), heads=frozenset({HEAD}), busy=frozenset()) -> dict:
+    by_id = {run.id: run for run in runs}
+    plan = prune.plan_deletions(bundles, set(heads), CUTOFF, by_id, set(busy))
     return {
         "keep": [d.bundle.run_id for d in plan.keep],
         "delete": [d.bundle.run_id for d in plan.delete],
     }
 
 
-def test_keeps_the_bundle_promotion_would_select() -> None:
-    assert decide([bundle(HEAD, 1)], [prune.Run(1, HEAD, True)]) == {
-        "keep": [1],
+def test_keeps_every_bundle_of_a_live_head() -> None:
+    """A running promotion may already have selected an older run's bundle."""
+    runs = [prune.Run(1, HEAD), prune.Run(2, HEAD)]
+    assert decide([bundle(HEAD, 1), bundle(HEAD, 2)], runs) == {
+        "keep": [1, 2],
         "delete": [],
     }
 
 
 def test_deletes_heads_of_no_open_or_merged_pr() -> None:
     """A superseded push or a PR closed without merging leaves a dead head."""
-    assert decide([bundle(STALE, 1)], [prune.Run(1, STALE, True)]) == {
+    assert decide([bundle(STALE, 1)], [prune.Run(1, STALE)]) == {
         "keep": [],
         "delete": [1],
     }
 
 
-def test_deletes_older_runs_promotion_never_selects() -> None:
-    """Promotion takes the newest candidate run for a head, even a live one."""
-    runs = [prune.Run(1, HEAD, True), prune.Run(2, HEAD, True)]
-    assert decide([bundle(HEAD, 1), bundle(HEAD, 2)], runs) == {
-        "keep": [2],
-        "delete": [1],
-    }
-
-
-def test_a_rebuild_after_reopening_supersedes_the_old_run() -> None:
-    """Reopening or pushing back to an old SHA starts a newer run for it."""
-    runs = [prune.Run(1, STALE, True), prune.Run(5, STALE, False)]
-    assert decide([bundle(STALE, 1)], runs, heads={STALE}) == {
-        "keep": [],
-        "delete": [1],
-    }
-
-
-def test_keeps_a_dead_head_while_its_newest_run_is_in_progress() -> None:
-    assert decide([bundle(STALE, 1)], [prune.Run(1, STALE, False)]) == {
+def test_keeps_a_dead_head_while_a_candidate_run_for_it_is_in_progress() -> None:
+    runs = [prune.Run(1, STALE)]
+    assert decide([bundle(STALE, 1)], runs, busy={STALE}) == {
         "keep": [1],
         "delete": [],
     }
@@ -68,12 +54,12 @@ def test_keeps_a_dead_head_while_its_newest_run_is_in_progress() -> None:
 
 def test_keeps_recent_bundles() -> None:
     fresh = bundle(STALE, 1, created=NOW - timedelta(hours=1))
-    assert decide([fresh], [prune.Run(1, STALE, True)]) == {"keep": [1], "delete": []}
+    assert decide([fresh], [prune.Run(1, STALE)]) == {"keep": [1], "delete": []}
 
 
-@pytest.mark.parametrize("runs", [[], [prune.Run(1, HEAD, True)]])
+@pytest.mark.parametrize("runs", [[], [prune.Run(1, HEAD)]])
 def test_keeps_bundles_it_cannot_tie_to_their_candidate_run(runs) -> None:
-    """An unknown run, or a run for another head, is never guessed at."""
+    """A missing, foreign or mismatched run is never guessed at."""
     assert decide([bundle(STALE, 1)], runs) == {"keep": [1], "delete": []}
 
 
@@ -110,16 +96,22 @@ def test_only_candidate_bundles_are_considered(name: str, expected: str | None) 
 
 
 class FakeGitHub:
-    def __init__(self, bundles, runs, pulls):
+    def __init__(self, bundles, runs, pulls, busy=()):
         self.store = {b.id: b for b in bundles}
-        self.runs = runs
+        self.runs = {run.id: run for run in runs}
         self.pull_list = pulls
+        self.busy = set(busy)
+        self.looked_up: list[int] = []
 
     def bundles(self):
         return list(self.store.values())
 
-    def candidate_runs(self, since):
-        return self.runs
+    def candidate_run(self, run_id):
+        self.looked_up.append(run_id)
+        return self.runs.get(run_id)
+
+    def has_active_candidate_run(self, head_sha):
+        return head_sha in self.busy
 
     def pulls(self):
         return self.pull_list
@@ -134,7 +126,7 @@ OPEN_PR = [{"state": "open", "head": {"sha": HEAD}, "merged_at": None}]
 @pytest.mark.parametrize("apply", [False, True])
 def test_main_deletes_only_with_apply(monkeypatch, tmp_path, apply: bool) -> None:
     live, dead = bundle(HEAD, 1), bundle(STALE, 2)
-    runs = [prune.Run(1, HEAD, True), prune.Run(2, STALE, True)]
+    runs = [prune.Run(1, HEAD), prune.Run(2, STALE)]
     fake = FakeGitHub([live, dead], runs, OPEN_PR)
     monkeypatch.setattr(prune, "GitHub", lambda *args: fake)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
@@ -145,11 +137,27 @@ def test_main_deletes_only_with_apply(monkeypatch, tmp_path, apply: bool) -> Non
 
     assert set(fake.store) == ({live.id} if apply else {live.id, dead.id})
     assert [row["id"] for row in json.loads(report.read_text())["delete"]] == [dead.id]
+    assert fake.looked_up == [dead.run_id]
+
+
+def test_republish_selection_survives_a_newer_run_for_the_same_head(monkeypatch) -> None:
+    """A republish selects run 1; another PR with the same head starts run 2.
+
+    The merged head stays live, so run 1's bundle survives until the queued
+    publish job downloads it.
+    """
+    merged = [{"state": "closed", "head": {"sha": HEAD}, "merged_at": "2026-10-20T00:00:00Z"}]
+    selected, newer = bundle(HEAD, 1), bundle(HEAD, 2)
+    fake = FakeGitHub([selected, newer], [prune.Run(1, HEAD), prune.Run(2, HEAD)], merged)
+    monkeypatch.setattr(prune, "GitHub", lambda *args: fake)
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    assert prune.main(["--apply"]) == 0
+    assert set(fake.store) == {selected.id, newer.id}
 
 
 def test_refuses_to_plan_without_pull_requests(monkeypatch) -> None:
     """A failed PR listing would make every head look dead."""
-    fake = FakeGitHub([bundle(HEAD, 1)], [prune.Run(1, HEAD, True)], [])
+    fake = FakeGitHub([bundle(HEAD, 1)], [prune.Run(1, HEAD)], [])
     monkeypatch.setattr(prune, "GitHub", lambda *args: fake)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     assert prune.main(["--apply"]) == 1
@@ -160,3 +168,57 @@ def test_apply_requires_a_token(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     with pytest.raises(SystemExit):
         prune.main(["--apply"])
+
+
+class FakeResponse:
+    def __init__(self, body: object, link: str = ""):
+        self.body = json.dumps(body).encode()
+        self.headers = {"Link": link}
+
+    def read(self) -> bytes:
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+
+def serve(monkeypatch, responses: dict[str, FakeResponse]) -> None:
+    def urlopen(request, timeout):
+        path = request.full_url.removeprefix(f"{prune.API}/repos/{prune.REPOSITORY}")
+        return responses[path]
+
+    monkeypatch.setattr(prune.urllib.request, "urlopen", urlopen)
+
+
+def test_client_follows_every_page_of_pull_requests(monkeypatch) -> None:
+    second = f"{prune.API}/repos/{prune.REPOSITORY}/pulls?page=2"
+    serve(
+        monkeypatch,
+        {
+            "/pulls?state=all&per_page=100": FakeResponse(
+                [{"number": 1}], f'<{second}>; rel="next"'
+            ),
+            "/pulls?page=2": FakeResponse([{"number": 2}]),
+        },
+    )
+    assert [p["number"] for p in prune.GitHub("token").pulls()] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "event, path, expected",
+    [
+        ("pull_request", ".github/workflows/pr-container-candidate.yml", True),
+        ("workflow_dispatch", ".github/workflows/pr-container-candidate.yml", False),
+        ("pull_request", ".github/workflows/recipes-ci.yml", False),
+    ],
+)
+def test_client_only_trusts_candidate_pull_request_runs(
+    monkeypatch, event: str, path: str, expected: bool
+) -> None:
+    run = {"id": 7, "event": event, "path": path, "head_sha": STALE}
+    serve(monkeypatch, {"/actions/runs/7": FakeResponse(run)})
+    found = prune.GitHub("token").candidate_run(7)
+    assert (found == prune.Run(7, STALE)) is expected

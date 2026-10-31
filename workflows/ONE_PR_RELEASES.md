@@ -195,21 +195,20 @@ not change release validation or publication.
 ## Candidate bundle cleanup
 
 Candidate bundles are uncompressed Docker archives and SIFs, often tens of GB
-each, kept for 30 days. Promotion selects them by head SHA alone: the newest
-`pull_request` run of the candidate workflow for the PR head. Every six hours
-`prune-candidate-artifacts.yml` deletes bundles that selection can never reach:
+each, kept for 30 days. Promotion and `pr_number` republishing only select
+bundles for a merged PR's final head SHA, and an open PR's head can still become
+one. Every six hours `prune-candidate-artifacts.yml` deletes bundles whose head
+SHA is neither, such as a superseded push or a PR closed without merging.
+Reopening the PR or pushing back to that SHA starts a new candidate run, which
+promotion would select instead.
 
-- bundles from an older run when a newer candidate run exists for the same head;
-- bundles whose head is neither an open PR's head nor a merged PR's final head,
-  such as a superseded push or a PR closed without merging.
-
-Reopening a PR or pushing back to an old SHA starts a newer candidate run, so a
-deleted bundle is never the one promotion would pick. Bundles for merged final
-heads are kept until they expire, so staged recovery and `pr_number`
-republishing are unaffected. Bundles younger than six hours, bundles whose
-newest run is still in progress, and bundles not tied to a known candidate run
-are kept. Reports and promotion artifacts are never touched. Deleted bundles
-drop out of the download links in the PR comment.
+Every bundle of an open PR head or a merged PR final head is kept until it
+expires, including older runs for the same head, because a running promotion
+may already have selected one. Staged recovery and republishing are unaffected.
+Bundles younger than six hours, dead heads with a candidate run still in
+progress, and bundles not owned by a `pull_request` run of the candidate
+workflow are kept. Reports and promotion artifacts are never touched. Deleted
+bundles drop out of the download links in the PR comment.
 
 Run the workflow manually for a dry run; tick `apply` to delete.
 

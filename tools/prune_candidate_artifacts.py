@@ -1,24 +1,21 @@
-"""Delete PR candidate bundles that no promotion can select.
+"""Delete PR candidate bundles whose head no promotion can select.
 
 ``pr-container-candidate.yml`` uploads a ``candidate-<container>-<head sha>``
 bundle (Docker archive, SIF and test output) for every PR push that needs a
 build, and keeps it for 30 days. Promotion, including a ``pr_number``
-republish, selects bundles by head SHA alone: it takes the newest
-``pull_request`` run of the candidate workflow for that SHA and downloads that
-run's bundles. A bundle can therefore only be selected if
+republish, only ever selects bundles for a merged PR's final head SHA, and an
+open PR can still become one. A bundle whose head SHA is neither an open PR's
+head nor a merged PR's final head is dead: a superseded push, or a PR closed
+without merging. Those are deleted. A later push back to that SHA, or
+reopening the PR, starts a new candidate run, which promotion would select
+instead.
 
-* its run is the newest candidate run for its head SHA, and
-* that SHA is still the head of an open PR or the final head of a merged PR.
-
-Every other bundle is deleted: older runs for the same head, heads superseded
-by a later push, and heads of PRs closed without merging. A later push back to
-an old SHA, or reopening a PR, starts a newer candidate run, which is the only
-one promotion would select. Merged final heads are kept until they expire, so
-recovery and republishing keep working.
-
-Bundles whose run is not a known candidate run, whose selected run is still in
-progress, or that were created within ``--min-age-hours`` are kept.
-``candidate-report-*`` and every other artifact are never touched.
+Every bundle of a live head is kept, including older runs for it, because a
+running promotion may already have selected one. Bundles created within
+``--min-age-hours``, bundles not owned by a ``pull_request`` run of the
+candidate workflow for their head, and dead heads with a candidate run still in
+progress are kept too. ``candidate-report-*`` and every other artifact are
+never touched.
 
 Runs as a dry run unless ``--apply`` is given. Needs ``GITHUB_TOKEN`` with
 ``actions: write`` to delete, and read access to Actions and pull requests.
@@ -35,7 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -59,7 +56,6 @@ class Bundle:
 class Run:
     id: int
     head_sha: str
-    completed: bool
 
 
 @dataclass(frozen=True)
@@ -76,35 +72,29 @@ class Plan:
 
 def plan_deletions(
     bundles: Iterable[Bundle],
-    runs: Iterable[Run],
     live_heads: set[str],
     cutoff: datetime,
+    runs: Mapping[int, Run],
+    busy_heads: set[str],
 ) -> Plan:
     """Split bundles into kept and deletable ones, with a reason for each.
 
-    ``runs`` are the ``pull_request`` runs of the candidate workflow and
-    ``live_heads`` the head SHAs of open PRs plus final heads of merged PRs.
+    ``live_heads`` are open PR heads plus merged PR final heads. ``runs`` maps
+    run IDs to candidate ``pull_request`` runs and ``busy_heads`` are heads
+    with a candidate run in progress; both only need to cover dead heads.
     """
-    runs_by_id = {run.id: run for run in runs}
-    newest: dict[str, Run] = {}
-    for run in runs_by_id.values():
-        if run.head_sha not in newest or run.id > newest[run.head_sha].id:
-            newest[run.head_sha] = run
-
     keep: list[Decision] = []
     delete: list[Decision] = []
     for bundle in bundles:
-        run = runs_by_id.get(bundle.run_id)
-        if run is None or run.head_sha != bundle.head_sha:
-            keep.append(Decision(bundle, "not from a known candidate run"))
-        elif bundle.created >= cutoff:
+        run = runs.get(bundle.run_id)
+        if bundle.created >= cutoff:
             keep.append(Decision(bundle, "recent"))
-        elif newest[run.head_sha].id != run.id:
-            delete.append(Decision(bundle, "a newer candidate run exists for this head"))
-        elif not run.completed:
-            keep.append(Decision(bundle, "candidate run in progress"))
-        elif run.head_sha in live_heads:
+        elif bundle.head_sha in live_heads:
             keep.append(Decision(bundle, "head of an open or merged PR"))
+        elif run is None or run.head_sha != bundle.head_sha:
+            keep.append(Decision(bundle, "not from a known candidate run"))
+        elif bundle.head_sha in busy_heads:
+            keep.append(Decision(bundle, "candidate run in progress"))
         else:
             delete.append(Decision(bundle, "head of no open or merged PR"))
     return Plan(keep, delete)
@@ -164,21 +154,29 @@ class GitHub:
         items = self._pages("/actions/artifacts?per_page=100", "artifacts")
         return [bundle for item in items if (bundle := parse_bundle(item))]
 
-    def candidate_runs(self, since: datetime) -> list[Run]:
+    def candidate_run(self, run_id: int) -> Run | None:
+        """Return the run if it is a pull_request run of the candidate workflow."""
+        try:
+            data, _ = self._request("GET", f"{self.base}/actions/runs/{run_id}")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return None  # a deleted run proves nothing about its bundles
+            raise
+        assert isinstance(data, dict)
+        if data["event"] != "pull_request" or not data["path"].endswith(
+            f".github/workflows/{CANDIDATE_WORKFLOW}"
+        ):
+            return None
+        return Run(data["id"], data["head_sha"])
+
+    def has_active_candidate_run(self, head_sha: str) -> bool:
         query = urllib.parse.urlencode(
-            {
-                "event": "pull_request",
-                "created": f">={since.strftime('%Y-%m-%dT%H:%M:%SZ')}",
-                "per_page": 100,
-            }
+            {"event": "pull_request", "head_sha": head_sha, "per_page": 100}
         )
-        items = self._pages(
+        runs = self._pages(
             f"/actions/workflows/{CANDIDATE_WORKFLOW}/runs?{query}", "workflow_runs"
         )
-        return [
-            Run(item["id"], item["head_sha"], item["status"] == "completed")
-            for item in items
-        ]
+        return any(run["status"] != "completed" for run in runs)
 
     def pulls(self) -> list[dict]:
         return list(self._pages("/pulls?state=all&per_page=100"))
@@ -238,13 +236,17 @@ def main(argv: list[str] | None = None) -> int:
         # Without PRs every head looks dead; never act on a failed listing.
         print("::error::The repository returned no pull requests; refusing to plan.")
         return 1
-    # Bundles are uploaded by their run, so no run older than the oldest
-    # bundle matters. A day of slack covers runs that started before midnight.
-    since = min((b.created for b in bundles), default=started) - timedelta(days=1)
-    runs = github.candidate_runs(since)
-    plan = plan_deletions(
-        bundles, runs, live_heads(pulls), started - timedelta(hours=args.min_age_hours)
-    )
+    heads = live_heads(pulls)
+    cutoff = started - timedelta(hours=args.min_age_hours)
+    # Only dead heads can be deleted, so only their runs need checking.
+    dead = [b for b in bundles if b.created < cutoff and b.head_sha not in heads]
+    runs = {
+        run_id: run
+        for run_id in {b.run_id for b in dead}
+        if (run := github.candidate_run(run_id))
+    }
+    busy = {sha for sha in {b.head_sha for b in dead} if github.has_active_candidate_run(sha)}
+    plan = plan_deletions(bundles, heads, cutoff, runs, busy)
     if args.report:
         write_report(plan, args.report)
     summarize(plan)
