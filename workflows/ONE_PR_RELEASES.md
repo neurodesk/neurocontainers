@@ -202,8 +202,11 @@ SHA is neither, such as a superseded push or a PR closed without merging.
 Reopening the PR or pushing back to that SHA starts a new candidate run, which
 promotion would select instead. Only a running promotion downloads bundles, and
 a reopen-and-merge could reach one before the new run is visible, so the sweep
-re-reads PRs after planning and stops deleting whenever a promotion run is
-unfinished. The next sweep continues.
+re-reads PRs after planning and stops deleting whenever a promotion run, in any
+unfinished status, exists. The next sweep continues. This is a check, not a lock:
+a promotion starting between the check and a delete could still select the
+bundle and fail to download it. Rerunning that promotion selects the candidate
+run the reopen or push started.
 
 Every bundle of an open PR head or a merged PR final head is kept until it
 expires, including older runs for the same head, because a running promotion

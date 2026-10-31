@@ -20,9 +20,11 @@ never touched.
 Only a running promotion downloads bundles. A PR reopened or pushed back to a
 dead head and merged mid-sweep could let that promotion select an old run
 before the new candidate run is visible. So ``--apply`` re-reads the PRs after
-planning, and before every delete it stops if any promotion run is unfinished;
-a promotion needs far longer than one delete to reach bundle selection. The
-next sweep picks up what was left.
+planning, and before every delete it stops if any promotion run is unfinished.
+The next sweep picks up what was left. This is not a lock: a promotion that
+starts between that check and the DELETE could still select the bundle. It
+would then fail to download it, and rerunning the promotion selects the newer
+candidate run that the reopen or push started.
 
 Runs as a dry run unless ``--apply`` is given. Needs ``GITHUB_TOKEN`` with
 ``actions: write`` to delete, and read access to Actions and pull requests.
@@ -47,6 +49,7 @@ API = "https://api.github.com"
 REPOSITORY = "neurodesk/neurocontainers"
 CANDIDATE_WORKFLOW = "pr-container-candidate.yml"
 PROMOTION_WORKFLOW = "promote-container-candidate.yml"
+ACTIVE_STATUSES = ("queued", "in_progress", "waiting", "requested", "pending")
 BUNDLE_NAME = re.compile(r"^candidate-(?!report-).+-(?P<sha>[0-9a-f]{40})$")
 
 
@@ -187,12 +190,15 @@ class GitHub:
         return any(run["status"] != "completed" for run in runs)
 
     def promotion_active(self) -> bool:
-        # Promotions finish within hours, far inside the newest 100 runs.
-        data, _ = self._request(
-            "GET", f"{self.base}/actions/workflows/{PROMOTION_WORKFLOW}/runs?per_page=100"
-        )
-        assert isinstance(data, dict)
-        return any(run["status"] != "completed" for run in data["workflow_runs"])
+        """Whether any promotion run, including a rerun of an old one, is unfinished."""
+        for status in ACTIVE_STATUSES:
+            query = urllib.parse.urlencode({"status": status, "per_page": 100})
+            runs = self._pages(
+                f"/actions/workflows/{PROMOTION_WORKFLOW}/runs?{query}", "workflow_runs"
+            )
+            if any(True for _ in runs):
+                return True
+        return False
 
     def pulls(self) -> list[dict]:
         return list(self._pages("/pulls?state=all&per_page=100"))

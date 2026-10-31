@@ -252,3 +252,35 @@ def test_client_only_trusts_candidate_pull_request_runs(
     serve(monkeypatch, {"/actions/runs/7": FakeResponse(run)})
     found = prune.GitHub("token").candidate_run(7)
     assert (found == prune.Run(7, STALE)) is expected
+
+
+def promotion_pages(**statuses: list[FakeResponse]) -> dict[str, FakeResponse]:
+    workflow = f"/actions/workflows/{prune.PROMOTION_WORKFLOW}/runs"
+    responses = {}
+    for status in prune.ACTIVE_STATUSES:
+        pages = statuses.get(status, [FakeResponse({"workflow_runs": []})])
+        responses[f"{workflow}?status={status}&per_page=100"] = pages[0]
+        for number, page in enumerate(pages[1:], start=2):
+            responses[f"{workflow}?status={status}&page={number}"] = page
+    return responses
+
+
+def test_client_sees_no_promotion_when_every_status_is_empty(monkeypatch) -> None:
+    serve(monkeypatch, promotion_pages())
+    assert not prune.GitHub("token").promotion_active()
+
+
+@pytest.mark.parametrize("status", prune.ACTIVE_STATUSES)
+def test_client_sees_a_promotion_in_any_unfinished_status(monkeypatch, status) -> None:
+    serve(monkeypatch, promotion_pages(**{status: [FakeResponse({"workflow_runs": [{"id": 1}]})]}))
+    assert prune.GitHub("token").promotion_active()
+
+
+def test_client_sees_an_active_promotion_beyond_the_first_page(monkeypatch) -> None:
+    workflow = f"{prune.API}/repos/{prune.REPOSITORY}/actions/workflows/{prune.PROMOTION_WORKFLOW}"
+    first = FakeResponse(
+        {"workflow_runs": []}, f'<{workflow}/runs?status=waiting&page=2>; rel="next"'
+    )
+    second = FakeResponse({"workflow_runs": [{"id": 9}]})
+    serve(monkeypatch, promotion_pages(waiting=[first, second]))
+    assert prune.GitHub("token").promotion_active()
