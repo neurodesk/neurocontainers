@@ -198,8 +198,10 @@ Candidate bundles are uncompressed Docker archives and SIFs, often tens of GB
 each, kept for 30 days. Promotion and `pr_number` republishing only select
 bundles for a merged PR's final head SHA, and an open PR's head can still become
 one. A head stays live while it is an open PR's head, or a merged PR's final
-head whose merge has not finalized: the newest trusted `push` promotion run for
-the merge commit has no successful `finalize` job in its latest attempt.
+head whose merge has not finalized: no attempt of any trusted `push` promotion
+run for the merge commit has a successful `finalize` job. Finalization is
+permanent; a later rerun that fails does not make the merge recoverable from
+bundles again.
 
 Every six hours `prune-candidate-artifacts.yml` deletes the bundles of every
 other head: finalized merges, superseded pushes and PRs closed without merging.
@@ -207,9 +209,12 @@ Bundles of live heads are kept until they expire, including older runs for the
 same head, because a running promotion may already have selected one.
 
 Republishing a finalized merge from bundles is not supported. A `pr_number`
-dispatch for a merge whose push promotion finalized fails before selecting any
-bundle and leaves the PR's finalized status in place; publish again with
-`manual-build`. This holds for an all-superseded batch too, which finalized
+dispatch for a finalized merge fails before selecting any bundle, so it never
+publishes a partly deleted set; publish again with `manual-build`. The
+promotion's own lifecycle update leaves the finalized status in place, but the
+candidate reporter may later list the refused dispatch as a failed attempt.
+Signing acceptance for a finalized merge is refused the same way; `manual-build`
+does not replace it, so run signing acceptance before or instead of finalizing. This holds for an all-superseded batch too, which finalized
 without publishing. Recovery of a merge that has not finalized is unchanged,
 including staged recovery, which reuses promotion metadata rather than bundles.
 When a passing candidate run has no bundles left, because they expired or were

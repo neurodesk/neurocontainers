@@ -5,8 +5,8 @@ bundle (Docker archive, SIF and test output) for every PR push that needs a
 build, and keeps it for 30 days. Promotion, including a ``pr_number``
 republish, only ever selects bundles for a merged PR's final head SHA, and an
 open PR can still become one. A head is live while it is an open PR's head, or
-a merged PR's final head whose trusted push promotion has not finalized. Once
-that ``finalize`` job succeeded, a republish refuses the merge and points at
+a merged PR's final head whose trusted push promotion has not finalized in any
+attempt. Once a ``finalize`` job succeeded, a republish refuses the merge and points at
 ``manual-build``, so its bundles are dead too. Bundles of dead heads are
 deleted: finalized merges, superseded pushes and PRs closed without merging.
 A later push back to a dead SHA, or reopening the PR, starts a new candidate
@@ -197,33 +197,36 @@ class GitHub:
         return any(run["status"] != "completed" for run in runs)
 
     def push_promotion_finalized(self, merge_sha: str) -> bool:
-        """Whether the newest trusted push promotion of a merge finalized."""
+        """Whether any attempt of a trusted push promotion of a merge finalized.
+
+        Finalization is permanent: a later rerun that fails does not unpublish
+        the release, and must not make its bundles look recoverable again.
+        """
         query = urllib.parse.urlencode(
             {"event": "push", "branch": "main", "head_sha": merge_sha, "per_page": 100}
         )
-        runs = [
-            run
-            for run in self._pages(
-                f"/actions/workflows/{PROMOTION_WORKFLOW}/runs?{query}", "workflow_runs"
+        runs = self._pages(
+            f"/actions/workflows/{PROMOTION_WORKFLOW}/runs?{query}", "workflow_runs"
+        )
+        for run in runs:
+            if not (
+                run["head_sha"] == merge_sha
+                and run["event"] == "push"
+                and run["head_branch"] == "main"
+                and run["path"].endswith(f".github/workflows/{PROMOTION_WORKFLOW}")
+                and run["repository"]["full_name"] == self.repository
+                and run["head_repository"]["full_name"] == self.repository
+            ):
+                continue
+            jobs = self._pages(
+                f"/actions/runs/{run['id']}/jobs?filter=all&per_page=100", "jobs"
             )
-            if run["head_sha"] == merge_sha
-            and run["event"] == "push"
-            and run["head_branch"] == "main"
-            and run["path"].endswith(f".github/workflows/{PROMOTION_WORKFLOW}")
-            and run["repository"]["full_name"] == self.repository
-            and run["head_repository"]["full_name"] == self.repository
-        ]
-        if not runs:
-            return False
-        newest = max(runs, key=lambda run: run["id"])
-        if newest["status"] != "completed":
-            return False
-        jobs = self._pages(
-            f"/actions/runs/{newest['id']}/jobs?filter=latest&per_page=100", "jobs"
-        )
-        return any(
-            job["name"] == "finalize" and job["conclusion"] == "success" for job in jobs
-        )
+            if any(
+                job["name"] == "finalize" and job["conclusion"] == "success"
+                for job in jobs
+            ):
+                return True
+        return False
 
     def promotion_active(self) -> bool:
         """Whether any promotion run, including a rerun of an old one, is unfinished."""

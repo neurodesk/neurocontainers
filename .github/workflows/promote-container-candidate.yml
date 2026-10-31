@@ -285,26 +285,25 @@ jobs:
               return;
             }
             // prune-candidate-artifacts.yml deletes a merge's candidate bundles once
-            // its trusted push promotion finalized, so a dispatch can no longer
-            // republish from them. Refuse before selecting a partial set.
+            // any attempt of its trusted push promotion finalized, so a dispatch can
+            // no longer republish from them. A later failed rerun does not undo a
+            // finalization; refuse before selecting a possibly partial set.
             if (context.eventName === 'workflow_dispatch') {
               const mergeSha = process.env.MERGE_SHA;
               const repository = `${context.repo.owner}/${context.repo.repo}`;
-              const {data: pushes} = await github.rest.actions.listWorkflowRuns({
+              const pushes = await github.paginate(github.rest.actions.listWorkflowRuns, {
                 ...context.repo, workflow_id: 'promote-container-candidate.yml',
                 head_sha: mergeSha, event: 'push', branch: 'main', per_page: 100,
               });
-              const push = pushes.workflow_runs
-                .filter(item =>
-                  item.head_sha === mergeSha && item.event === 'push' &&
-                  item.head_branch === 'main' &&
-                  item.path === '.github/workflows/promote-container-candidate.yml' &&
-                  item.repository.full_name === repository &&
-                  item.head_repository.full_name === repository)
-                .sort((left, right) => right.id - left.id)[0];
-              if (push && push.status === 'completed') {
+              const trusted = pushes.filter(item =>
+                item.head_sha === mergeSha && item.event === 'push' &&
+                item.head_branch === 'main' &&
+                item.path === '.github/workflows/promote-container-candidate.yml' &&
+                item.repository.full_name === repository &&
+                item.head_repository.full_name === repository);
+              for (const push of trusted) {
                 const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
-                  ...context.repo, run_id: push.id, filter: 'latest', per_page: 100,
+                  ...context.repo, run_id: push.id, filter: 'all', per_page: 100,
                 });
                 if (jobs.some(job => job.name === 'finalize' && job.conclusion === 'success')) {
                   core.setOutput('unavailable', 'finalized');

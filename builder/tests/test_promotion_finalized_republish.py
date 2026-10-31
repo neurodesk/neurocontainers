@@ -28,6 +28,7 @@ def push_run(run_id, status="completed", head=MERGE, path=WORKFLOW):
 
 
 def run_await(event, pushes, finalize, bundles=True):
+    """``finalize`` maps run IDs to the finalize conclusions of all attempts."""
     workflow = yaml.safe_load(Path(WORKFLOW).read_text())
     script = workflow["jobs"]["await_candidate"]["steps"][0]["with"]["script"]
     harness = r"""
@@ -40,19 +41,24 @@ const github = {
     listRepoWorkflows: async () => ({data: {workflows: [{
       id: 42, path: '.github/workflows/pr-container-candidate.yml'
     }]}}),
-    listWorkflowRuns: async query => query.event === 'push'
-      ? {data: {workflow_runs: input.pushes}}
-      : {data: {workflow_runs: [{
+    listWorkflowRuns: async query => ({data: {workflow_runs: [{
           id: 11, status: 'completed', conclusion: 'success',
           head_sha: input.head, event: 'pull_request'
-        }]}},
+        }]}}),
     listJobsForWorkflowRun: 'jobs',
     listWorkflowRunArtifacts: 'artifacts',
   }},
   paginate: async (method, query) => {
+    if (method === github.rest.actions.listWorkflowRuns) {
+      if (query.event !== 'push' || query.head_sha !== input.merge)
+        throw new Error('Push identity filter missing');
+      return input.pushes;
+    }
     if (method === 'jobs') {
+      if (query.filter !== 'all') throw new Error('Every attempt must be checked');
       jobsFor.push(query.run_id);
-      return [{name: 'finalize', conclusion: input.finalize}];
+      return (input.finalize[query.run_id] || [])
+        .map(conclusion => ({name: 'finalize', conclusion}));
     }
     return input.bundles
       ? [{id: 100, name: 'candidate-demo-' + input.head, expired: false}]
@@ -92,25 +98,37 @@ const github = {
 
 
 def test_dispatch_refuses_a_merge_whose_push_promotion_finalized():
-    observed = run_await("workflow_dispatch", [push_run(5), push_run(9)], "success")
+    observed = run_await("workflow_dispatch", [push_run(9)], {9: ["success"]})
 
     assert "already finalized" in observed["error"]
-    assert observed["jobsFor"] == [9]
     assert observed["outputs"] == {"unavailable": "finalized"}
+
+
+def test_a_failed_rerun_does_not_reopen_a_partially_deleted_merge():
+    """Finalize, a partial sweep, then a failed rerun and a fresh push run.
+
+    The remaining bundles must still never be selected for a republish.
+    """
+    pushes = [push_run(5), push_run(9)]
+    finalize = {5: ["success", "failure"], 9: ["failure"]}
+    observed = run_await("workflow_dispatch", pushes, finalize)
+
+    assert "already finalized" in observed["error"]
+    assert "artifacts" not in observed["outputs"]
 
 
 @pytest.mark.parametrize(
     "pushes, finalize",
     [
-        ([push_run(9)], "failure"),
-        ([push_run(9)], "skipped"),
-        ([push_run(9, status="in_progress")], "success"),
-        ([], "success"),
-        ([push_run(9, head="c" * 40)], "success"),
-        ([push_run(9, path=".github/workflows/manual-build.yml")], "success"),
+        ([push_run(9)], {9: ["failure"]}),
+        ([push_run(9)], {9: ["skipped"]}),
+        ([push_run(9, status="in_progress")], {}),
+        ([], {}),
+        ([push_run(9, head="c" * 40)], {9: ["success"]}),
+        ([push_run(9, path=".github/workflows/manual-build.yml")], {9: ["success"]}),
     ],
 )
-def test_dispatch_still_recovers_a_merge_that_did_not_finalize(pushes, finalize):
+def test_dispatch_still_recovers_a_merge_that_never_finalized(pushes, finalize):
     observed = run_await("workflow_dispatch", pushes, finalize)
 
     assert observed["error"] is None
@@ -120,14 +138,14 @@ def test_dispatch_still_recovers_a_merge_that_did_not_finalize(pushes, finalize)
 
 
 def test_push_promotion_never_checks_for_an_earlier_finalization():
-    observed = run_await("push", [push_run(9)], "success")
+    observed = run_await("push", [push_run(9)], {9: ["success"]})
 
     assert observed["error"] is None
     assert observed["jobsFor"] == []
 
 
 def test_missing_bundles_are_reported_as_unavailable():
-    observed = run_await("push", [], "success", bundles=False)
+    observed = run_await("push", [], {}, bundles=False)
 
     assert "manual-build" in observed["error"]
     assert observed["outputs"] == {"unavailable": "missing"}

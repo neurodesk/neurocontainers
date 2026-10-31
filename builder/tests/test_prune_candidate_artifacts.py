@@ -388,35 +388,38 @@ def serve_finalization(monkeypatch, runs, jobs_by_run) -> None:
     query = f"event=push&branch=main&head_sha={MERGE}&per_page=100"
     responses = {f"{workflow}?{query}": FakeResponse({"workflow_runs": runs})}
     for run_id, jobs in jobs_by_run.items():
-        path = f"/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
+        path = f"/actions/runs/{run_id}/jobs?filter=all&per_page=100"
         responses[path] = FakeResponse({"jobs": jobs})
     serve(monkeypatch, responses)
 
 
 FINALIZED = [{"name": "finalize", "conclusion": "success"}]
+FAILED = [{"name": "finalize", "conclusion": "failure"}]
 
 
 @pytest.mark.parametrize(
     "runs, jobs_by_run, expected",
     [
         ([promotion_run(9)], {9: FINALIZED}, True),
-        # The newest run decides, even when an older one finalized.
+        # Finalization is permanent: a later failed rerun or run cannot undo it.
         (
             [promotion_run(5), promotion_run(9)],
-            {5: FINALIZED, 9: [{"name": "finalize", "conclusion": "failure"}]},
-            False,
+            {5: FINALIZED + FAILED, 9: FAILED},
+            True,
         ),
+        # An earlier attempt finalized while a rerun is still going.
+        ([promotion_run(9, status="in_progress")], {9: FINALIZED}, True),
+        ([promotion_run(9)], {9: FAILED}, False),
         (
             [promotion_run(9)],
             {9: [{"name": "finalize", "conclusion": "skipped"}]},
             False,
         ),
-        ([promotion_run(9, status="in_progress")], {}, False),
         ([], {}, False),
         ([promotion_run(9, repository="fork/neurocontainers")], {}, False),
     ],
 )
-def test_client_requires_the_newest_trusted_push_run_to_finalize(
+def test_client_counts_any_finalized_attempt_of_a_trusted_push_run(
     monkeypatch, runs, jobs_by_run, expected
 ) -> None:
     serve_finalization(monkeypatch, runs, jobs_by_run)
