@@ -11,7 +11,7 @@ architectures:
   - x86_64
 
 variables:
-  base_image_digest: "sha256:caf26e96521de3406296eb4fde40d67fbd04ceca466aeada54261b1079c0c169"
+  base_image_digest: "sha256:5d3e55b0c1b4eee07f0a6d34fe046dec2c92a727cd06caefef754f6d5ea835f1"
 
 auto_update:
   container_version: false

@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "rabies 0.6.3": {
+      "version": "20261029",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "rodent imaging"
+  ]
+}

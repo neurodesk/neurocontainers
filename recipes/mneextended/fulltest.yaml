@@ -4,8 +4,8 @@ mne_version: "1.13.2"
 autoreject_version: "0.5.1"
 mne_bids_version: "0.20.0"
 mnelab_version: 1.5.4
-vscode_version: "1.143.1"
-pipeline_commit: "0c061f3702fc203742877fb60c2e160551ce3725"
+vscode_version: "1.144.0"
+pipeline_commit: "89b040fd1b22a0e0398b56d06dc61acf2daa295d"
 name: mneextended
 version: "1.2.0"
 default_timeout: 60

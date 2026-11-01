@@ -1,5 +1,6 @@
 name: musclemap
 version: 1.4.0
+epoch: 1
 architectures:
     - x86_64
 

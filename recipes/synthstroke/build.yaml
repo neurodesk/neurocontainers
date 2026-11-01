@@ -1,5 +1,6 @@
 variables:
   upstream_commit: f627b57b8f9291bfa870cb54cb21ddbeb4941d39
+  baseline_weights_commit: b693a650026359705688fbce409219c4dbb5d6be
 
 name: synthstroke
 version: 0.0.0
@@ -26,7 +27,7 @@ structured_readme:
     synthstroke --input /path/to/T1w.nii.gz --outdir /path/to/output/ --weights /opt/synthstroke/weights/synth/model.safetensors --tta
   documentation: |-
     This container includes:
-    - Python 3.10 via Miniconda
+    - Python 3.11 via Miniconda
     - The Python package from https://github.com/liamchalcroft/SynthStroke
     - Additional pip packages: monai, torch, nibabel, numpy, scikit-image, tqdm, wandb, cornucopia, huggingface_hub, safetensors, scipy, einops
     - Deployed binaries: synthstroke, synthstroke-download
@@ -84,6 +85,12 @@ readme: |-
   To run container outside of this environment: ml synthstroke/{{ context.version }}
   ----------------------------------
 files:
+  - name: python-requirements.txt
+    filename: python-requirements.txt
+  - name: baseline_config
+    url: https://huggingface.co/liamchalcroft/synthstroke-baseline/resolve/{{ context.baseline_weights_commit }}/config.json
+  - name: baseline_model
+    url: https://huggingface.co/liamchalcroft/synthstroke-baseline/resolve/{{ context.baseline_weights_commit }}/model.safetensors
   - name: run.py
     contents: |
       import argparse
@@ -180,6 +187,13 @@ auto_update:
     ref: HEAD
     target:
       variable: upstream_commit
+  - id: baseline_weights
+    dependency: true
+    method: git_commit
+    url: https://huggingface.co/liamchalcroft/synthstroke-baseline
+    ref: refs/heads/main
+    target:
+      variable: baseline_weights_commit
 
 build:
   kind: neurodocker
@@ -188,14 +202,19 @@ build:
   directives:
     - template:
         name: miniconda
-        version: py310_25.5.1-0
+        version: py311_25.5.1-0
         install_path: /opt/miniconda-latest
-        conda_install: python=3.10
-        pip_install: monai torch nibabel numpy scikit-image tqdm wandb cornucopia huggingface_hub safetensors scipy einops
+        conda_install: python=3.11
     - install: git libgl1 curl ca-certificates
+    - copy: python-requirements.txt /tmp/synthstroke-python-requirements.txt
     - run:
+        - /opt/miniconda-latest/bin/python -m pip install --no-cache-dir -r /tmp/synthstroke-python-requirements.txt
+        - /opt/miniconda-latest/bin/python -m pip check
+        - rm /tmp/synthstroke-python-requirements.txt
         - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke && git -C /opt/synthstroke checkout {{ context.upstream_commit }}
-        - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
+        - mkdir -p /opt/synthstroke/weights/baseline
+        - cp {{ get_file("baseline_config") }} /opt/synthstroke/weights/baseline/config.json
+        - cp {{ get_file("baseline_model") }} /opt/synthstroke/weights/baseline/model.safetensors
         - cp {{ get_file("run.py") }} /opt/synthstroke/run.py
         - cp {{ get_file("download.py") }} /opt/synthstroke/download.py
         - printf '#!/bin/bash\nexport PYTHONPATH=/opt/synthstroke:$PYTHONPATH\npython /opt/synthstroke/run.py "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke

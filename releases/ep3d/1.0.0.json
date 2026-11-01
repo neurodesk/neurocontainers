@@ -1,7 +1,7 @@
 {
   "apps": {
     "ep3d 1.0.0": {
-      "version": "20261021",
+      "version": "20261029",
       "exec": "",
       "apptainer_args": []
     }

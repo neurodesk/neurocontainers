@@ -1,7 +1,7 @@
 {
   "apps": {
     "nipype 1.11.0": {
-      "version": "20261005",
+      "version": "20261030",
       "exec": "",
       "apptainer_args": []
     }

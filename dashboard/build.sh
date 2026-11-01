@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
-set -ex
+set -euo pipefail
 
-(cd .. && python tools/generate_apps_json.py --output dashboard/apps.json)
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+catalog_root="${APPS_CATALOG_ROOT:-$script_dir/../../apps.json}"
+cd "$script_dir"
 
 go run . \
   --out public \
   --releases-dir ../releases \
   --recipes-dir ../recipes \
-  --apps-json apps.json
+  --catalog-root "$catalog_root"
