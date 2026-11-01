@@ -1,7 +1,7 @@
 {
   "apps": {
     "metabody 1.0.5": {
-      "version": "20260910",
+      "version": "20261101",
       "exec": "",
       "apptainer_args": []
     }
