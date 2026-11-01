@@ -499,6 +499,26 @@ def test_numeric_scheme_does_not_assume_vendor_year_letter_releases():
     )
 
 
+def test_date_scheme_selects_the_latest_snapshot_date(public_session):
+    public_session.get.return_value = response(None)
+    public_session.get.return_value.text = (
+        '[{"alias":"2026-09-30"},{"alias":"2026-10-31"},{"alias":"2026-10-04"},'
+        '{"alias":"2026-13-01"},{"alias":"2026-02-30"},{"alias":"20261231"}]'
+    )
+
+    release = update_sources.latest_version(
+        {
+            "method": "webpage",
+            "url": "https://packagemanager.posit.co/__api__/repos/cran/transaction-dates",
+            "version_regex": r'"alias":"(?P<version>[0-9-]+)"',
+            "version_scheme": "date",
+        },
+        Mock(),
+    )
+
+    assert release.version == "2026-10-31"
+
+
 @pytest.mark.parametrize("tag", ["23rc1", "23dev1", "23c", "2a", "20255b"])
 def test_year_letter_scheme_rejects_other_versions(tag):
     session = Mock()

@@ -598,8 +598,10 @@ def plan_sources(
                 and source["method"] != "apt"
                 and target.get("value", "value") != "tag"
             ):
+                from .update_sources import comparable_version
+
                 try:
-                    if Version(selected) <= Version(current):
+                    if comparable_version(selected) <= comparable_version(current):
                         continue
                 except InvalidVersion:
                     pass
