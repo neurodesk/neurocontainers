@@ -47,6 +47,10 @@ variables:
               condition: arch=="x86_64"
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained OpenRecon app; its ISMRMRD stack pins are held until a
+    maintainer revalidates the reconstruction against newer upstreams.
   container_version: false
   method: sources
   sources:
