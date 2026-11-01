@@ -101,7 +101,8 @@ For software distributed only as prereleases, such as DAFNE, explicitly set
 For vendor releases such as MATLAB's `2025b` or BrainSuite's `23a`, set
 `version_scheme: year_letter`. GitHub draft and prerelease flags still apply.
 For dated snapshots such as a Posit Package Manager CRAN snapshot, set
-`version_scheme: date`. Only real `YYYY-MM-DD` dates match, the latest date
+`version_scheme: date` on a `sources` entry; a top-level policy rejects it,
+because a date is not a container version. Only real `YYYY-MM-DD` dates match, the latest date
 wins, and an older observed date never replaces the pin. Mark such a source
 `dependency: true` so a new daily snapshot does not rebuild the container alone.
 Recipes already storing a leading `v` keep that prefix when bumped.

@@ -519,6 +519,18 @@ def test_date_scheme_selects_the_latest_snapshot_date(public_session):
     assert release.version == "2026-10-31"
 
 
+def test_date_scheme_is_rejected_as_a_container_version_policy():
+    policy = {
+        "method": "webpage",
+        "url": "https://packagemanager.posit.co/__api__/repos/cran/transaction-dates",
+        "version_regex": r'"alias":"(?P<version>[0-9-]+)"',
+        "version_scheme": "date",
+    }
+    with pytest.raises(ValueError, match="sources"):
+        update_sources.validate_direct_policy(policy)
+    update_sources.validate_update_config(policy)
+
+
 @pytest.mark.parametrize("tag", ["23rc1", "23dev1", "23c", "2a", "20255b"])
 def test_year_letter_scheme_rejects_other_versions(tag):
     session = Mock()

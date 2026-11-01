@@ -21,7 +21,7 @@ import yaml
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from builder.update_sources import validate_update_config
+from builder.update_sources import validate_direct_policy
 
 
 # ============================================================================
@@ -640,7 +640,7 @@ class AutoUpdate:
     reason: Optional[str] = attrs.field(default=None)
 
     def __attrs_post_init__(self):
-        validate_update_config(
+        validate_direct_policy(
             {
                 key: value
                 for key, value in attrs.asdict(self).items()

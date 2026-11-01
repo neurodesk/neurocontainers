@@ -231,6 +231,16 @@ def parse_release_tag(
     return UpstreamRelease(candidate, tag, url)
 
 
+def validate_direct_policy(config: dict) -> None:
+    """Validate a policy that names the container version directly."""
+    validate_update_config(config)
+    if config.get("version_scheme") == "date":
+        raise ValueError(
+            "auto_update.version_scheme date names a snapshot, not a container "
+            "version; track it as a dependency in a sources policy"
+        )
+
+
 def is_date(value: str) -> bool:
     """True for a real calendar date written as YYYY-MM-DD."""
     if not DATE_VERSION.fullmatch(value):

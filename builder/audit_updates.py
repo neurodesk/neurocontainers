@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import yaml
 from packaging.version import Version
 
-from .update_sources import SAFE_SOURCE_REF, parse_release_tag, validate_update_config
+from .update_sources import SAFE_SOURCE_REF, parse_release_tag, validate_direct_policy
 
 
 def versioned_source_inputs(recipe: dict) -> list[tuple[str, str]]:
@@ -155,7 +155,7 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
         raise ValueError(
             "every recipe requires automatic updates; bind installed sources or use a sources policy with local repository inputs"
         )
-    validate_update_config(config)
+    validate_direct_policy(config)
     from .versioning import validate_container_version
 
     if "version" in recipe:

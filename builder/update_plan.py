@@ -12,7 +12,7 @@ from typing import Mapping
 import yaml
 from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
-from packaging.version import InvalidVersion, Version
+from packaging.version import InvalidVersion
 
 from .versioning import container_version
 
@@ -401,10 +401,12 @@ def validate_target_bindings(recipe: dict, recipe_path: Path | None = None) -> N
 
 
 def _is_older(observed: str, current: str) -> bool:
+    from .update_sources import comparable_version
+
     try:
-        return Version(observed.lstrip("vVrR").replace("_", ".")) < Version(
-            current.lstrip("vVrR").replace("_", ".")
-        )
+        return comparable_version(
+            observed.lstrip("vVrR").replace("_", ".")
+        ) < comparable_version(current.lstrip("vVrR").replace("_", "."))
     except InvalidVersion:
         return False
 
