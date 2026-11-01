@@ -19,3 +19,10 @@ tests:
     description: Verify the deployed processing entrypoint is available.
     script: |
       test -x /opt/code/afni_processing.sh
+
+  - name: AFNI stimulus timing files present
+    description: Verify every stimulus timing file the AFNI workflow references is installed.
+    script: |
+      grep -o '/opt/code/stim_times/[^"]*\.1D' /opt/code/afni_processing.sh > /tmp/stim_files
+      test "$(wc -l < /tmp/stim_files)" -eq 7
+      while IFS= read -r f; do test -s "$f" || { echo "missing $f"; exit 1; }; done < /tmp/stim_files
