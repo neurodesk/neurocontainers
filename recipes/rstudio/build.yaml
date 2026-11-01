@@ -283,7 +283,7 @@ files:
       cran <- c("remotes", "devtools", "ProbBayes", "bayesplot", "brms", "rstan",
         "Rcpp", "reticulate", "fastICA", "forge", "rmarkdown", "plotly", "shiny",
         "tidyverse", "RColorBrewer", "paletteer", "ggpubr", "ggthemes", "RcppCNPy",
-        "R.matlab", "car")
+        "R.matlab", "car", "hexbin", "maps")
       install.packages(cran)
       install.packages(c("caret", "BayesFactor"), dependencies = TRUE)
       github <- c(
