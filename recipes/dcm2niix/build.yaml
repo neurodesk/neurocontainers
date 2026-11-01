@@ -15,6 +15,10 @@ variables:
 auto_update:
   method: github_release
   repo: rordenlab/dcm2niix
+  # Upstream publishes the release before uploading its binaries. Requiring the
+  # asset holds the bump until dcm2niix_lnx.zip exists for the selected tag.
+  assets:
+    downloaded_file: 'dcm2niix_lnx\.zip'
 
 build:
   kind: neurodocker
@@ -98,6 +102,6 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAASm0lE
 
 files:
   - name: downloaded_file
-    url: https://github.com/rordenlab/dcm2niix/releases/download/{{ context.version }}/dcm2niix_lnx.zip
+    url: "https://github.com/rordenlab/dcm2niix/releases/download/{{ context.version }}/dcm2niix_lnx.zip"
   - name: source_archive
     url: https://github.com/rordenlab/dcm2niix/archive/refs/tags/{{ context.version }}.tar.gz
