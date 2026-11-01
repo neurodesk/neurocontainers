@@ -11,6 +11,25 @@ files:
       url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
     - name: metabody.py
       filename: metabody.py
+    # Run-1 block onsets of the BodyLocaliser sub-1_TBS session, vendored from
+    # thomshaw92/BodyLocaliser@9e55ef71c2124ef322fdb942af2627432bebd266.
+    # Upstream deleted its recorded session data afterwards.
+    - name: stim_left_elbow.1D
+      filename: stim_times/left_elbow.1D
+    - name: stim_right_elbow.1D
+      filename: stim_times/right_elbow.1D
+    - name: stim_left_foot.1D
+      filename: stim_times/left_foot.1D
+    - name: stim_right_foot.1D
+      filename: stim_times/right_foot.1D
+    - name: stim_left_hand.1D
+      filename: stim_times/left_hand.1D
+    - name: stim_right_hand.1D
+      filename: stim_times/right_hand.1D
+    - name: stim_tongue.1D
+      filename: stim_times/tongue.1D
+    - name: stim_rest.1D
+      filename: stim_times/rest.1D
     - name: miniconda_installer
       url: "{{ context.conda_download_url }}"
 
@@ -20,8 +39,7 @@ variables:
     openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
     openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-    openrecon_ismrmrd_version: "1.14.2"
-    upstream_commit: "9e55ef71c2124ef322fdb942af2627432bebd266"
+    openrecon_ismrmrd_version: "1.15.0"
     conda_version: "23.11.0-2"
     conda_download_url:
         try:
@@ -32,35 +50,25 @@ auto_update:
   container_version: false
   method: sources
   sources:
-  - id: upstream
-    method: github_commit
-    repo: thomshaw92/BodyLocaliser
-    ref: HEAD
-    target:
-      variable: upstream_commit
   - id: openrecon_ismrmrd
-    dependency: true
     method: github_release
     repo: ismrmrd/ismrmrd
     target:
       variable: openrecon_ismrmrd_version
       value: version
   - id: openrecon_siemens
-    dependency: true
     method: github_commit
     repo: ismrmrd/siemens_to_ismrmrd
     ref: HEAD
     target:
       variable: openrecon_siemens_commit
   - id: openrecon_python_tools
-    dependency: true
     method: github_commit
     repo: ismrmrd/ismrmrd-python-tools
     ref: HEAD
     target:
       variable: openrecon_python_tools_commit
   - id: openrecon_server
-    dependency: true
     method: github_commit
     repo: astewartau/python-ismrmrd-server
     ref: fix/ismrmrd-compatibility
@@ -186,8 +194,14 @@ build:
         - copy: afni_processing.sh /opt/code/afni_processing.sh
         - run:
               - mkdir -p /opt/code/stim_times
-              - git clone https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser && git -C /opt/code/BodyLocaliser checkout {{ context.upstream_commit }}
-              - cp /opt/code/BodyLocaliser/sub-1_TBS/sub-1_run-1*.1D /opt/code/stim_times/
+              - cp {{ get_file("stim_left_elbow.1D") }} "/opt/code/stim_times/sub-1_run-1_LEFT ELBOW_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_right_elbow.1D") }} "/opt/code/stim_times/sub-1_run-1_RIGHT ELBOW_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_left_foot.1D") }} "/opt/code/stim_times/sub-1_run-1_LEFT FOOT_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_right_foot.1D") }} "/opt/code/stim_times/sub-1_run-1_RIGHT FOOT_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_left_hand.1D") }} "/opt/code/stim_times/sub-1_run-1_LEFT HAND_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_right_hand.1D") }} "/opt/code/stim_times/sub-1_run-1_RIGHT HAND_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_tongue.1D") }} "/opt/code/stim_times/sub-1_run-1_TONGUE_2024_10_31_00_07.1D"
+              - cp {{ get_file("stim_rest.1D") }} "/opt/code/stim_times/sub-1_run-1_REST_2024_10_31_00_07.1D"
 
         # install small pip packages
         - run:
