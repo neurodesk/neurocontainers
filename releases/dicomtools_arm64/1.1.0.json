@@ -1,7 +1,7 @@
 {
   "apps": {
     "dicomtools_arm64 1.1.0": {
-      "version": "20261012",
+      "version": "20261030",
       "exec": "",
       "apptainer_args": []
     }

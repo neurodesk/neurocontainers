@@ -192,6 +192,51 @@ reporter falls back to verified runs and adds a reporting note. It never treats
 a title or an existing success comment as proof. This reporting contract does
 not change release validation or publication.
 
+## Candidate bundle cleanup
+
+Candidate bundles are uncompressed Docker archives and SIFs, often tens of GB
+each, kept for 30 days. Promotion and `pr_number` republishing only select
+bundles for a merged PR's final head SHA, and an open PR's head can still become
+one. A head stays live while it is an open PR's head, or a merged PR's final
+head whose merge has not finalized: no attempt of any trusted `push` promotion
+run for the merge commit has a successful `finalize` job. Finalization is
+permanent; a later rerun that fails does not make the merge recoverable from
+bundles again.
+
+Every six hours `prune-candidate-artifacts.yml` deletes the bundles of every
+other head: finalized merges, superseded pushes and PRs closed without merging.
+Bundles of live heads are kept until they expire, including older runs for the
+same head, because a running promotion may already have selected one.
+
+Republishing a finalized merge from bundles is not supported. A `pr_number`
+dispatch for a finalized merge fails before selecting any bundle, so it never
+publishes a partly deleted set; publish again with `manual-build`. The
+promotion's own lifecycle update leaves the finalized status in place, but the
+candidate reporter may later list the refused dispatch as a failed attempt.
+Signing acceptance for a finalized merge is refused the same way; `manual-build`
+does not replace it, so run signing acceptance before or instead of finalizing. This holds for an all-superseded batch too, which finalized
+without publishing. Recovery of a merge that has not finalized is unchanged,
+including staged recovery, which reuses promotion metadata rather than bundles.
+When a passing candidate run has no bundles left, because they expired or were
+deleted, the lifecycle comment points at `manual-build` instead of a rerun.
+
+Reopening a PR or pushing back to a dead SHA starts a new candidate run, which
+promotion would select instead. Only a running promotion downloads bundles, and
+a reopen-and-merge could reach one before the new run is visible, so the sweep
+re-reads PRs after planning and stops deleting whenever a promotion run, in any
+unfinished status, exists. The next sweep continues. This is a check, not a lock:
+a promotion starting between the check and a delete could still select the
+bundle and fail to download it. Rerunning that promotion selects the candidate
+run the reopen or push started.
+
+Bundles younger than six hours, dead heads with a candidate run still in
+progress, and bundles not owned by a `pull_request` run of the candidate
+workflow are kept. Reports and promotion artifacts are never touched. Existing
+PR comments keep download links to deleted bundles until the reporter next
+refreshes them.
+
+Run the workflow manually for a dry run; tick `apply` to delete.
+
 ## Required repository configuration
 
 - Make `Container release gate` a required pull-request check.

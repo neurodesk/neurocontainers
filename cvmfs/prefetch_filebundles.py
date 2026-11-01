@@ -18,9 +18,12 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[1] / "neurodesk/transparent-singularity")
+# transparent-singularity is maintained in the neurocommand checkout.
+TRANSPARENT_SINGULARITY_DIR = (
+    Path(os.environ.get("NEUROCOMMAND_DIR", Path.home() / "neurocommand"))
+    / "neurodesk/transparent-singularity"
 )
+sys.path.insert(0, str(TRANSPARENT_SINGULARITY_DIR))
 from artifact_renderer import (
     CVMFS_STARTUP_MODULE,
     CVMFS_STARTUP_TRIGGER,
