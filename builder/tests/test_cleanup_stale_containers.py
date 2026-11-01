@@ -3,11 +3,116 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import pytest
 
 from tools import cleanup_stale_containers as cleanup
+
+
+@pytest.fixture
+def public_inventory(monkeypatch):
+    monkeypatch.setattr(
+        cleanup,
+        "inspect_published_containers",
+        lambda: SimpleNamespace(
+            ids=frozenset({"served_1.0_20250101"}), revision="123", root_hash="a" * 40
+        ),
+    )
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_cleanup_keeps_served_image_while_replacement_is_pending(
+    tmp_path: Path, monkeypatch, capsys, dry_run: bool
+) -> None:
+    catalog = tmp_path / "catalog"
+    catalog.mkdir()
+    domain(
+        catalog,
+        "neuroimaging",
+        ["Example/neuro"],
+        {
+            "tool": {
+                "apps": {"tool 1.0": {"version": "20261030"}},
+                "categories": ["statistics"],
+            }
+        },
+    )
+    sources = tmp_path / "sources"
+    release(sources, "Example/neuro", "tool", "20261030")
+    monkeypatch.setattr(
+        cleanup,
+        "inspect_published_containers",
+        lambda: SimpleNamespace(
+            ids=frozenset({"tool_1.0_20261005"}),
+            revision="70787",
+            root_hash="a" * 40,
+        ),
+    )
+    objects = ["tool_1.0_20261005.simg", "unreferenced_1.0_20200101.simg"]
+    monkeypatch.setattr(
+        cleanup,
+        "list_nectar_objects",
+        lambda _: [{"Path": key, "ModTime": "2000-01-01T00:00:00Z"} for key in objects],
+    )
+    monkeypatch.setattr(
+        cleanup,
+        "list_s3_objects",
+        lambda _: [
+            {"Key": key, "LastModified": "2000-01-01T00:00:00Z"} for key in objects
+        ],
+    )
+    calls = []
+    monkeypatch.setattr(
+        cleanup.subprocess, "run", lambda command, **_: calls.append(command)
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cleanup",
+            "--s3-bucket",
+            "neurocontainers",
+            "--catalog-root",
+            str(catalog),
+            "--sources-root",
+            str(sources),
+            "--retention-days",
+            "7",
+            "--dry-run" if dry_run else "--apply",
+        ],
+    )
+
+    cleanup.main()
+
+    if dry_run:
+        assert calls == []
+        output = capsys.readouterr().out
+        assert (
+            "Would delete unreferenced Nectar object: nectar:/neurodesk/unreferenced_1.0_20200101.simg"
+            in output
+        )
+        assert (
+            "Would delete unreferenced AWS object: s3://neurocontainers/unreferenced_1.0_20200101.simg"
+            in output
+        )
+        assert "tool_1.0_20261005.simg" not in output
+        return
+
+    assert calls == [
+        ["rclone", "deletefile", "nectar:/neurodesk/unreferenced_1.0_20200101.simg"],
+        [
+            "aws",
+            "s3api",
+            "delete-object",
+            "--bucket",
+            "neurocontainers",
+            "--key",
+            "unreferenced_1.0_20200101.simg",
+            "--no-cli-pager",
+        ],
+    ]
 
 
 def domain(root: Path, name: str, repositories: list[str], catalog: dict) -> None:
@@ -34,7 +139,7 @@ def release(sources: Path, repository: str, tool: str, date: str) -> None:
 
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_cleanup_protects_every_domain_and_source_release(
-    tmp_path: Path, monkeypatch, capsys, dry_run: bool
+    tmp_path: Path, monkeypatch, capsys, dry_run: bool, public_inventory
 ) -> None:
     catalog = tmp_path / "catalog"
     catalog.mkdir()
@@ -148,6 +253,55 @@ def test_cleanup_protects_every_domain_and_source_release(
             "--no-cli-pager",
         ],
     ]
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_unavailable_public_inventory_stops_before_storage_access(
+    tmp_path: Path, monkeypatch, dry_run: bool
+) -> None:
+    domain(
+        tmp_path,
+        "neuroimaging",
+        ["Example/neuro"],
+        {
+            "tool": {
+                "apps": {"tool 1.0": {"version": "20261030"}},
+                "categories": ["statistics"],
+            }
+        },
+    )
+    monkeypatch.setattr(cleanup, "load_source_release_keys", lambda *_: set())
+
+    def unavailable():
+        raise cleanup.PublicationUnavailable("signature verification failed")
+
+    monkeypatch.setattr(cleanup, "inspect_published_containers", unavailable)
+    monkeypatch.setattr(
+        cleanup, "list_nectar_objects", lambda _: pytest.fail("storage accessed")
+    )
+    monkeypatch.setattr(
+        cleanup, "list_s3_objects", lambda _: pytest.fail("storage accessed")
+    )
+    monkeypatch.setattr(
+        cleanup.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("storage mutated"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cleanup",
+            "--s3-bucket",
+            "neurocontainers",
+            "--catalog-root",
+            str(tmp_path),
+            "--dry-run" if dry_run else "--apply",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="Cannot protect public CVMFS images"):
+        cleanup.main()
 
 
 def test_bad_catalog_stops_before_storage_access(tmp_path: Path, monkeypatch) -> None:

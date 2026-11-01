@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""Remove stale images absent from catalogs and releases; keep nested Swift objects."""
+"""Remove images absent from catalogs, releases and signed public CVMFS."""
 
 import argparse
 import json
 import re
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 from urllib.parse import quote
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from cvmfs.check_publication import (  # noqa: E402
+    PublicationUnavailable,
+    inspect_published_containers,
+)
 
 
 def parse_iso8601(timestamp: str) -> Optional[datetime]:
@@ -340,10 +348,25 @@ def main() -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(days=args.retention_days)
     published, repositories = load_domain_catalog(args.catalog_root)
     source_keys = load_source_release_keys(repositories, args.sources_root)
-    expected_keys = published | source_keys
+    try:
+        snapshot = inspect_published_containers()
+    except (
+        PublicationUnavailable,
+        OSError,
+        UnicodeError,
+        subprocess.SubprocessError,
+    ) as exc:
+        raise SystemExit(
+            f"[ERROR] Cannot protect public CVMFS images; cleanup stopped: {exc}"
+        ) from exc
+    public_keys = {f"{name}.simg" for name in snapshot.ids}
+    expected_keys = published | source_keys | public_keys
     print(
         f"[DEBUG] Protected {len(published)} published images and "
-        f"{len(source_keys)} source release images"
+        f"{len(source_keys)} source release images and {len(public_keys)} public CVMFS images"
+    )
+    print(
+        f"[DEBUG] Public CVMFS revision {snapshot.revision}, root {snapshot.root_hash}"
     )
 
     print(f"[DEBUG] Retention window for stale deletions: {args.retention_days} day(s)")
