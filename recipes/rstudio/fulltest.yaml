@@ -1,11 +1,13 @@
 # rstudio container test suite
-# Tests for RStudio with R from CRAN's Ubuntu repository and 335 packages
+# Tests for RStudio with pinned R from CRAN's Ubuntu repository and 335 packages
+# from a pinned CRAN snapshot
 #
 # This container provides RStudio IDE (Desktop and Server) with a comprehensive
 # set of R packages for data science, statistics, machine learning, and visualization.
 
 name: rstudio
 version: 2026.10.1
+r_version: "4.6.2-1.2204.0"
 
 test_data:
   output_dir: test_output
@@ -25,10 +27,14 @@ tests:
     command: R --version
     expected_output_contains: "R version 4."
 
-  - name: R meets CRAN package minimum
-    description: Verify R is new enough for current CRAN packages such as readxl and gargle
-    command: Rscript -e "stopifnot(getRversion() >= '4.2.0'); cat('R', as.character(getRversion()), 'supported')"
-    expected_output_contains: "supported"
+  - name: R is the pinned CRAN build
+    description: Verify the installed R packages are exactly the pinned build from CRAN's apt repository
+    command: |
+      for package in r-base r-base-core r-recommended; do
+        test "$(dpkg-query -W -f='${Version}' "$package")" = "${r_version}" || { echo "$package is not ${r_version}"; exit 1; }
+      done
+      echo "R ${r_version} pinned"
+    expected_output_contains: "R ${r_version} pinned"
 
   - name: Rscript version check
     description: Verify Rscript binary runs
