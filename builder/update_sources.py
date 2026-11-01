@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Iterable, Iterator
 from urllib.parse import quote, urljoin, urlsplit
 
@@ -41,6 +42,8 @@ PLACEHOLDER = re.compile(r"\b(?:TODO|TBD|FIXME|CHANGEME|PLACEHOLDER)\b", re.I)
 SAFE_VERSION = re.compile(r"[0-9][A-Za-z0-9._+\-]*")
 SAFE_SOURCE_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+/-]*")
 YEAR_LETTER_VERSION = re.compile(r"[0-9]{2,4}[ab]")
+DATE_VERSION = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+VERSION_SCHEMES = frozenset({"numeric", "year_letter", "date"})
 REPOSITORY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*")
 PACKAGE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
 NPM_PACKAGE = re.compile(r"(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*")
@@ -137,8 +140,10 @@ def validate_update_config(config: dict) -> None:
     mode = config.get("mode", "automatic")
     if mode not in {"automatic", "notify"}:
         raise ValueError("auto_update.mode must be automatic or notify")
-    if config.get("version_scheme", "numeric") not in {"numeric", "year_letter"}:
-        raise ValueError("auto_update.version_scheme must be numeric or year_letter")
+    if config.get("version_scheme", "numeric") not in VERSION_SCHEMES:
+        raise ValueError(
+            "auto_update.version_scheme must be numeric, year_letter or date"
+        )
     if method == "manual" or mode == "notify" or "reason" in config:
         if len(config.get("reason", "").strip()) < 20:
             raise ValueError(
@@ -215,6 +220,8 @@ def parse_release_tag(
         if not YEAR_LETTER_VERSION.fullmatch(candidate):
             return None
         return UpstreamRelease(candidate, tag, url)
+    if version_scheme == "date":
+        return UpstreamRelease(candidate, tag, url) if is_date(candidate) else None
     try:
         parsed = Version(candidate)
     except InvalidVersion:
@@ -224,8 +231,36 @@ def parse_release_tag(
     return UpstreamRelease(candidate, tag, url)
 
 
+def validate_direct_policy(config: dict) -> None:
+    """Validate a policy that names the container version directly."""
+    validate_update_config(config)
+    if config.get("version_scheme") == "date":
+        raise ValueError(
+            "auto_update.version_scheme date names a snapshot, not a container "
+            "version; track it as a dependency in a sources policy"
+        )
+
+
+def is_date(value: str) -> bool:
+    """True for a real calendar date written as YYYY-MM-DD."""
+    if not DATE_VERSION.fullmatch(value):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def comparable_version(value: str) -> Version:
+    """Order releases, including YYYY-MM-DD snapshot dates, as PEP 440 versions."""
+    return Version(value.replace("-", ".") if is_date(value) else value)
+
+
 def _best(releases: Iterable[UpstreamRelease]) -> UpstreamRelease | None:
-    return max(releases, key=lambda release: Version(release.version), default=None)
+    return max(
+        releases, key=lambda release: comparable_version(release.version), default=None
+    )
 
 
 def _page_url(url: str, hostname: str) -> str:

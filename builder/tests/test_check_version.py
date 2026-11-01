@@ -476,7 +476,13 @@ def test_frozen_recipe_declines_an_available_upstream_bump(tmp_path, monkeypatch
     assert rows[0]["upstream"] == ""
 
 
-def write_sources_recipe(root: Path, name: str, lib_version: str = "7.1.0") -> None:
+def write_sources_recipe(
+    root: Path,
+    name: str,
+    lib_version: str = "7.1.0",
+    lib_source: dict | None = None,
+    lib_target: dict | None = None,
+) -> None:
     """A bundle whose library pin rides along instead of triggering its own build."""
     path = root / "recipes" / name
     path.mkdir(parents=True)
@@ -501,10 +507,9 @@ def write_sources_recipe(root: Path, name: str, lib_version: str = "7.1.0") -> N
                         },
                         {
                             "id": "lib",
-                            "method": "pypi",
-                            "package": "demo-lib",
+                            **(lib_source or {"method": "pypi", "package": "demo-lib"}),
                             "dependency": True,
-                            "target": {"variable": "lib_version"},
+                            "target": {"variable": "lib_version", **(lib_target or {})},
                         },
                     ],
                 },
@@ -524,6 +529,10 @@ def write_sources_recipe(root: Path, name: str, lib_version: str = "7.1.0") -> N
     )
 
 
+def source_key(config: dict) -> str:
+    return config.get("package") or config.get("repo") or config["url"]
+
+
 def run_update_check(tmp_path, monkeypatch, observed: dict[str, str]) -> list[dict]:
     import json
     from builder import update_observations
@@ -535,9 +544,10 @@ def run_update_check(tmp_path, monkeypatch, observed: dict[str, str]) -> list[di
         "observe_source",
         lambda config, session=None, *, current=None: (
             update_observations.SourceObservation(
-                observed[config["package"]],
-                f"https://pypi.org/project/{config['package']}",
-                version=observed[config["package"]],
+                observed[source_key(config)],
+                f"https://pypi.org/project/{config.get('package')}",
+                version=observed[source_key(config)],
+                tag=observed[source_key(config)],
             )
         ),
     )
@@ -569,3 +579,48 @@ def test_software_update_carries_the_held_dependency_with_it(tmp_path, monkeypat
     assert [row["status"] for row in rows] == ["would-open"]
     assert "`7.1.0` → `7.2.0`" in rows[0]["detail"]
     assert rows[0]["upstream"] == "1.1.0"
+
+
+SNAPSHOT_DATES = "https://packagemanager.posit.co/__api__/repos/cran/transaction-dates"
+
+
+DATED_SOURCES = {
+    "webpage value": (
+        SNAPSHOT_DATES,
+        {
+            "method": "webpage",
+            "url": SNAPSHOT_DATES,
+            "version_regex": r'"alias":"(?P<version>[0-9-]+)"',
+            "version_scheme": "date",
+        },
+        {},
+    ),
+    "tag": (
+        "org/snapshots",
+        {"method": "github_tags", "repo": "org/snapshots", "version_scheme": "date"},
+        {"value": "tag"},
+    ),
+}
+
+
+@pytest.mark.parametrize("dated_source", DATED_SOURCES)
+@pytest.mark.parametrize(
+    "observed_snapshot, carried",
+    [("2026-10-31", True), ("2026-09-30", False), ("2026-10-04", False)],
+)
+def test_date_dependency_only_moves_forward_with_a_software_update(
+    tmp_path, monkeypatch, observed_snapshot, carried, dated_source
+):
+    key, lib_source, lib_target = DATED_SOURCES[dated_source]
+    write_sources_recipe(
+        tmp_path,
+        "bundle",
+        lib_version="2026-10-04",
+        lib_source=lib_source,
+        lib_target=lib_target,
+    )
+    rows = run_update_check(
+        tmp_path, monkeypatch, {"demo": "1.1.0", key: observed_snapshot}
+    )
+    assert [row["status"] for row in rows] == ["would-open"]
+    assert (f"`2026-10-04` → `{observed_snapshot}`" in rows[0]["detail"]) is carried
