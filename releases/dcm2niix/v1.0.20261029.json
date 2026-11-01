@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "dcm2niix v1.0.20261029": {
+      "version": "20261101",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
