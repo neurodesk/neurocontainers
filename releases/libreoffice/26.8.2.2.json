@@ -1,0 +1,47 @@
+{
+  "apps": {
+    "libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "libreofficeGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "libreoffice",
+      "apptainer_args": []
+    },
+    "libreofficeWriterGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "lowriter",
+      "apptainer_args": []
+    },
+    "libreofficeCalcGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "localc",
+      "apptainer_args": []
+    },
+    "libreofficeImpressGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "loimpress",
+      "apptainer_args": []
+    },
+    "libreofficeDrawGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "lodraw",
+      "apptainer_args": []
+    },
+    "libreofficeBaseGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "lobase",
+      "apptainer_args": []
+    },
+    "libreofficeMathGUI-libreoffice 26.8.2.2": {
+      "version": "20261031",
+      "exec": "lomath",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
