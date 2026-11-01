@@ -1,0 +1,81 @@
+name: Cleanup stale container images
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete stale images (otherwise only preview)
+        type: boolean
+        default: false
+  schedule:
+    - cron: '25 11 * * *'
+  workflow_run:
+    workflows:
+      - Update neurocontainers
+    types:
+      - completed
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cleanup-stale-containers
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: |
+      github.repository == 'neurodesk/neurocontainers' &&
+      ((github.ref == 'refs/heads/main' || github.event_name == 'workflow_run') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Check out published domain catalogs
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+          path: apps-catalog
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37
+        with:
+          aws-region: us-east-2
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      - name: Install storage clients
+        run: |
+          set -euo pipefail
+          if ! command -v rclone >/dev/null; then
+            curl -fsSL https://rclone.org/install.sh | sudo bash
+          fi
+          if ! command -v aws >/dev/null; then
+            curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+              -o "$RUNNER_TEMP/awscliv2.zip"
+            unzip -q "$RUNNER_TEMP/awscliv2.zip" -d "$RUNNER_TEMP"
+            sudo "$RUNNER_TEMP/aws/install"
+          fi
+      - name: Remove old SIFs from Nectar and S3
+        env:
+          APPLY: ${{ github.event_name != 'workflow_dispatch' || inputs.apply }}
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          OS_AUTH_TYPE: v3applicationcredential
+          OS_IDENTITY_API_VERSION: '3'
+        run: |
+          set -euo pipefail
+          rclone config create nectar swift env_auth true
+          mode=--dry-run
+          if [ "$APPLY" = "true" ]; then mode=--apply; fi
+          python3 tools/cleanup_stale_containers.py \
+            --s3-bucket neurocontainers \
+            --catalog-root apps-catalog \
+            --retention-days 7 \
+            "$mode"

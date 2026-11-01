@@ -11,6 +11,10 @@ architectures:
   - aarch64
 
 variables:
+  julia_version: "1.13.3"
+  vscode_version: "1.144.0"
+  vscode_sha256: "b8fbff92d8d95908990eed0acf004c980f29003725469e794ddbd017ea511a20"
+  vscode_arm64_sha256: "044e1cfd2ba1a93ff05b1d58f4b720896142c939f862c9a9204c2efe6c87b3af"
   vscode_deb:
     try:
       - value: vscode_linux_deb_x64
@@ -25,14 +29,40 @@ variables:
         condition: arch == "aarch64"
   julia_tarball:
     try:
-      - value: julia-{{ context.version }}-linux-x86_64.tar.gz
+      - value: julia-{{ context.julia_version }}-linux-x86_64.tar.gz
         condition: arch == "x86_64"
-      - value: julia-{{ context.version }}-linux-aarch64.tar.gz
+      - value: julia-{{ context.julia_version }}-linux-aarch64.tar.gz
         condition: arch == "aarch64"
 
 auto_update:
-  method: github_release
-  repo: JuliaLang/julia
+  method: sources
+  container_version: julia
+  sources:
+  - id: julia
+    method: github_release
+    repo: JuliaLang/julia
+    target:
+      variable: julia_version
+      fulltest_variable: julia_version
+  - id: vscode
+    dependency: true
+    method: webpage
+    url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+    version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: vscode_version
+  - id: vscode-deb
+    dependency: true
+    method: http_digest
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+    target:
+      variable: vscode_sha256
+  - id: vscode-arm64
+    dependency: true
+    method: http_digest
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-arm64/stable
+    target:
+      variable: vscode_arm64_sha256
 
 build:
   kind: neurodocker
@@ -92,7 +122,7 @@ build:
         - cp {{ get_file(context.julia_archive) }} {{ context.julia_tarball }}
         - tar zxvf {{ context.julia_tarball }}
         - rm -rf {{ context.julia_tarball }}
-        - ln -s /opt/julia-{{ context.version }} /opt/julia-latest
+        - ln -s /opt/julia-{{ context.julia_version }} /opt/julia-latest
 
     - run:
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension julialang.language-julia
@@ -100,7 +130,7 @@ build:
         - rm -rf /opt/vscode-data/CachedExtensionVSIXs/
 
     - environment:
-        PATH: $PATH:/opt/julia-{{ context.version }}/bin
+        PATH: $PATH:/opt/julia-{{ context.julia_version }}/bin
 
     - workdir: /opt
 
@@ -158,14 +188,16 @@ files:
   - name: julia
     filename: julia
   - name: vscode_linux_deb_x64
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+    sha256: "{{ context.vscode_sha256 }}"
   - name: vscode_linux_deb_arm64
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-arm64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-arm64/stable
+    sha256: "{{ context.vscode_arm64_sha256 }}"
 
   - name: julia_1_9_4_linux_x86_64_tar_gz
-    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.version.split('.')[:2] | join('.') }}/julia-{{ context.version }}-linux-x86_64.tar.gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_version.split('.')[:2] | join('.') }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
   - name: julia_1_9_4_linux_aarch64_tar_gz
-    url: https://julialang-s3.julialang.org/bin/linux/aarch64/{{ context.version.split('.')[:2] | join('.') }}/julia-{{ context.version }}-linux-aarch64.tar.gz
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/{{ context.julia_version.split('.')[:2] | join('.') }}/julia-{{ context.julia_version }}-linux-aarch64.tar.gz
   - name: install_packages.jl
     contents: |-
       using Pkg, TOML

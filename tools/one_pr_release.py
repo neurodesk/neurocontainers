@@ -222,6 +222,10 @@ def shared_inputs_at(data: dict | None, revision: str) -> SharedInputs:
     return SharedInputs.from_recipe(data, read)
 
 
+class MixedPullRequest(RuntimeError):
+    """A PR that changes recipes alongside other code, which promotion skips."""
+
+
 def release_plan(base: str, head: str) -> ReleasePlan:
     """Plan recipe work from Git trees using trusted, non-rendering policy."""
     paths = changed_files(base, head)
@@ -277,7 +281,7 @@ def release_plan(base: str, head: str) -> ReleasePlan:
         and not any(inputs.contains(path) for inputs in shared_inputs)
     ]
     if unrelated:
-        raise RuntimeError(
+        raise MixedPullRequest(
             "Automated releases require a recipe-only PR. Unrelated paths: "
             + ", ".join(unrelated)
         )
@@ -318,6 +322,22 @@ def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> b
         },
     )
     return plan.source_only_recipes == [recipe]
+
+
+def stale_candidate_recipes(tested: list[str], head: str, merged: str) -> list[str]:
+    """List recipes merging head would publish without a matching candidate.
+
+    merged is the checked-out merge of head into main. Promotion plans that
+    merge against main and requires each planned recipe to carry the
+    fingerprint its candidate was built from, so a recipe main has edited, or
+    one that newly depends on a shared input the PR changes, would fail there.
+    """
+    return [
+        recipe
+        for recipe in release_plan(f"{merged}^1", merged).candidate_recipes
+        if recipe not in tested
+        or recipe_fingerprint(recipe, merged) != recipe_fingerprint(recipe, head)
+    ]
 
 
 def build_date(recipe: str, revision: str = "HEAD") -> str:
@@ -476,6 +496,26 @@ def command_detect(args: argparse.Namespace) -> None:
             "release_plan": json.dumps(plan.as_dict(), separators=(",", ":")),
         }
     )
+
+
+def command_freshness(args: argparse.Namespace) -> None:
+    """Fail when merging now would publish recipes the candidates never built."""
+    try:
+        stale = stale_candidate_recipes(
+            json.loads(args.recipes), args.head, args.merged
+        )
+    except MixedPullRequest as error:
+        print(f"{error}\nPromotion skips this PR, so there is nothing to compare.")
+        return
+    if stale:
+        raise RuntimeError(
+            "Merging into main now would publish "
+            + ", ".join(stale)
+            + " as no candidate from this branch built it, because main changed "
+            "its build inputs after the branch was cut. Update the branch to "
+            "rebuild the candidates."
+        )
+    print("Tested candidates match what a merge would publish.")
 
 
 def command_inspect(args: argparse.Namespace) -> None:
@@ -1118,6 +1158,12 @@ def parser() -> argparse.ArgumentParser:
     detect.add_argument("--base", required=True)
     detect.add_argument("--head", required=True)
     detect.set_defaults(func=command_detect)
+
+    freshness = subparsers.add_parser("freshness")
+    freshness.add_argument("--recipes", required=True)
+    freshness.add_argument("--head", required=True)
+    freshness.add_argument("--merged", required=True)
+    freshness.set_defaults(func=command_freshness)
 
     inspect = subparsers.add_parser("inspect")
     inspect.add_argument("--recipe", required=True)

@@ -12,6 +12,7 @@
 
 name: julia
 version: 1.13.3
+julia_version: "1.13.3"
 
 test_data:
   output_dir: test_output
@@ -50,7 +51,7 @@ tests:
   - name: Version check
     description: Verify Julia binary runs and reports version
     command: julia --version
-    expected_output_contains: "julia version ${version}"
+    expected_output_contains: "julia version ${julia_version}"
     expected_exit_code: 0
 
   - name: Help output
@@ -68,7 +69,7 @@ tests:
   - name: Version constant
     description: Test VERSION constant access
     command: julia -e 'println(VERSION)'
-    expected_output_contains: "${version}"
+    expected_output_contains: "${julia_version}"
     expected_exit_code: 0
 
   - name: System kernel info

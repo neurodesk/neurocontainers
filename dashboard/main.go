@@ -64,9 +64,9 @@ type ContainerGroup struct {
 }
 
 type DataSources struct {
-	ReleasesDir  string
-	RecipesDir   string
-	AppsJSONPath string
+	ReleasesDir string
+	RecipesDir  string
+	CatalogRoot string
 }
 
 func (ds *DataSources) normalize() error {
@@ -94,17 +94,21 @@ func (ds *DataSources) normalize() error {
 		return fmt.Errorf("recipes directory %q not found", ds.RecipesDir)
 	}
 
-	if ds.AppsJSONPath == "" {
-		ds.AppsJSONPath = firstExisting(
-			filepath.Join("data", "neurocommand", "neurodesk", "apps.json"),
-			"apps.json",
-			filepath.Join("dashboard", "apps.json"),
+	if ds.CatalogRoot == "" {
+		ds.CatalogRoot = firstExisting(
+			"apps-catalog",
+			filepath.Join("data", "apps.json"),
+			filepath.Join("..", "apps.json"),
+			filepath.Join("..", "..", "apps.json"),
 		)
-		if ds.AppsJSONPath == "" {
-			return fmt.Errorf("apps.json not found; generate via tools/generate_apps_json.py or set --apps-json")
+		if ds.CatalogRoot == "" {
+			return fmt.Errorf("apps.json catalog repository not found; set --catalog-root")
 		}
-	} else if !fileExists(ds.AppsJSONPath) {
-		return fmt.Errorf("apps.json file %q not found", ds.AppsJSONPath)
+	} else if !dirExists(ds.CatalogRoot) {
+		return fmt.Errorf("apps.json catalog directory %q not found", ds.CatalogRoot)
+	}
+	if !fileExists(filepath.Join(ds.CatalogRoot, "domains.json")) {
+		return fmt.Errorf("apps.json catalog %q has no domains.json", ds.CatalogRoot)
 	}
 
 	return nil
@@ -140,19 +144,8 @@ func fileExists(path string) bool {
 
 func loadContainerProgress(cfg DataSources) ([]ContainerProgress, error) {
 	releasesDir := cfg.ReleasesDir
-	appsPath := cfg.AppsJSONPath
-
-	type appEntry struct {
-		Apps map[string]json.RawMessage `json:"apps"`
-	}
-
-	appsBytes, err := os.ReadFile(appsPath)
+	appsContainers, err := loadCatalogApps(cfg.CatalogRoot)
 	if err != nil {
-		return nil, err
-	}
-
-	appsContainers := map[string]appEntry{}
-	if err := json.Unmarshal(appsBytes, &appsContainers); err != nil {
 		return nil, err
 	}
 
@@ -248,9 +241,9 @@ func loadContainerProgress(cfg DataSources) ([]ContainerProgress, error) {
 		}
 	}
 
-	for containerName, entry := range appsContainers {
+	for containerName, appNames := range appsContainers {
 		container := addContainer(containerName)
-		for appName := range entry.Apps {
+		for appName := range appNames {
 			version := parseVersionFromAppKey(appName)
 			if version == "" {
 				continue
@@ -312,6 +305,50 @@ func loadContainerProgress(cfg DataSources) ([]ContainerProgress, error) {
 	}
 
 	return progress, nil
+}
+
+func loadCatalogApps(root string) (map[string]map[string]struct{}, error) {
+	type domainRegistry struct {
+		Domains map[string]json.RawMessage `json:"domains"`
+	}
+	type appEntry struct {
+		Apps map[string]json.RawMessage `json:"apps"`
+	}
+	registryBytes, err := os.ReadFile(filepath.Join(root, "domains.json"))
+	if err != nil {
+		return nil, err
+	}
+	var registry domainRegistry
+	if err := json.Unmarshal(registryBytes, &registry); err != nil {
+		return nil, fmt.Errorf("parse domains.json: %w", err)
+	}
+	if len(registry.Domains) == 0 {
+		return nil, errors.New("domains.json has no domains")
+	}
+	result := map[string]map[string]struct{}{}
+	for domain := range registry.Domains {
+		if domain == "" || strings.ContainsAny(domain, `/\\`) || domain == "." || domain == ".." {
+			return nil, fmt.Errorf("invalid catalog domain %q", domain)
+		}
+		path := filepath.Join(root, domain, "apps.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		var catalog map[string]appEntry
+		if err := json.Unmarshal(data, &catalog); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		for containerName, entry := range catalog {
+			if result[containerName] == nil {
+				result[containerName] = map[string]struct{}{}
+			}
+			for appName := range entry.Apps {
+				result[containerName][appName] = struct{}{}
+			}
+		}
+	}
+	return result, nil
 }
 
 func setToSortedSlice(set map[string]struct{}) []string {
@@ -587,7 +624,7 @@ func main() {
 	skipGitHub := fs.Bool("skip-github", false, "skip fetching the latest GitHub test run report")
 	releasesDir := fs.String("releases-dir", "", "path to container release metadata (defaults to releases/)")
 	recipesDir := fs.String("recipes-dir", "", "path to container recipes (defaults to recipes/)")
-	appsJSON := fs.String("apps-json", "", "path to apps.json for comparing published apps")
+	catalogRoot := fs.String("catalog-root", "", "path to the apps.json repository with domain catalogs")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		slog.Error("parse flags", "error", err)
@@ -599,9 +636,9 @@ func main() {
 	opts := BuildOptions{
 		SkipGitHub: *skipGitHub,
 		DataSources: DataSources{
-			ReleasesDir:  *releasesDir,
-			RecipesDir:   *recipesDir,
-			AppsJSONPath: *appsJSON,
+			ReleasesDir: *releasesDir,
+			RecipesDir:  *recipesDir,
+			CatalogRoot: *catalogRoot,
 		},
 	}
 
