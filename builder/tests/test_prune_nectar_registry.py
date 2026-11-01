@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -205,6 +206,91 @@ def test_apply_refuses_a_plan_that_differs_from_the_reviewed_one(
     argv = ["--apps-json", str(apps_path), "--apply", "--expect-plan", "stale"]
     assert prune.main(argv) == 1
     assert fake.store["napari_0.8.0"] == [retired]
+
+
+def make_catalog(root: Path, domains: dict[str, dict]) -> Path:
+    """Write a domains.json + per-domain apps.json under *root* and return root."""
+    registry: dict = {"domains": {}}
+    for name, catalog in domains.items():
+        registry["domains"][name] = {"source_repositories": [f"Example/{name}"]}
+        (root / name).mkdir(parents=True, exist_ok=True)
+        (root / name / "apps.json").write_text(json.dumps(catalog))
+    (root / "domains.json").write_text(json.dumps(registry))
+    return root
+
+
+def test_catalog_merges_all_domains(tmp_path: Path) -> None:
+    catalog = make_catalog(
+        tmp_path,
+        {
+            "neuroimaging": {
+                "napari": {
+                    "apps": {
+                        "napari 0.9.2": {"version": "20261013", "exec": ""},
+                        "napari GUI-napari 0.9.2": {
+                            "version": "20261013",
+                            "exec": "napari",
+                        },
+                    },
+                    "categories": ["visualization"],
+                }
+            },
+            "microscopy": {
+                "napari_arm64": {
+                    "apps": {"napari_arm64 0.9.2": {"version": "20261013", "exec": ""}},
+                    "categories": ["visualization"],
+                }
+            },
+        },
+    )
+    assert prune.published_images_from_catalog(catalog) == {
+        ("napari_0.9.2", "20261013"),
+        ("napari_arm64_0.9.2", "20261013"),
+    }
+
+
+def test_catalog_respects_explicit_image_field(tmp_path: Path) -> None:
+    catalog = make_catalog(
+        tmp_path,
+        {
+            "microscopy": {
+                "viewer": {
+                    "apps": {
+                        "viewerGUI-viewer 2.0": {
+                            "version": "20250104",
+                            "image": "viewer_2.0",
+                        }
+                    },
+                    "categories": ["visualization"],
+                }
+            }
+        },
+    )
+    assert prune.published_images_from_catalog(catalog) == {
+        ("viewer_2.0", "20250104"),
+    }
+
+
+def test_main_uses_catalog_root(tmp_path: Path, monkeypatch, capsys) -> None:
+    catalog = make_catalog(
+        tmp_path / "catalog",
+        {
+            "neuroimaging": {
+                "napari": {
+                    "apps": {"napari 0.9.2": {"version": "20261013", "exec": ""}},
+                    "categories": ["visualization"],
+                }
+            }
+        },
+    )
+    current = artifact("napari_0.9.2", "latest", "20261013")
+    retired = artifact("napari_0.8.0", "latest", "20260814")
+    fake = FakeHarbor({"napari_0.9.2": [current], "napari_0.8.0": [retired]})
+    monkeypatch.setattr(prune, "Harbor", lambda *args: fake)
+
+    assert prune.main(["--catalog-root", str(catalog)]) == 0
+    out = capsys.readouterr().out
+    assert "Delete:     1" in out
 
 
 def test_deletes_use_a_registry_token_and_reads_stay_anonymous(monkeypatch) -> None:

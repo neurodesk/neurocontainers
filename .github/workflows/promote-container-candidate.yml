@@ -221,6 +221,7 @@ jobs:
       actions: read
     outputs:
       artifacts: ${{ steps.candidate.outputs.artifacts }}
+      unavailable: ${{ steps.candidate.outputs.unavailable }}
     steps:
       - name: Wait for the successful candidate run for the exact PR head
         id: candidate
@@ -283,6 +284,36 @@ jobs:
               core.setOutput('artifacts', JSON.stringify(metadata.map(item => ({id: item.id, name: item.name}))));
               return;
             }
+            // prune-candidate-artifacts.yml deletes a merge's candidate bundles once
+            // any attempt of its trusted push promotion finalized, so a dispatch can
+            // no longer republish from them. A later failed rerun does not undo a
+            // finalization; refuse before selecting a possibly partial set.
+            if (context.eventName === 'workflow_dispatch') {
+              const mergeSha = process.env.MERGE_SHA;
+              const repository = `${context.repo.owner}/${context.repo.repo}`;
+              const pushes = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                ...context.repo, workflow_id: 'promote-container-candidate.yml',
+                head_sha: mergeSha, event: 'push', branch: 'main', per_page: 100,
+              });
+              const trusted = pushes.filter(item =>
+                item.head_sha === mergeSha && item.event === 'push' &&
+                item.head_branch === 'main' &&
+                item.path === '.github/workflows/promote-container-candidate.yml' &&
+                item.repository.full_name === repository &&
+                item.head_repository.full_name === repository);
+              for (const push of trusted) {
+                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  ...context.repo, run_id: push.id, filter: 'all', per_page: 100,
+                });
+                if (jobs.some(job => job.name === 'finalize' && job.conclusion === 'success')) {
+                  core.setOutput('unavailable', 'finalized');
+                  throw new Error(
+                    `Push promotion run ${push.id} already finalized this merge, and its ` +
+                    'candidate bundles are deleted after finalization. Rebuild with manual-build.'
+                  );
+                }
+              }
+            }
             const workflows = await github.rest.actions.listRepoWorkflows({
               owner: context.repo.owner, repo: context.repo.repo,
             });
@@ -322,7 +353,11 @@ jobs:
                   !item.name.startsWith('candidate-report-') && item.name.endsWith(suffix)
                 );
                 if (candidates.length === 0) {
-                  throw new Error(`Successful candidate run ${run.id} has no candidate artifacts`);
+                  core.setOutput('unavailable', 'missing');
+                  throw new Error(
+                    `Successful candidate run ${run.id} has no candidate artifacts. They ` +
+                    'may have expired or been deleted; rebuild with manual-build.'
+                  );
                 }
                 core.setOutput(
                   'artifacts',
@@ -1140,6 +1175,7 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           AWAIT_RESULT: ${{ needs.await_candidate.result }}
+          UNAVAILABLE: ${{ needs.await_candidate.outputs.unavailable }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           FINALIZE_RESULT: ${{ needs.finalize.result }}
           SYNC_RESULT: ${{ needs.sync_openrecon.result }}
@@ -1176,6 +1212,11 @@ jobs:
                 .addCodeBlock(recoveryCommand, 'bash')
                 .addLink('Staged recovery', recoveryDocs)
                 .write();
+            }
+            if (process.env.UNAVAILABLE === 'finalized') {
+              // The merge already finalized; keep its success status in place.
+              core.notice(`PR #${issue_number} already finalized; republish with manual-build.`);
+              return;
             }
             const marker = '<!-- one-pr-container-candidate -->';
             const lifecycleStart = '<!-- container-release-status:start -->';
@@ -1229,6 +1270,9 @@ jobs:
             } else if (process.env.SKIP_REASON === 'mixed-pr') {
               heading = `## ⚠️ ${identity} merged — not promoted automatically`;
               action = '**Action required:** This PR changed repository code alongside recipes, so automatic promotion does not apply and rerunning it will skip again. Publish the changed recipes with the `manual-build` workflow.';
+            } else if (process.env.UNAVAILABLE === 'missing') {
+              heading = `## ⚠️ ${identity} merged — candidate bundles are unavailable`;
+              action = '**Action required:** The passing candidate run has no candidate bundles left: they expire after 30 days and are deleted once a promotion finalizes. Rerunning promotion cannot recover them; publish the changed recipes with the `manual-build` workflow.';
             } else if (awaitResult === 'failure' || awaitResult === 'cancelled') {
               heading = `## ⚠️ ${identity} merged — candidate promotion is blocked`;
               action = `**Action required:** Inspect the candidate wait failure, then rerun \`Promote merged container candidate\` with \`pr_number=${issue_number}\`. Do not rebuild a candidate that has already passed.`;

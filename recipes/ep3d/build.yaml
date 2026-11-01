@@ -1,5 +1,6 @@
 name: ep3d
 version: 1.0.0
+epoch: 1
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE

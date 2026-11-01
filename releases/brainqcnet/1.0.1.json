@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "brainqcnet 1.0.1": {
+      "version": "20261031",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control",
+    "structural imaging",
+    "machine learning",
+    "bids apps"
+  ]
+}

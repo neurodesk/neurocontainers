@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -e
+exec python3 /opt/code/python-ismrmrd-server/main.py --defaultConfig brainqcnet "$@"

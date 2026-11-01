@@ -1,5 +1,5 @@
 variables:
-  dcm2niix_tag: v1.0.20260724
+  dcm2niix_tag: "v1.0.20261029"
 
 name: dicomtools
 version: "1.1.0"

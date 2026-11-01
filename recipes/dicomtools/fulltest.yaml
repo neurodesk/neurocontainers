@@ -19,7 +19,7 @@
 
 name: dicomtools
 version: "1.1.0"
-dcm2niix_tag: v1.0.20260724
+dcm2niix_tag: "v1.0.20261029"
 
 required_files:
   - dataset: ds000001
