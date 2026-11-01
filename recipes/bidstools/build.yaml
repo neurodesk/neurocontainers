@@ -13,9 +13,9 @@ variables:
     - value: Miniconda3-latest-Linux-aarch64.sh
       condition: arch == "aarch64"
   heudiconv_version: "1.5.1"
-  traits_version: 7.1.0
+  traits_version: "7.3.0"
   bru2nii_version: 1.0.20180303
-  dcm2niix_version: "1.0.20260724"
+  dcm2niix_version: "1.0.20261029"
 
 auto_update:
   container_version: false
