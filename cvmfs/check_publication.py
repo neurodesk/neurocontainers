@@ -34,6 +34,13 @@ class PublishedInventory:
     missing: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class PublishedContainers:
+    revision: str
+    root_hash: str
+    ids: frozenset[str]
+
+
 def _is_primary_container_app(menu_name: str, app_name: str) -> bool:
     if "-" not in app_name:
         return True
@@ -117,7 +124,8 @@ def _workspace():
         shutil.rmtree(scratch)
 
 
-def _inspect_with_ids(ids: frozenset[str]) -> PublishedInventory:
+@contextmanager
+def _public_snapshot():
     with _workspace() as scratch:
         root = scratch / "mount"
         cache = scratch / "cache"
@@ -176,12 +184,11 @@ def _inspect_with_ids(ids: frozenset[str]) -> PublishedInventory:
                         )
                     time.sleep(0.1)
                 before = _identity(root)
-                missing = _inspect_snapshot(root, ids)
+                yield root, before
                 if before != _identity(root):
                     raise PublicationUnavailable(
                         "CVMFS snapshot changed during inspection"
                     )
-                return PublishedInventory(*before, missing)  # type: ignore[return-value]
         finally:
             signal.alarm(0)
             for signum, handler in previous_handlers.items():
@@ -205,6 +212,42 @@ def _inspect_with_ids(ids: frozenset[str]) -> PublishedInventory:
                             with suppress(ProcessLookupError):
                                 os.killpg(process.pid, signal.SIGKILL)
                             process.wait(timeout=5)
+
+
+def _inspect_with_ids(ids: frozenset[str]) -> PublishedInventory:
+    with _public_snapshot() as (root, (revision, root_hash)):
+        return PublishedInventory(revision, root_hash, _inspect_snapshot(root, ids))
+
+
+def inspect_published_containers() -> PublishedContainers:
+    """Protect image payloads still present in a signed public snapshot."""
+    with _public_snapshot() as (root, (revision, root_hash)):
+        containers = root / "containers"
+        if not stat.S_ISDIR(containers.lstat().st_mode):
+            raise PublicationUnavailable("Public containers path is not a directory")
+        ids = set()
+        for entry in containers.iterdir():
+            if not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,245}_[0-9]{8}", entry.name
+            ):
+                continue
+            if not stat.S_ISDIR(entry.lstat().st_mode):
+                raise PublicationUnavailable(
+                    f"Public container is not a directory: {entry.name}"
+                )
+            try:
+                image_mode = (entry / f"{entry.name}.simg").lstat().st_mode
+            except FileNotFoundError:
+                # Retirement leaves disabled wrappers after removing the payload.
+                continue
+            if not (stat.S_ISDIR(image_mode) or stat.S_ISREG(image_mode)):
+                raise PublicationUnavailable(
+                    f"Public image is not a file or directory: {entry.name}"
+                )
+            ids.add(entry.name)
+        if not ids:
+            raise PublicationUnavailable("Public container inventory is empty")
+        return PublishedContainers(revision, root_hash, frozenset(ids))
 
 
 def inspect_publication(log_path: Path) -> PublishedInventory:
