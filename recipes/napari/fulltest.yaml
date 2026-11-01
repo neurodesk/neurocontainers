@@ -35,7 +35,7 @@ tests:
     expected_output_contains: "${version}"
 
   - name: segmentation plugins are installed and discoverable
-    description: Verify both segmentation packages import and publish napari manifests.
+    description: Verify napari discovers both segmentation plugins and docks their widgets.
     command: |
       set -euo pipefail
       export XDG_CACHE_HOME="${output_dir}/napari-cache"
@@ -61,11 +61,16 @@ tests:
       missing = required - manifests
       assert not missing, f"Missing napari plugin manifests: {sorted(missing)}"
 
+      # Open the plugins the way users do: as dock widgets the viewer owns.
+      # Constructing parentless widgets here instead lets garbage collection
+      # free them after the QApplication, which segfaults at interpreter exit.
       viewer = napari.Viewer(show=False)
-      widgets = [nnInteractiveWidget(viewer), VoxtellWidget(viewer)]
-      assert all(widget is not None for widget in widgets)
-      for widget in widgets:
-          widget.close()
+      for plugin, widget_type in (
+          ("napari-nninteractive", nnInteractiveWidget),
+          ("napari-voxtell", VoxtellWidget),
+      ):
+          _, widget = viewer.window.add_plugin_dock_widget(plugin)
+          assert isinstance(widget, widget_type), f"{plugin} docked {type(widget)!r}"
       viewer.close()
       print("VoxTell and nnInteractive napari plugins are installed")
       PY
