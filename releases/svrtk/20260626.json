@@ -1,7 +1,7 @@
 {
   "apps": {
     "svrtk 20260626": {
-      "version": "20260718",
+      "version": "20261101",
       "exec": "",
       "apptainer_args": []
     }
