@@ -18,7 +18,6 @@ variables:
   cran_snapshot: "2026-10-31"
   mricrotome_commit: "27aa2cd1025a063fdb07cec7f555f498428400da"
   rminc_commit: "01866cb94ff08679a47cae83a808352f6a25dc77"
-  rbokeh_commit: "2c92dd69f6f69dd61b3fd3cbee142c35415ad848"
 
 auto_update:
   method: sources
@@ -61,13 +60,6 @@ auto_update:
       dependency: true
       target:
         variable: rminc_commit
-    - id: rbokeh
-      method: github_commit
-      repo: bokeh/rbokeh
-      ref: HEAD
-      dependency: true
-      target:
-        variable: rbokeh_commit
 
 build:
   kind: neurodocker
@@ -296,9 +288,10 @@ files:
       install.packages(c("caret", "BayesFactor"), dependencies = TRUE)
       github <- c(
         MRIcrotome = "Mouse-Imaging-Centre/MRIcrotome@{{ context.mricrotome_commit }}",
-        RMINC = "Mouse-Imaging-Centre/RMINC@{{ context.rminc_commit }}",
-        rbokeh = "bokeh/rbokeh@{{ context.rbokeh_commit }}"
+        RMINC = "Mouse-Imaging-Centre/RMINC@{{ context.rminc_commit }}"
       )
+      # rbokeh is not installed: upstream archived it, and its pryr dependency
+      # left CRAN in 2026 and no longer compiles against R 4.6.
       for (repo in github) remotes::install_github(repo, upgrade = "never")
       # install.packages() only warns when a package fails, so check explicitly.
       wanted <- c(cran, "caret", "BayesFactor", names(github))
