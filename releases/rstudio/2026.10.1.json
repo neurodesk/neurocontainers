@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "rstudio 2026.10.1": {
+      "version": "20261101",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "rstudioGUI-rstudio 2026.10.1": {
+      "version": "20261101",
+      "exec": "rstudio",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "statistics"
+  ]
+}
