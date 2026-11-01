@@ -10,13 +10,56 @@ architectures:
 
 variables:
   upstream_tag: "v2026.10.1+239"
+  # R from CRAN's jammy-cran40 apt repository, pinned to one exact build.
+  r_version: "4.6.2-1.2204.0"
+  # Posit Package Manager CRAN snapshot that every CRAN package comes from.
+  # It advances together with R and RStudio, so packages always match the R
+  # they were tested with.
+  cran_snapshot: "2026-10-31"
+  mricrotome_commit: "27aa2cd1025a063fdb07cec7f555f498428400da"
+  rminc_commit: "01866cb94ff08679a47cae83a808352f6a25dc77"
 
 auto_update:
-  method: github_tags
-  repo: rstudio/rstudio
-  tag_variable: upstream_tag
-  version_regex: 'v(?P<version>\d{4}\.\d{2}\.\d+)\+\d+'
-  reason: Build-only revisions require manual review; automatic PRs track changes to the RStudio software version.
+  method: sources
+  container_version: rstudio
+  sources:
+    - id: rstudio
+      method: github_tags
+      repo: rstudio/rstudio
+      version_regex: 'v(?P<version>\d{4}\.\d{2}\.\d+)\+\d+'
+      target:
+        variable: upstream_tag
+        value: tag
+    - id: r
+      method: apt
+      package: r-base-core
+      urls:
+        - https://cloud.r-project.org/bin/linux/ubuntu/jammy-cran40/Packages.gz
+      target:
+        variable: r_version
+        fulltest_variable: r_version
+    - id: cran_snapshot
+      method: webpage
+      url: https://packagemanager.posit.co/__api__/repos/cran/transaction-dates
+      version_regex: '"alias":"(?P<version>[0-9-]+)"'
+      version_scheme: date
+      dependency: true
+      target:
+        variable: cran_snapshot
+    - id: mricrotome
+      method: github_commit
+      repo: Mouse-Imaging-Centre/MRIcrotome
+      ref: HEAD
+      dependency: true
+      target:
+        variable: mricrotome_commit
+    - id: rminc
+      method: github_commit
+      repo: Mouse-Imaging-Centre/RMINC
+      ref: HEAD
+      dependency: true
+      target:
+        variable: rminc_commit
 
 build:
   kind: neurodocker
@@ -40,9 +83,8 @@ build:
         - locale-gen en_AU.UTF-8
 
     # Ubuntu 22.04 ships R 4.1.2, which current CRAN packages no longer
-    # support (readxl and gargle require R >= 4.2). Install R from CRAN's
-    # jammy-cran40 repository so it keeps pace with the CRAN packages that
-    # dependencies.R installs.
+    # support (readxl and gargle require R >= 4.2). Install the pinned R
+    # from CRAN's jammy-cran40 repository instead.
     - run:
         - install -m 0644 {{ get_file("cran_ubuntu_key") }} /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc
         - echo "deb https://cloud.r-project.org/bin/linux/ubuntu jammy-cran40/" > /etc/apt/sources.list.d/cran.list
@@ -69,7 +111,9 @@ build:
         - apt-transport-https
         - ca-certificates
         - software-properties-common
-        - r-base
+        - "r-base={{ context.r_version }}"
+        - "r-base-core={{ context.r_version }}"
+        - "r-recommended={{ context.r_version }}"
         - gdebi-core
         - libssl-dev
         - libexpat1-dev
@@ -227,33 +271,32 @@ files:
 
   - name: dependencies.R
     contents: |-
-      # R Script to install the dependencies
-      if(!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
-      if("devtools" %in% rownames(installed.packages()) == FALSE) {install.packages("devtools")}
-      if("MRIcrotome" %in% rownames(installed.packages()) == FALSE) {remotes::install_github("Mouse-Imaging-Centre/MRIcrotome", upgrade_dependencies = FALSE)}
-      if("RMINC" %in% rownames(installed.packages()) == FALSE) {remotes::install_github("Mouse-Imaging-Centre/RMINC", upgrade_dependencies = FALSE)}
-      if("ProbBayes" %in% rownames(installed.packages()) == FALSE) {install.packages("ProbBayes")}
-      if("bayesplot" %in% rownames(installed.packages()) == FALSE) {install.packages("bayesplot")}
-      if("brms" %in% rownames(installed.packages()) == FALSE) {install.packages("brms")}
-      if("rstan" %in% rownames(installed.packages()) == FALSE) {install.packages("rstan")}
-      if("Rcpp" %in% rownames(installed.packages()) == FALSE) {install.packages("Rcpp")}
-      if("reticulate" %in% rownames(installed.packages()) == FALSE) {install.packages("reticulate")}
-      if("fastICA" %in% rownames(installed.packages()) == FALSE) {install.packages("fastICA")}
-      if("forge" %in% rownames(installed.packages()) == FALSE) {install.packages("forge")}
-      if("rmarkdown" %in% rownames(installed.packages()) == FALSE) {install.packages("rmarkdown")}
-      if("plotly" %in% rownames(installed.packages()) == FALSE) {install.packages("plotly")}
-      if("shiny" %in% rownames(installed.packages()) == FALSE) {install.packages("shiny")}
-      if("tidyverse" %in% rownames(installed.packages()) == FALSE) {install.packages("tidyverse")}
-      if("RColorBrewer" %in% rownames(installed.packages()) == FALSE) {install.packages("RColorBrewer")}
-      if("paletteer" %in% rownames(installed.packages()) == FALSE) {install.packages("paletteer")}
-      if("ggpubr" %in% rownames(installed.packages()) == FALSE) {install.packages("ggpubr")}
-      if("ggthemes" %in% rownames(installed.packages()) == FALSE) {install.packages("ggthemes")}
-      if("rbokeh" %in% rownames(installed.packages()) == FALSE) {remotes::install_github("bokeh/rbokeh")}
-      if("RcppCNPy" %in% rownames(installed.packages()) == FALSE) {install.packages("RcppCNPy")}
-      if("R.matlab" %in% rownames(installed.packages()) == FALSE) {install.packages("R.matlab")}
-      if("caret" %in% rownames(installed.packages()) == FALSE) {install.packages("caret", dependencies = TRUE)}
-      if("car" %in% rownames(installed.packages()) == FALSE) {install.packages("car")}
-      if("BayesFactor" %in% rownames(installed.packages()) == FALSE) {install.packages("BayesFactor", dependencies = TRUE)}
+      # Install every package from the pinned CRAN snapshot. The user agent
+      # names the R version so Posit Package Manager serves Linux binaries.
+      options(
+        repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/{{ context.cran_snapshot }}"),
+        HTTPUserAgent = sprintf("R/%s R (%s)", getRversion(),
+          paste(getRversion(), R.version$platform, R.version$arch, R.version$os)),
+        timeout = 1800,
+        Ncpus = max(1L, parallel::detectCores() - 1L)
+      )
+      cran <- c("remotes", "devtools", "ProbBayes", "bayesplot", "brms", "rstan",
+        "Rcpp", "reticulate", "fastICA", "forge", "rmarkdown", "plotly", "shiny",
+        "tidyverse", "RColorBrewer", "paletteer", "ggpubr", "ggthemes", "RcppCNPy",
+        "R.matlab", "car", "hexbin", "maps")
+      install.packages(cran)
+      install.packages(c("caret", "BayesFactor"), dependencies = TRUE)
+      github <- c(
+        MRIcrotome = "Mouse-Imaging-Centre/MRIcrotome@{{ context.mricrotome_commit }}",
+        RMINC = "Mouse-Imaging-Centre/RMINC@{{ context.rminc_commit }}"
+      )
+      # rbokeh is not installed: upstream archived it, and its pryr dependency
+      # left CRAN in 2026 and no longer compiles against R 4.6.
+      for (repo in github) remotes::install_github(repo, upgrade = "never")
+      # install.packages() only warns when a package fails, so check explicitly.
+      wanted <- c(cran, "caret", "BayesFactor", names(github))
+      missing <- wanted[!vapply(wanted, requireNamespace, logical(1), quietly = TRUE)]
+      if (length(missing)) stop("R packages failed to install: ", paste(missing, collapse = ", "))
 
 domains:
   - neuroimaging
