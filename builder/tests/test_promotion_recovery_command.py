@@ -22,7 +22,7 @@ COMMENT = (
 )
 
 
-def run_report(event, publish, finalize, comment=COMMENT):
+def run_report(event, publish, finalize, comment=COMMENT, **overrides):
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/promote-container-candidate.yml").read_text()
     )
@@ -71,6 +71,8 @@ const context = {
         "SYNC_RESULT": "skipped",
         "SKIP_REASON": "",
         "FINALIZED_CONTAINERS": "",
+        "UNAVAILABLE": "",
+        **overrides,
     }
     result = subprocess.run(
         [
@@ -121,3 +123,25 @@ def test_recovery_command_reaches_the_run_without_a_candidate_comment():
     assert "updated" not in observed
     assert any(COMMAND in error for error in observed["errors"])
     assert COMMAND in observed["summary"]
+
+
+def test_missing_bundles_point_at_manual_build_instead_of_a_rerun():
+    observed = run_report(
+        "push", "skipped", "skipped", AWAIT_RESULT="failure", UNAVAILABLE="missing"
+    )
+
+    assert "candidate bundles are unavailable" in observed["updated"]
+    assert "manual-build" in observed["updated"]
+    assert "pr_number=" not in observed["updated"]
+
+
+def test_a_refused_republish_keeps_the_finalized_status():
+    observed = run_report(
+        "workflow_dispatch",
+        "skipped",
+        "skipped",
+        AWAIT_RESULT="failure",
+        UNAVAILABLE="finalized",
+    )
+
+    assert "updated" not in observed

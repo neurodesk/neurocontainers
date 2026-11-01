@@ -1,9 +1,9 @@
 name: Prune candidate artifacts
 
-# Deletes PR candidate bundles whose head no promotion can select: superseded
-# pushes and PRs closed without merging. Every bundle of an open PR head or a
-# merged PR final head is kept until it expires, so recovery and republishing
-# work.
+# Deletes PR candidate bundles whose head no promotion can select: finalized
+# merges, superseded pushes and PRs closed without merging. Every bundle of an
+# open PR head, or of a merged PR final head that has not finalized, is kept
+# until it expires, so recovery keeps working.
 # See tools/prune_candidate_artifacts.py. Scheduled runs delete; manual runs
 # only report unless apply is ticked.
 
@@ -35,7 +35,7 @@ jobs:
     # Run only main's reviewed copy of the script with a deleting token.
     if: github.repository == 'neurodesk/neurocontainers' && (github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       actions: write
       contents: read

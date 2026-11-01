@@ -4,11 +4,13 @@
 bundle (Docker archive, SIF and test output) for every PR push that needs a
 build, and keeps it for 30 days. Promotion, including a ``pr_number``
 republish, only ever selects bundles for a merged PR's final head SHA, and an
-open PR can still become one. A bundle whose head SHA is neither an open PR's
-head nor a merged PR's final head is dead: a superseded push, or a PR closed
-without merging. Those are deleted. A later push back to that SHA, or
-reopening the PR, starts a new candidate run, which promotion would select
-instead.
+open PR can still become one. A head is live while it is an open PR's head, or
+a merged PR's final head whose trusted push promotion has not finalized in any
+attempt. Once a ``finalize`` job succeeded, a republish refuses the merge and points at
+``manual-build``, so its bundles are dead too. Bundles of dead heads are
+deleted: finalized merges, superseded pushes and PRs closed without merging.
+A later push back to a dead SHA, or reopening the PR, starts a new candidate
+run, which promotion would select instead.
 
 Every bundle of a live head is kept, including older runs for it, because a
 running promotion may already have selected one. Bundles created within
@@ -41,7 +43,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -101,13 +103,13 @@ def plan_deletions(
         if bundle.created >= cutoff:
             keep.append(Decision(bundle, "recent"))
         elif bundle.head_sha in live_heads:
-            keep.append(Decision(bundle, "head of an open or merged PR"))
+            keep.append(Decision(bundle, "head of an open or unfinalized merged PR"))
         elif run is None or run.head_sha != bundle.head_sha:
             keep.append(Decision(bundle, "not from a known candidate run"))
         elif bundle.head_sha in busy_heads:
             keep.append(Decision(bundle, "candidate run in progress"))
         else:
-            delete.append(Decision(bundle, "head of no open or merged PR"))
+            delete.append(Decision(bundle, "head of no open or unfinalized merged PR"))
     return Plan(keep, delete)
 
 
@@ -130,17 +132,20 @@ def parse_bundle(item: dict) -> Bundle | None:
     )
 
 
-def live_heads(pulls: Iterable[dict]) -> set[str]:
+def live_heads(pulls: Iterable[dict], finalized: Collection[str] = ()) -> set[str]:
+    """Open PR heads and the final heads of merges not in ``finalized``."""
     return {
         pull["head"]["sha"]
         for pull in pulls
-        if pull["state"] == "open" or pull.get("merged_at")
+        if pull["state"] == "open"
+        or (pull.get("merged_at") and pull.get("merge_commit_sha") not in finalized)
     }
 
 
 class GitHub:
     def __init__(self, token: str, repository: str = REPOSITORY, api: str = API):
         self.token = token
+        self.repository = repository
         self.base = f"{api}/repos/{repository}"
 
     def _request(self, method: str, url: str) -> tuple[object, str]:
@@ -190,6 +195,38 @@ class GitHub:
             f"/actions/workflows/{CANDIDATE_WORKFLOW}/runs?{query}", "workflow_runs"
         )
         return any(run["status"] != "completed" for run in runs)
+
+    def push_promotion_finalized(self, merge_sha: str) -> bool:
+        """Whether any attempt of a trusted push promotion of a merge finalized.
+
+        Finalization is permanent: a later rerun that fails does not unpublish
+        the release, and must not make its bundles look recoverable again.
+        """
+        query = urllib.parse.urlencode(
+            {"event": "push", "branch": "main", "head_sha": merge_sha, "per_page": 100}
+        )
+        runs = self._pages(
+            f"/actions/workflows/{PROMOTION_WORKFLOW}/runs?{query}", "workflow_runs"
+        )
+        for run in runs:
+            if not (
+                run["head_sha"] == merge_sha
+                and run["event"] == "push"
+                and run["head_branch"] == "main"
+                and run["path"].endswith(f".github/workflows/{PROMOTION_WORKFLOW}")
+                and run["repository"]["full_name"] == self.repository
+                and run["head_repository"]["full_name"] == self.repository
+            ):
+                continue
+            jobs = self._pages(
+                f"/actions/runs/{run['id']}/jobs?filter=all&per_page=100", "jobs"
+            )
+            if any(
+                job["name"] == "finalize" and job["conclusion"] == "success"
+                for job in jobs
+            ):
+                return True
+        return False
 
     def promotion_active(self) -> bool:
         """Whether any promotion run, including a rerun of an old one, is unfinished."""
@@ -266,7 +303,17 @@ def main(argv: list[str] | None = None) -> int:
         # Without PRs every head looks dead; never act on a failed listing.
         print("::error::The repository returned no pull requests; refusing to plan.")
         return 1
-    heads = live_heads(pulls)
+    # Only merges that still have bundles need their promotion checked.
+    bundle_heads = {b.head_sha for b in bundles}
+    finalized = {
+        pull["merge_commit_sha"]
+        for pull in pulls
+        if pull.get("merged_at")
+        and pull.get("merge_commit_sha")
+        and pull["head"]["sha"] in bundle_heads
+        and github.push_promotion_finalized(pull["merge_commit_sha"])
+    }
+    heads = live_heads(pulls, finalized)
     cutoff = started - timedelta(hours=args.min_age_hours)
     # Only dead heads can be deleted, so only their runs need checking.
     dead = [b for b in bundles if b.created < cutoff and b.head_sha not in heads]
@@ -289,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Dry run: nothing deleted. Pass --apply to delete.")
         return 0
     # A head may have come back to life while the plan was being made.
-    revived = live_heads(github.pulls())
+    revived = live_heads(github.pulls(), finalized)
     deleted = failures = 0
     for decision in plan.delete:
         if decision.bundle.head_sha in revived:

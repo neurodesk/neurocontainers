@@ -103,7 +103,14 @@ def test_only_candidate_bundles_are_considered(name: str, expected: str | None) 
 
 class FakeGitHub:
     def __init__(
-        self, bundles, runs, pulls, busy=(), later_pulls=None, promoting_after=None
+        self,
+        bundles,
+        runs,
+        pulls,
+        busy=(),
+        later_pulls=None,
+        promoting_after=None,
+        finalized=(),
     ):
         self.store = {b.id: b for b in bundles}
         self.runs = {run.id: run for run in runs}
@@ -112,6 +119,8 @@ class FakeGitHub:
         self.looked_up: list[int] = []
         self.promoting_after = promoting_after
         self.deletes = 0
+        self.finalized = set(finalized)
+        self.checked_merges: list[str] = []
 
     def bundles(self):
         return list(self.store.values())
@@ -127,6 +136,10 @@ class FakeGitHub:
         return (
             self.pull_lists.pop(0) if len(self.pull_lists) > 1 else self.pull_lists[0]
         )
+
+    def push_promotion_finalized(self, merge_sha):
+        self.checked_merges.append(merge_sha)
+        return merge_sha in self.finalized
 
     def promotion_active(self):
         return self.promoting_after is not None and self.deletes >= self.promoting_after
@@ -307,3 +320,107 @@ def test_client_sees_an_active_promotion_beyond_the_first_page(monkeypatch) -> N
     second = FakeResponse({"workflow_runs": [{"id": 9}]})
     serve(monkeypatch, promotion_pages(waiting=[first, second]))
     assert prune.GitHub("token").promotion_active()
+
+
+MERGE = "d" * 40
+
+
+def merged_pr(head: str = HEAD, merge: str = MERGE) -> dict:
+    return {
+        "state": "closed",
+        "head": {"sha": head},
+        "merged_at": "2026-10-20T00:00:00Z",
+        "merge_commit_sha": merge,
+    }
+
+
+def test_live_heads_drop_finalized_merges_but_not_open_prs() -> None:
+    other = "e" * 40
+    pulls = [merged_pr(), merged_pr(head=other, merge="f" * 40)]
+    assert prune.live_heads(pulls, {MERGE}) == {other}
+    assert prune.live_heads(pulls + OPEN_PR, {MERGE}) == {HEAD, other}
+
+
+@pytest.mark.parametrize(
+    "finalized, pulls, kept",
+    [
+        ({MERGE}, [merged_pr()], False),
+        ((), [merged_pr()], True),
+        # Another open PR on the same head can still be promoted from it.
+        ({MERGE}, [merged_pr()] + OPEN_PR, True),
+    ],
+)
+def test_sweep_deletes_bundles_of_finalized_merges(
+    monkeypatch, finalized, pulls, kept
+) -> None:
+    fake = FakeGitHub(
+        [bundle(HEAD, 1)], [prune.Run(1, HEAD)], pulls, finalized=finalized
+    )
+    assert run_sweep(monkeypatch, fake) == 0
+    assert bool(fake.store) is kept
+
+
+def test_sweep_only_checks_merges_that_still_have_bundles(monkeypatch) -> None:
+    fake = FakeGitHub(
+        [bundle(HEAD, 1)],
+        [prune.Run(1, HEAD)],
+        [merged_pr(), merged_pr(head="e" * 40, merge="f" * 40)],
+    )
+    run_sweep(monkeypatch, fake)
+    assert fake.checked_merges == [MERGE]
+
+
+def promotion_run(run_id, status="completed", repository=prune.REPOSITORY) -> dict:
+    return {
+        "id": run_id,
+        "status": status,
+        "head_sha": MERGE,
+        "event": "push",
+        "head_branch": "main",
+        "path": f".github/workflows/{prune.PROMOTION_WORKFLOW}",
+        "repository": {"full_name": prune.REPOSITORY},
+        "head_repository": {"full_name": repository},
+    }
+
+
+def serve_finalization(monkeypatch, runs, jobs_by_run) -> None:
+    workflow = f"/actions/workflows/{prune.PROMOTION_WORKFLOW}/runs"
+    query = f"event=push&branch=main&head_sha={MERGE}&per_page=100"
+    responses = {f"{workflow}?{query}": FakeResponse({"workflow_runs": runs})}
+    for run_id, jobs in jobs_by_run.items():
+        path = f"/actions/runs/{run_id}/jobs?filter=all&per_page=100"
+        responses[path] = FakeResponse({"jobs": jobs})
+    serve(monkeypatch, responses)
+
+
+FINALIZED = [{"name": "finalize", "conclusion": "success"}]
+FAILED = [{"name": "finalize", "conclusion": "failure"}]
+
+
+@pytest.mark.parametrize(
+    "runs, jobs_by_run, expected",
+    [
+        ([promotion_run(9)], {9: FINALIZED}, True),
+        # Finalization is permanent: a later failed rerun or run cannot undo it.
+        (
+            [promotion_run(5), promotion_run(9)],
+            {5: FINALIZED + FAILED, 9: FAILED},
+            True,
+        ),
+        # An earlier attempt finalized while a rerun is still going.
+        ([promotion_run(9, status="in_progress")], {9: FINALIZED}, True),
+        ([promotion_run(9)], {9: FAILED}, False),
+        (
+            [promotion_run(9)],
+            {9: [{"name": "finalize", "conclusion": "skipped"}]},
+            False,
+        ),
+        ([], {}, False),
+        ([promotion_run(9, repository="fork/neurocontainers")], {}, False),
+    ],
+)
+def test_client_counts_any_finalized_attempt_of_a_trusted_push_run(
+    monkeypatch, runs, jobs_by_run, expected
+) -> None:
+    serve_finalization(monkeypatch, runs, jobs_by_run)
+    assert prune.GitHub("token").push_promotion_finalized(MERGE) is expected
