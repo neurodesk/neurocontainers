@@ -1,11 +1,11 @@
 # rstudio container test suite
-# Tests for RStudio 2023.12.1 with R 4.1.2 and 335 packages
+# Tests for RStudio with R from CRAN's Ubuntu repository and 335 packages
 #
 # This container provides RStudio IDE (Desktop and Server) with a comprehensive
 # set of R packages for data science, statistics, machine learning, and visualization.
 
 name: rstudio
-version: 2026.10.0
+version: 2026.10.1
 
 test_data:
   output_dir: test_output
@@ -23,17 +23,17 @@ tests:
   - name: R version check
     description: Verify R binary runs and reports correct version
     command: R --version
-    expected_output_contains: "R version 4.1.2"
+    expected_output_contains: "R version 4."
 
-  - name: R version codename
-    description: Verify R version codename
-    command: R --version
-    expected_output_contains: "Bird Hippie"
+  - name: R meets CRAN package minimum
+    description: Verify R is new enough for current CRAN packages such as readxl and gargle
+    command: Rscript -e "stopifnot(getRversion() >= '4.2.0'); cat('R', as.character(getRversion()), 'supported')"
+    expected_output_contains: "supported"
 
   - name: Rscript version check
     description: Verify Rscript binary runs
     command: Rscript --version
-    expected_output_contains: "4.1.2"
+    expected_output_contains: "Rscript (R) version 4."
 
   - name: Rscript help
     description: Verify Rscript help is available
@@ -104,7 +104,7 @@ tests:
   - name: R session info
     description: Verify sessionInfo runs correctly
     command: Rscript -e "sessionInfo()"
-    expected_output_contains: "R version 4.1.2"
+    expected_output_contains: "R version 4."
 
   # ==========================================================================
   # CORE TIDYVERSE PACKAGES

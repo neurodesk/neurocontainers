@@ -1,5 +1,5 @@
 name: rstudio
-version: 2026.10.0
+version: 2026.10.1
 
 copyright:
   - license: AGPL-3.0
@@ -9,7 +9,7 @@ architectures:
   - x86_64
 
 variables:
-  upstream_tag: "v2026.10.0+233"
+  upstream_tag: "v2026.10.1+239"
 
 auto_update:
   method: github_tags
@@ -38,6 +38,14 @@ build:
 
     - run:
         - locale-gen en_AU.UTF-8
+
+    # Ubuntu 22.04 ships R 4.1.2, which current CRAN packages no longer
+    # support (readxl and gargle require R >= 4.2). Install R from CRAN's
+    # jammy-cran40 repository so it keeps pace with the CRAN packages that
+    # dependencies.R installs.
+    - run:
+        - install -m 0644 {{ get_file("cran_ubuntu_key") }} /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc
+        - echo "deb https://cloud.r-project.org/bin/linux/ubuntu jammy-cran40/" > /etc/apt/sources.list.d/cran.list
 
     - install:
         - wget
@@ -68,6 +76,7 @@ build:
         - curl
         - libxml2-dev
         - libcurl4-openssl-dev
+        - libuv1-dev
         - libharfbuzz-dev
         - libfribidi-dev
         - libclang-dev
@@ -167,6 +176,9 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: cran_ubuntu_key
+    url: "https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc"
+
   - name: rstudio_2023_12_1_402_amd64_deb
     url: "https://download1.rstudio.org/electron/jammy/amd64/rstudio-{{ context.upstream_tag[1:] | replace('+', '-') }}-amd64.deb"
 
