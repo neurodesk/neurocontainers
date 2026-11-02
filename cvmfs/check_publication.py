@@ -21,6 +21,9 @@ ORIGIN = f"http://stratum0.neurodesk.cloud.edu.au/cvmfs/{REPOSITORY}"
 PUBLIC_KEY = Path(__file__).with_name(f"{REPOSITORY}.pub")
 MAX_LOG_BYTES = 4 * 1024 * 1024
 PROBE_SECONDS = 180
+# Walking every public container with a cold client takes longer than three
+# minutes from GitHub runners; the cleanup job allows 90 minutes in total.
+INVENTORY_PROBE_SECONDS = 45 * 60
 
 
 class PublicationUnavailable(Exception):
@@ -125,7 +128,7 @@ def _workspace():
 
 
 @contextmanager
-def _public_snapshot():
+def _public_snapshot(seconds=None):
     with _workspace() as scratch:
         root = scratch / "mount"
         cache = scratch / "cache"
@@ -168,7 +171,7 @@ def _public_snapshot():
                 (signal.SIGINT, cancelled),
             )
         }
-        signal.alarm(PROBE_SECONDS)
+        signal.alarm(PROBE_SECONDS if seconds is None else seconds)
         try:
             with (scratch / "client.log").open("wb") as output:
                 process = subprocess.Popen(
@@ -221,7 +224,7 @@ def _inspect_with_ids(ids: frozenset[str]) -> PublishedInventory:
 
 def inspect_published_containers() -> PublishedContainers:
     """Protect image payloads still present in a signed public snapshot."""
-    with _public_snapshot() as (root, (revision, root_hash)):
+    with _public_snapshot(INVENTORY_PROBE_SECONDS) as (root, (revision, root_hash)):
         containers = root / "containers"
         if not stat.S_ISDIR(containers.lstat().st_mode):
             raise PublicationUnavailable("Public containers path is not a directory")

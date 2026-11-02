@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
@@ -348,6 +349,7 @@ def main() -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(days=args.retention_days)
     published, repositories = load_domain_catalog(args.catalog_root)
     source_keys = load_source_release_keys(repositories, args.sources_root)
+    probe_started = time.monotonic()
     try:
         snapshot = inspect_published_containers()
     except (
@@ -366,7 +368,8 @@ def main() -> None:
         f"{len(source_keys)} source release images and {len(public_keys)} public CVMFS images"
     )
     print(
-        f"[DEBUG] Public CVMFS revision {snapshot.revision}, root {snapshot.root_hash}"
+        f"[DEBUG] Public CVMFS revision {snapshot.revision}, root {snapshot.root_hash}, "
+        f"inspected in {time.monotonic() - probe_started:.0f}s"
     )
 
     print(f"[DEBUG] Retention window for stale deletions: {args.retention_days} day(s)")
