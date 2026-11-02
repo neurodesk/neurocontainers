@@ -22,6 +22,7 @@ config = pathlib.Path(sys.argv[sys.argv.index('-o')+1].split('=',1)[1]).read_tex
 pathlib.Path(os.environ['CLIENT_CONFIG']).write_text(config)
 if os.environ.get('CLIENT_FAIL'):
     sys.exit(16)
+time.sleep(float(os.environ.get('CLIENT_DELAY', '0')))
 if not os.environ.get('CLIENT_HANG'):
     containers = root / 'containers'
     containers.mkdir()
@@ -96,7 +97,7 @@ def test_unavailable_or_invalid_snapshot_refuses_cleanup_protection(
     client, tmp_path, monkeypatch, mode
 ):
     monkeypatch.setenv(mode, "1")
-    monkeypatch.setattr(publication, "PROBE_SECONDS", 1)
+    monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 1)
     with pytest.raises(publication.PublicationUnavailable):
         publication.inspect_published_containers()
     assert not Path((tmp_path / "root").read_text()).exists()
@@ -123,3 +124,19 @@ def test_readiness_still_checks_completion_markers(client, tmp_path):
     assert publication.inspect_publication_from_apps(apps).missing == (
         "tool_1.0_20261030",
     )
+
+
+def test_full_inventory_outlasts_the_publication_gate_budget(
+    client, tmp_path, monkeypatch
+):
+    # A slow cold client must not stop cleanup, but must still stop the gate.
+    monkeypatch.setenv("CLIENT_DELAY", "2")
+    monkeypatch.setattr(publication, "PROBE_SECONDS", 1)
+    monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 10)
+    assert publication.inspect_published_containers().ids == frozenset(
+        {"tool_1.0_20261005", "tool_1.0_20261030"}
+    )
+    apps = tmp_path / "apps.json"
+    apps.write_text('{"tool":{"apps":{"tool 1.0":{"version":"20261030"}}}}')
+    with pytest.raises(publication.PublicationUnavailable, match="timed out"):
+        publication.inspect_publication_from_apps(apps)
