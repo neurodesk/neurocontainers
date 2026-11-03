@@ -1,0 +1,22 @@
+name: mobstr3d
+version: 1.0.5
+upstream_commit: e8cf9b20291acd14ef5ff67d40432531823fa46f
+upstream_version: 1.0.5
+tests:
+  - name: installed mobstr3D version
+    command: mobstr3d-slice --version
+    expected_output_contains: "mobstr3D ${upstream_version}"
+  - name: segmentation model weights
+    command: ls "$MOBSTR3D_MODEL/fold_0"
+    expected_output_contains: checkpoint_final.pth
+  - name: scanner label and adapter import
+    command: >-
+      python3 -c "import json, mobstr3d;
+      label = json.load(open('/opt/code/python-ismrmrd-server/OpenReconLabel.json'));
+      assert label['general']['id'] == 'mobstr3d'; print('scanner configuration available')"
+    expected_output_contains: scanner configuration available
+  - name: example slice through the DICOM and MRD server paths
+    description: Segment and unwrap one slice of the upstream example exam from DICOM, then through dicom2mrd, client.py and the MRD server, and require identical labels, contours and displacements.
+    timeout: 1800
+    command: python3 /opt/mobstr3d/verify_runtime.py
+    expected_output_contains: mobstr3D DICOM and MRD single-slice round trip passed
