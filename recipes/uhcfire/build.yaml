@@ -1,5 +1,5 @@
 name: uhcfire
-version: 1.0.0
+version: 1.1.0
 architectures:
 - x86_64
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzEzMjk0YiIvPjxyZWN0IHg9IjQiIHk9IjUiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiM3ZGQzZmMiLz48cmVjdCB4PSIxMyIgeT0iMTIiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiMzNGQzOTkiLz48cGF0aCBkPSJNOSAxNWg1LjJNMTIuNCAxMi44IDE1IDE1bC0yLjYgMi4yIiBmaWxsPSJub25lIiBzdHJva2U9IiNmOGZhZmMiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48Y2lyY2xlIGN4PSI3LjUiIGN5PSI4LjUiIHI9IjEuNiIgZmlsbD0iI2Y4ZmFmYyIvPjxwYXRoIGQ9Ik0xNS4yIDE2LjRoMy4yTTE2LjggMTQuOHYzLjIiIHN0cm9rZT0iI2Y4ZmFmYyIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==
@@ -113,6 +113,7 @@ domains:
 - neuroimaging
 categories:
 - image reconstruction
-readme: UHC FIRE 1.0.0. Receives one magnitude volume as single-channel 2D MRD slices per acquisition.
-  Implements dSIR, lSIR and aSIR using the supplied make_dsir.py and rigid2.py example. See README.md
-  for configuration and persistent storage requirements.
+readme: 'UHC FIRE {{ context.version }} stores exactly three separate inversion-time acquisitions and computes dSIR,
+  lSIR and aSIR for every short/long pair when the configured trigger TI arrives. Scanner defaults: expected
+  TIs 300,500,778 ms; trigger 778 ms. Mount persistent storage at /tmp/share/uhcfire. See README.md for
+  configuration.'

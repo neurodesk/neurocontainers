@@ -19,7 +19,7 @@
       "gtin": "",
       "udi": "",
       "safety_advices": "",
-      "special_operating_instructions": "Mount persistent storage at /tmp/share/uhcfire. Use a unique pair group for each exam and reconstruction variant.",
+      "special_operating_instructions": "Mount persistent storage at /tmp/share/uhcfire. Keep the acquisition group and expected TI list identical across all sequences. The trigger TI computes every short/long pair.",
       "additional_relevant_information": "Research reconstruction; scanner validation required."
     }
   },
@@ -64,7 +64,7 @@
       "type": "string",
       "default": "",
       "information": {
-        "en": "Unique group for this exam and TI pair. Keep identical across the two acquisitions."
+        "en": "Unique group for this exam and acquisition set. Keep identical across all sequences."
       }
     },
     {
@@ -79,46 +79,36 @@
       }
     },
     {
-      "id": "shortti",
-      "label": {
-        "en": "Short TI"
-      },
-      "type": "double",
-      "minimum": 0.1,
-      "maximum": 100000,
-      "default": 300,
-      "unit": {
-        "en": "ms"
-      }
-    },
-    {
-      "id": "longti",
-      "label": {
-        "en": "Long TI"
-      },
-      "type": "double",
-      "minimum": 0.1,
-      "maximum": 100000,
-      "default": 500,
-      "unit": {
-        "en": "ms"
-      }
-    },
-    {
-      "id": "final",
-      "label": {
-        "en": "Final acquisition: compute UHC"
-      },
-      "type": "boolean",
-      "default": false
-    },
-    {
       "id": "register",
       "label": {
         "en": "Register inversion-time images"
       },
       "type": "boolean",
       "default": true
+    },
+    {
+      "id": "expectedtis",
+      "label": {
+        "en": "Three TIs (comma separated)"
+      },
+      "type": "string",
+      "default": "300,500,778",
+      "information": {
+        "en": "Enter exactly three distinct TIs, including the trigger TI. Use the same list on every sequence."
+      }
+    },
+    {
+      "id": "triggerti",
+      "label": {
+        "en": "TI that triggers processing"
+      },
+      "type": "double",
+      "minimum": 0.1,
+      "maximum": 100000,
+      "default": 778,
+      "unit": {
+        "en": "ms"
+      }
     }
   ]
 }
