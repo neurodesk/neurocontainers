@@ -1,6 +1,6 @@
 name: prostatefiducialseg
 version: "8.0.3"
-upstream_commit: "5ebc1689252b8c2c9539d6145ba936b5d2e0317c"
+upstream_commit: "f4001b27d14db15382bb38c2dfeebc2e10e4613e"
 tests:
 - name: prediction launcher
   command: predict3.py --help
