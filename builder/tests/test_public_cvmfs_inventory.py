@@ -1,6 +1,7 @@
 """Read cleanup protection through the CVMFS client process boundary."""
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,7 @@ def test_unavailable_or_invalid_snapshot_refuses_cleanup_protection(
     client, tmp_path, monkeypatch, mode
 ):
     monkeypatch.setenv(mode, "1")
+    monkeypatch.setattr(publication, "PROBE_SECONDS", 1)
     monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 1)
     with pytest.raises(publication.PublicationUnavailable):
         publication.inspect_published_containers()
@@ -126,17 +128,38 @@ def test_readiness_still_checks_completion_markers(client, tmp_path):
     )
 
 
-def test_full_inventory_outlasts_the_publication_gate_budget(
-    client, tmp_path, monkeypatch
-):
-    # A slow cold client must not stop cleanup, but must still stop the gate.
+def test_readiness_inspection_outlasts_mount_budget(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(publication, "PROBE_SECONDS", 1)
+    monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 10)
+    inspect = publication._inspect_snapshot
+
+    def slow_inspect(root, ids):
+        time.sleep(2)
+        return inspect(root, ids)
+
+    monkeypatch.setattr(publication, "_inspect_snapshot", slow_inspect)
+    apps = tmp_path / "apps.json"
+    apps.write_text('{"tool":{"apps":{"tool 1.0":{"version":"20261030"}}}}')
+    assert publication.inspect_publication_from_apps(apps).missing == (
+        "tool_1.0_20261030",
+    )
+    monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 1)
+    with pytest.raises(publication.PublicationUnavailable, match="inventory inspection"):
+        publication.inspect_publication_from_apps(apps)
+    assert not Path((tmp_path / "root").read_text()).exists()
+
+
+@pytest.mark.parametrize(
+    "inspect",
+    [
+        publication.inspect_published_containers,
+        lambda: publication._inspect_with_ids(frozenset()),
+    ],
+)
+def test_mount_startup_remains_bounded(client, tmp_path, monkeypatch, inspect):
     monkeypatch.setenv("CLIENT_DELAY", "2")
     monkeypatch.setattr(publication, "PROBE_SECONDS", 1)
     monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 10)
-    assert publication.inspect_published_containers().ids == frozenset(
-        {"tool_1.0_20261005", "tool_1.0_20261030"}
-    )
-    apps = tmp_path / "apps.json"
-    apps.write_text('{"tool":{"apps":{"tool 1.0":{"version":"20261030"}}}}')
-    with pytest.raises(publication.PublicationUnavailable, match="timed out"):
-        publication.inspect_publication_from_apps(apps)
+    with pytest.raises(publication.PublicationUnavailable, match="mount startup"):
+        inspect()
+    assert not Path((tmp_path / "root").read_text()).exists()

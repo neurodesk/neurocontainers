@@ -22,7 +22,7 @@ PUBLIC_KEY = Path(__file__).with_name(f"{REPOSITORY}.pub")
 MAX_LOG_BYTES = 4 * 1024 * 1024
 PROBE_SECONDS = 180
 # Walking every public container with a cold client takes longer than three
-# minutes from GitHub runners; the cleanup job allows 90 minutes in total.
+# minutes from GitHub runners. Keep mount startup separately bounded.
 INVENTORY_PROBE_SECONDS = 45 * 60
 
 
@@ -128,7 +128,7 @@ def _workspace():
 
 
 @contextmanager
-def _public_snapshot(seconds=None):
+def _public_snapshot():
     with _workspace() as scratch:
         root = scratch / "mount"
         cache = scratch / "cache"
@@ -157,8 +157,10 @@ def _public_snapshot(seconds=None):
         )
         process = None
 
+        phase = "mount startup"
+
         def timeout(_signal, _frame):
-            raise PublicationUnavailable("CVMFS publication probe timed out")
+            raise PublicationUnavailable(f"CVMFS publication probe timed out during {phase}")
 
         def cancelled(_signal, _frame):
             raise PublicationUnavailable("CVMFS publication probe cancelled")
@@ -171,7 +173,7 @@ def _public_snapshot(seconds=None):
                 (signal.SIGINT, cancelled),
             )
         }
-        signal.alarm(PROBE_SECONDS if seconds is None else seconds)
+        signal.alarm(PROBE_SECONDS)
         try:
             with (scratch / "client.log").open("wb") as output:
                 process = subprocess.Popen(
@@ -187,6 +189,8 @@ def _public_snapshot(seconds=None):
                         )
                     time.sleep(0.1)
                 before = _identity(root)
+                phase = "inventory inspection"
+                signal.alarm(INVENTORY_PROBE_SECONDS)
                 yield root, before
                 if before != _identity(root):
                     raise PublicationUnavailable(
@@ -224,7 +228,7 @@ def _inspect_with_ids(ids: frozenset[str]) -> PublishedInventory:
 
 def inspect_published_containers() -> PublishedContainers:
     """Protect image payloads still present in a signed public snapshot."""
-    with _public_snapshot(INVENTORY_PROBE_SECONDS) as (root, (revision, root_hash)):
+    with _public_snapshot() as (root, (revision, root_hash)):
         containers = root / "containers"
         if not stat.S_ISDIR(containers.lstat().st_mode):
             raise PublicationUnavailable("Public containers path is not a directory")
