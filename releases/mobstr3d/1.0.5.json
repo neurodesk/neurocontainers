@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "mobstr3d 1.0.5": {
+      "version": "20261103",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "body",
+    "phase processing",
+    "image segmentation"
+  ]
+}
