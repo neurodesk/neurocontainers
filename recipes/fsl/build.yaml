@@ -10,7 +10,8 @@ variables:
   oxasl_mp_commit: 1986a97cb190471b3938f64d6ef45ef3bf567791
 
 copyright:
-  - name: fsl license
+  - license: other-closed
+    name: fsl license
     url: https://fsl.fmrib.ox.ac.uk/fsl/docs/#/license
 
 domains:

@@ -4,7 +4,8 @@ variables:
 name: lqt
 version: 0.1.0
 copyright:
-  - name: NONE
+  - license: other-closed
+    name: LQT
     url: https://github.com/jdwor/LQT
 architectures:
   - x86_64

@@ -8,7 +8,7 @@ version: "26.3.07"
 # https://afni.nimh.nih.gov/about_afni
 
 copyright:
-  - license: GPL-3.0
+  - license: GPL-3.0-only
     url: https://afni.nimh.nih.gov/legal_info
 
 architectures:

@@ -1,6 +1,10 @@
 name: xnat
 version: 1.10.0
 
+copyright:
+  - license: BSD-2-Clause
+    url: https://www.xnat.org/about/license.php
+
 architectures:
   - x86_64
   - aarch64

@@ -2,8 +2,8 @@ name: brkraw
 version: 0.5.7
 
 copyright:
-  - license: GPL-3.0
-    url: https://spdx.org/licenses/GPL-3.0.html
+  - license: GPL-3.0-only
+    url: https://github.com/BrkRaw/brkraw/blob/main/LICENSE
 
 architectures:
   - x86_64

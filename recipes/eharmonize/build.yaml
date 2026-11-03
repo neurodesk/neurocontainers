@@ -100,7 +100,8 @@ readme: |-
 
   ----------------------------------
 copyright:
-  - name: "Unknown "
+  - license: other-closed
+    name: eHarmonize
     url: https://github.com/ahzhu/eharmonize
 domains:
   - neuroimaging

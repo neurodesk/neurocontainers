@@ -1,7 +1,7 @@
 name: spmpython
 version: "25.1.2.post2"
 copyright:
-  - name: GPL-2.0
+  - license: GPL-2.0-only
     url: https://github.com/spm/spm-python/blob/main/LICENCE
 architectures:
   - x86_64

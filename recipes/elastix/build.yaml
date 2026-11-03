@@ -2,6 +2,10 @@ name: elastix
 version: 5.3.1
 # https://github.com/SuperElastix/elastix/releases
 
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/SuperElastix/elastix/blob/master/LICENSE
+
 architectures:
   - x86_64
   - aarch64

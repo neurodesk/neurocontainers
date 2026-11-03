@@ -1,5 +1,10 @@
 name: prostatefiducialseg
 version: "8.0.3"
+copyright:
+  - license: other-closed
+    name: seedseg
+    url: https://github.com/astewartau/seedseg
+
 architectures:
     - x86_64
 

@@ -3,7 +3,8 @@ version: "0.6.3"
 epoch: 1
 
 copyright:
-  - name: ACADEMIC PUBLIC LICENSE (Non-Commercial Use)
+  - license: other-closed
+    name: ACADEMIC PUBLIC LICENSE (Non-Commercial Use)
     url: https://github.com/CoBrALab/RABIES/blob/master/LICENSE
 
 architectures:

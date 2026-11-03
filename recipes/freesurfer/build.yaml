@@ -4,7 +4,8 @@ version: 8.2.0
 
 
 copyright:
-  - name: freesurfer license
+  - license: other-open
+    name: freesurfer license
     url: https://github.com/freesurfer/freesurfer/blob/dev/LICENSE.txt
 
 architectures:

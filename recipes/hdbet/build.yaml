@@ -1,6 +1,10 @@
 name: hdbet
 version: 2.0.1
 
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/HD-BET/blob/master/LICENSE
+
 architectures:
   - x86_64
   - aarch64

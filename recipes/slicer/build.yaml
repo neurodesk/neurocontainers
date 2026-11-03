@@ -1,6 +1,11 @@
 name: slicer
 version: "5.12.4"
 
+copyright:
+  - license: other-open
+    name: 3D Slicer Software License Agreement
+    url: https://github.com/Slicer/Slicer/blob/main/License.txt
+
 architectures:
   - x86_64
 

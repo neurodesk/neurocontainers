@@ -2,9 +2,11 @@ name: gautomatch
 version: 0.56.0
 
 copyright:
-  - name: Gautomatch freeware binary (Kai Zhang, MRC-LMB); no licence published
+  - license: other-closed
+    name: Gautomatch freeware binary (Kai Zhang, MRC-LMB); no licence published
     url: https://web.archive.org/web/20230429192932/https://www2.mrc-lmb.cam.ac.uk/download/gautomatch-056/
-  - name: NVIDIA CUDA Toolkit EULA (redistributable cuFFT, cuBLAS, cuRAND, NPP runtime libraries)
+  - license: other-closed
+    name: NVIDIA CUDA Toolkit EULA (redistributable cuFFT, cuBLAS, cuRAND, NPP runtime libraries)
     url: https://docs.nvidia.com/cuda/archive/10.1/eula/index.html
 
 architectures:

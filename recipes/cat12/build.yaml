@@ -3,8 +3,8 @@ name: cat12
 version: "26.0.2"
 
 copyright:
-  - license: GPL-2.0
-    url: https://github.com/ChristianGaser/cat12?tab=GPL-2.0-1-ov-file#readme
+  - license: GPL-2.0-or-later
+    url: https://github.com/ChristianGaser/cat12/blob/main/README.md
     
 # inspired by: https://github.com/m-wierzba/cat-container/blob/master/Singularity
 # discussed here: https://github.com/ReproNim/neurodocker/issues/407

@@ -2,7 +2,8 @@ name: globus
 version: "3.3.2"
 
 copyright:
-  - name: Globus Connect Personal
+  - license: other-closed
+    name: Globus Connect Personal
     url: https://www.globus.org/globus-connect-personal
 
 architectures:

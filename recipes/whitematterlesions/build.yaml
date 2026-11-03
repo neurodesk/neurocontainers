@@ -6,7 +6,8 @@ copyright:
     url: https://github.com/neurodesk/webapps/blob/white-matter-lesions-v{{ context.flames_version }}/LICENSE
   - license: CC-BY-4.0
     url: https://doi.org/10.5281/zenodo.17955359
-  - name: FreeSurfer Software License Agreement
+  - license: other-open
+    name: FreeSurfer Software License Agreement
     url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
 
 architectures:

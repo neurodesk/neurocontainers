@@ -16,7 +16,7 @@ variables:
 name: flames
 version: 1.0.0
 copyright:
-  - license: GPL-3.0
+  - license: GPL-3.0-only
     url: https://huggingface.co/spaces/FrancescoLR/FLAMeS/tree/main
 architectures:
   - x86_64

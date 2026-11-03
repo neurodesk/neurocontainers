@@ -1,7 +1,8 @@
 name: ctffind
 version: 4.1.14
 copyright:
-  - name: Janelia Research Campus Software License 1.2
+  - license: other-open
+    name: Janelia Research Campus Software License 1.2
     url: https://www.janelia.org/open-science/software-licensing
 architectures:
   - x86_64
