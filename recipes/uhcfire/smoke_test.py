@@ -142,6 +142,27 @@ def main():
                 assert 'exactly three' in str(error)
             else:
                 raise AssertionError('Unsupported TI count accepted')
+        # Scanner defaults must save separate sequences without a manually set group.
+        for ti in (300, 500, 778):
+            before = len(list(Path(directory).rglob('ti-*.npz')))
+            sequence_metadata = SimpleNamespace(
+                studyInformation=SimpleNamespace(studyInstanceUID='default-exam'),
+                sequenceParameters=SimpleNamespace(TI=[ti]))
+            connection = Connection(images(ti))
+            process(connection, {'parameters': {'group': '', 'register': False}}, sequence_metadata)
+            assert not connection.errors, connection.errors
+            assert connection.closed
+            assert len(list(Path(directory).rglob('ti-*.npz'))) == before + 1
+            assert len(connection.sent) == (20 if ti == 778 else 2)
+        # A different exam cannot consume the default group's saved acquisitions.
+        other_exam = SimpleNamespace(
+            studyInformation=SimpleNamespace(studyInstanceUID='another-default-exam'),
+            sequenceParameters=SimpleNamespace(TI=[778]))
+        connection = Connection(images(778))
+        process(connection, {'parameters': {'register': False}}, other_exam)
+        assert connection.closed and len(connection.errors) == 1
+        assert 'missing' in connection.errors[0]
+        assert not connection.sent
     print('UHC persistence and reconstruction passed')
 
 

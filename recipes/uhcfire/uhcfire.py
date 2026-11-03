@@ -65,8 +65,6 @@ def reconstruct(images, settings, metadata):
     identity = exam_identity(metadata)
     register = flag(settings.get('register', True))
     group = str(settings.get('group', '')).strip()
-    if not group:
-        raise ValueError('Set group to a unique identifier for this exam and acquisition set')
     trigger = positive(settings.get('triggerti', 778))
     configured = settings.get('expectedtis', '300,500,778')
     if not isinstance(configured, str) or not configured.strip():
@@ -103,7 +101,7 @@ def reconstruct(images, settings, metadata):
         raise ValueError('Magnitude data must be finite and nonnegative')
     geom = geometry(images)
     root = Path(os.environ.get('UHC_DATA_DIR', '/tmp/share/uhcfire'))
-    key = hashlib.sha256(group.encode()).hexdigest()
+    key = hashlib.sha256((group if group else 'auto:' + identity).encode()).hexdigest()
     folder = root / key
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Serialize acquisition replacement and final reads across server processes.
@@ -128,6 +126,7 @@ def reconstruct(images, settings, metadata):
             atomic_write(manifest_path, lambda stream: stream.write(manifest.encode()))
         target = paths[ti]
         atomic_write(target, lambda stream: np.savez(stream, data=data, geometry=geom, ti_ms=ti))
+        logging.info('UHC saved TI=%g ms to %s; trigger TI=%g ms', ti, target, trigger)
         if not final:
             return []
         missing = [value for value, path in paths.items() if not path.exists()]
@@ -139,6 +138,7 @@ def reconstruct(images, settings, metadata):
                 arrays[value] = saved['data'].copy()
     output = []
     for pair_index, (short, long) in enumerate(combinations(expected, 2)):
+        logging.info('UHC computing pair %g/%g ms from saved acquisitions', short, long)
         results = make_dsir(arrays[short], arrays[long], register=register)
         output.extend(output_images(images, results, short, long, 101 + 3 * pair_index))
     return output
