@@ -144,7 +144,9 @@ def test_readiness_inspection_outlasts_mount_budget(client, tmp_path, monkeypatc
         "tool_1.0_20261030",
     )
     monkeypatch.setattr(publication, "INVENTORY_PROBE_SECONDS", 1)
-    with pytest.raises(publication.PublicationUnavailable, match="inventory inspection"):
+    with pytest.raises(
+        publication.PublicationUnavailable, match="inventory inspection"
+    ):
         publication.inspect_publication_from_apps(apps)
     assert not Path((tmp_path / "root").read_text()).exists()
 

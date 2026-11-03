@@ -160,7 +160,9 @@ def _public_snapshot():
         phase = "mount startup"
 
         def timeout(_signal, _frame):
-            raise PublicationUnavailable(f"CVMFS publication probe timed out during {phase}")
+            raise PublicationUnavailable(
+                f"CVMFS publication probe timed out during {phase}"
+            )
 
         def cancelled(_signal, _frame):
             raise PublicationUnavailable("CVMFS publication probe cancelled")
