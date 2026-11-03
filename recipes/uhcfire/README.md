@@ -44,8 +44,8 @@ per-group file locks prevent partially read acquisitions. Geometry is checked
 before replacement so rejected inputs leave saved data intact. A missing counterpart
 fails final processing but retains the acquisition for retry. Successful
 processing retains both inputs too. Delete the group's hashed directory only
-when no acquisition is running and the data are no longer needed. This first
-version has no automatic retention policy or scanner UI label.
+when no acquisition is running and the data are no longer needed. There is no automatic retention policy. The OpenRecon label exposes group,
+short/long TI, current TI, registration and final-acquisition controls.
 
 The numerical implementation is preserved from the example. Scanner display,
 image scaling, motion correction quality and host persistence must be validated

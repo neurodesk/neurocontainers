@@ -20,6 +20,10 @@ files:
     exec python3 main.py -d uhcfire -r -H=0.0.0.0 -p=9002 "$@"
 
     '
+- name: OpenReconLabel.json
+  filename: OpenReconLabel.json
+- name: README.md
+  filename: README.md
 variables:
   openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
   openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
@@ -96,6 +100,12 @@ build:
       PYTHONPATH: /opt/code/python-ismrmrd-server
   - run:
     - install -m 0755 {{ get_file("uhcfire") }} /usr/local/bin/uhcfire
+  - run:
+    - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - cp {{ get_file("README.md") }} /opt/code/python-ismrmrd-server/UHC_README.md
+    - mkdir -p /tmp/share/uhcfire
+    - chmod 1777 /tmp/share /tmp/share/uhcfire
+    - python3 -m pip check
 deploy:
   bins:
   - uhcfire

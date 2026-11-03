@@ -1,0 +1,124 @@
+{
+  "general": {
+    "name": {
+      "en": "UHC FIRE"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "Ultra-high-contrast reconstruction from separate inversion-time acquisitions"
+    },
+    "id": "uhcfire",
+    "regulatory_information": {
+      "device_trade_name": "uhcfire",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "",
+      "made_in": "",
+      "manufacture_date": "2026/11/03",
+      "material_number": "uhcfire_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "",
+      "udi": "",
+      "safety_advices": "",
+      "special_operating_instructions": "Mount persistent storage at /tmp/share/uhcfire. Use a unique pair group for each exam and reconstruction variant.",
+      "additional_relevant_information": "Research reconstruction; scanner validation required."
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 1,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "Reconstruction"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "uhcfire",
+          "name": {
+            "en": "UHC FIRE"
+          }
+        }
+      ],
+      "default": "uhcfire"
+    },
+    {
+      "id": "group",
+      "label": {
+        "en": "Acquisition group"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Unique group for this exam and TI pair. Keep identical across the two acquisitions."
+      }
+    },
+    {
+      "id": "ti",
+      "label": {
+        "en": "Current TI (ms)"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Leave empty to read the inversion time from MRD sequence metadata."
+      }
+    },
+    {
+      "id": "shortti",
+      "label": {
+        "en": "Short TI"
+      },
+      "type": "double",
+      "minimum": 0.1,
+      "maximum": 100000,
+      "default": 300,
+      "unit": {
+        "en": "ms"
+      }
+    },
+    {
+      "id": "longti",
+      "label": {
+        "en": "Long TI"
+      },
+      "type": "double",
+      "minimum": 0.1,
+      "maximum": 100000,
+      "default": 500,
+      "unit": {
+        "en": "ms"
+      }
+    },
+    {
+      "id": "final",
+      "label": {
+        "en": "Final acquisition: compute UHC"
+      },
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "register",
+      "label": {
+        "en": "Register inversion-time images"
+      },
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

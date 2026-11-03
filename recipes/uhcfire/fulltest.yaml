@@ -1,7 +1,32 @@
 name: uhcfire
 version: 1.0.0
 tests:
-  - name: persisted inversion time reconstruction
-    description: Save separate acquisitions, combine a configurable TI pair and reject unrelated or mismatched scans.
-    command: python3 /opt/code/python-ismrmrd-server/smoke_test.py
-    expected_output_contains: UHC persistence and reconstruction passed
+- name: persisted inversion time reconstruction
+  description: Save separate acquisitions, combine a configurable TI pair and reject
+    unrelated or mismatched scans.
+  command: python3 /opt/code/python-ismrmrd-server/smoke_test.py
+  expected_output_contains: UHC persistence and reconstruction passed
+- name: OpenRecon runtime packaging
+  command: 'python3 -m pip check
+
+    python3 - <<''PYTEST''
+
+    import json
+
+    from pathlib import Path
+
+    label = json.loads(Path(''/opt/code/python-ismrmrd-server/OpenReconLabel.json'').read_text())
+
+    assert label[''general''][''id''] == ''uhcfire''
+
+    assert {p[''id''] for p in label[''parameters'']} == {''config'', ''group'', ''ti'',
+    ''shortti'', ''longti'', ''final'', ''register''}
+
+    import uhcfire
+
+    assert callable(uhcfire.process)
+
+    print(''OpenRecon packaging passed'')
+
+    PYTEST'
+  expected_output_contains: OpenRecon packaging passed
