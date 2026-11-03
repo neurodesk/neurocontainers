@@ -1,4 +1,4 @@
-# UHC FIRE 1.1.0
+# UHC FIRE 1.1.1
 
 Each sequence sends one inversion-time magnitude volume. The container saves
 every TI to disk. Arrival of the configured trigger TI, initially 778 ms,
@@ -9,7 +9,8 @@ The calculation uses `make_dsir.py` and `rigid2.py` from the supplied example.
 
 Use identical settings on all sequences, except the current TI:
 
-- Acquisition group: a unique name for this exam and acquisition set.
+- Acquisition group: leave empty for one automatic set per exam. For repeated
+  sets in the same exam, enter a new name and keep it the same on all three sequences.
 - Expected TIs: `300,500,778` initially. Exactly three distinct TIs are required; their values are configurable.
 - TI that triggers processing: `778` ms.
 - Current TI: leave empty to read the single TI from MRD sequence metadata, or
@@ -54,7 +55,8 @@ multi-channel images and repeated contrasts are rejected. TI matching allows
 
 MRD studyInstanceUID is required. A hash of study, frame-of-reference and patient
 identifiers binds the acquisition group to an exam; mismatches are rejected.
-Use a new group for each repeat set or reconstruction variant. Groups containing
+An empty group is scoped to the exam automatically. Use a new explicit group
+for each repeat set or reconstruction variant within that exam. Groups containing
 1.0.0 pair-format data are rejected; acquire into a new group after upgrading.
 
 Each TI is saved atomically, with its TI value and geometry. Per-group locks
@@ -69,3 +71,15 @@ Local and container smoke tests cover three-TI sets and reject other TI counts. 
 display, signed image scaling and motion correction quality still require
 validation with representative scanner data. The supplied source archive
 contains no license declaration; no third-party license has been inferred.
+
+## Scanner troubleshooting
+
+Confirm the scanner selects `FIRE_neurodesk_uhcfire_V1.1.1.img` (or a newer
+release). Version 1.0.0 only supports a single pair and manual final flag;
+1.1.0 supports three TIs but rejects the blank acquisition-group default.
+Version 1.1.1 accepts that default and isolates it by exam identity.
+
+Server logs report each saved TI and its full path beneath `/tmp/share/uhcfire`,
+then each computed pair. The 300 and 500 ms sequences must use the same
+persistent mount and exam identity as the 778 ms sequence. A new sequence
+connection does not clear the saved files.

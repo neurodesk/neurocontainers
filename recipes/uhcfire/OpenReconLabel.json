@@ -64,7 +64,7 @@
       "type": "string",
       "default": "",
       "information": {
-        "en": "Unique group for this exam and acquisition set. Keep identical across all sequences."
+        "en": "Leave empty for one automatic acquisition set per exam. For repeated sets in the same exam, enter a new name and keep it identical across the three sequences."
       }
     },
     {
