@@ -1,0 +1,212 @@
+name: mobstr3d
+version: 1.0.5
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/UOA-Heart-Mechanics-Research/mobstr3D/blob/main/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/nnUNet/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+readme_url: https://raw.githubusercontent.com/UOA-Heart-Mechanics-Research/mobstr3D/{{ context.upstream_commit }}/README.md
+
+variables:
+  upstream_commit: e8cf9b20291acd14ef5ff67d40432531823fa46f
+  upstream_version: 1.0.5
+  base_image_digest: sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+  openrecon_ubuntu_version: '24.04'
+  openrecon_ismrmrd_version: 1.14.2
+  openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
+  openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
+  openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
+  torch_version: 2.15.0
+  nnunetv2_version: 2.8.1
+  mobstr3d_model: /opt/mobstr3D/src/mobstr3D/preprocessing/DICOM/segmentation/modelESv2/nnUNetTrainer__nnUNetPlans__2d
+
+files:
+  - name: mobstr3d_source
+    url: https://github.com/UOA-Heart-Mechanics-Research/mobstr3D/archive/{{ context.upstream_commit }}.tar.gz
+    sha256: 28db66eb74292ab74bc5bf91ca458d91de9e39c877f4dfe67ba41e2ac5c2afff
+  - name: mobstr3d.py
+    filename: mobstr3d.py
+  - name: mobstr3d_slice.py
+    filename: mobstr3d_slice.py
+  - name: verify_runtime.py
+    filename: verify_runtime.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: mobstr3d-slice
+    contents: |-
+      #!/usr/bin/env bash
+      exec python3 /opt/mobstr3d/mobstr3d_slice.py "$@"
+  - name: openrecon-mobstr3d
+    contents: |-
+      #!/usr/bin/env bash
+      exec python3 /opt/code/python-ismrmrd-server/main.py --defaultConfig mobstr3d "$@"
+
+auto_update:
+  method: sources
+  container_version: mobstr3d
+  local:
+    - macros/openrecon
+    - macros/openrecon_i2i
+  sources:
+    - id: mobstr3d
+      method: github_commit
+      repo: UOA-Heart-Mechanics-Research/mobstr3D
+      ref: main
+      version_file: pyproject.toml
+      version_regex: '(?m)^version = "(?P<version>[0-9.]+)"'
+      target:
+        variable: upstream_commit
+        fulltest_variable: upstream_commit
+        variables:
+          upstream_version: version
+    - id: mobstr3d_archive
+      dependency: true
+      method: http_digest
+      url: https://github.com/UOA-Heart-Mechanics-Research/mobstr3D/archive/{{ context.upstream_commit }}.tar.gz
+      target:
+        file: mobstr3d_source
+    - id: base_image
+      dependency: true
+      method: oci_digest
+      image: ubuntu
+      tag: '24.04'
+      target:
+        variable: base_image_digest
+    - id: torch
+      dependency: true
+      method: pypi
+      package: torch
+      target:
+        variable: torch_version
+    - id: nnunetv2
+      dependency: true
+      method: pypi
+      package: nnunetv2
+      target:
+        variable: nnunetv2_version
+    - id: openrecon_ismrmrd
+      dependency: true
+      method: github_release
+      repo: ismrmrd/ismrmrd
+      target:
+        variable: openrecon_ismrmrd_version
+        value: version
+    - id: openrecon_siemens
+      dependency: true
+      method: github_commit
+      repo: ismrmrd/siemens_to_ismrmrd
+      ref: HEAD
+      target:
+        variable: openrecon_siemens_commit
+    - id: openrecon_python_tools
+      dependency: true
+      method: github_commit
+      repo: ismrmrd/ismrmrd-python-tools
+      ref: HEAD
+      target:
+        variable: openrecon_python_tools_commit
+    - id: openrecon_server
+      dependency: true
+      method: github_commit
+      repo: astewartau/python-ismrmrd-server
+      ref: fix/ismrmrd-compatibility
+      target:
+        variable: openrecon_server_commit
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        MPLCONFIGDIR: /tmp/matplotlib
+    - install: bzip2 ca-certificates git build-essential unzip python3-pip python3-dev python-is-python3 libgl1 libglib2.0-0 libxrender1 libxext6 libx11-6
+    - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_i2i/helpers.yaml
+
+    # mobstr3D at the pinned commit, with the modelESv2 nnU-Net weights it ships.
+    # PyTorch goes in first (CPU build), as the mobstr3D README requires before nnU-Net.
+    - workdir: /opt
+    - run:
+        - mkdir -p /opt/mobstr3D
+        - tar -xzf {{ get_file("mobstr3d_source") }} --strip-components=1 -C /opt/mobstr3D
+        - rm -rf /opt/mobstr3D/assets {{ context.mobstr3d_model }}/fold_0/checkpoint_best.pth
+        - python3 -m pip install --break-system-packages --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch=={{ context.torch_version }}
+        - python3 -m pip install --break-system-packages --no-cache-dir /opt/mobstr3D nnunetv2=={{ context.nnunetv2_version }}
+        - python3 -c "import importlib.metadata as m; assert m.version('mobstr3D') == '{{ context.upstream_version }}', m.version('mobstr3D')"
+
+    - run:
+        - mkdir -p /opt/mobstr3d
+        - cp {{ get_file("mobstr3d_slice.py") }} /opt/mobstr3d/mobstr3d_slice.py
+        - cp {{ get_file("verify_runtime.py") }} /opt/mobstr3d/verify_runtime.py
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/mobstr3d/OpenReconREADME.md
+        - cp {{ get_file("mobstr3d.py") }} /opt/code/python-ismrmrd-server/mobstr3d.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - install -m 0755 {{ get_file("mobstr3d-slice") }} /usr/local/bin/mobstr3d-slice
+        - install -m 0755 {{ get_file("openrecon-mobstr3d") }} /usr/local/bin/openrecon-mobstr3d
+        - mkdir -p /tmp/matplotlib /tmp/share/debug
+        - chmod 1777 /tmp/matplotlib /tmp/share /tmp/share/debug
+
+    - environment:
+        PYTHONPATH: /opt/code/python-ismrmrd-server:/opt/mobstr3d
+        MOBSTR3D_MODEL: '{{ context.mobstr3d_model }}'
+    - workdir: /tmp
+
+deploy:
+  bins:
+    - mobstr3d-slice
+    - openrecon-mobstr3d
+
+categories:
+  - body
+  - phase processing
+  - image segmentation
+domains:
+  - neuroimaging
+
+readme: |
+  ## mobstr3d/{{ context.version }}
+
+  Single-slice preprocessing from [mobstr3D](https://github.com/UOA-Heart-Mechanics-Research/mobstr3D)
+  (Model-based Strains in 3D) for cine DENSE CMR with 3D displacement encoding,
+  pinned to upstream commit {{ context.upstream_commit }}. Each slice (magnitude plus
+  x/y/z encoded phase, all frames) is processed on its own, so it can run as soon as
+  the slice is acquired:
+
+  1. nnU-Net modelESv2 segmentation of the magnitude frames (myocardium, blood pool)
+  2. endocardial and epicardial contours from the labels
+  3. automatic seed selection and spatiotemporal quality-guided phase unwrapping
+  4. x/y/z displacements in mm, using the DENSE encoding frequency, scale and RCswap/RCSflip
+
+  Slice correction, the pseudo-cardiac transform, model fitting and strain analysis
+  need the whole stack and are not part of this container.
+
+  Process a folder of DENSE DICOMs, one output folder per slice:
+
+  ```bash
+  mobstr3d-slice --dicom-dir dicoms --output-dir out
+  ```
+
+  Each `out/Slice_n` holds `segmentation.nii.gz`, `displacements_ics.json`,
+  `contours_ics.json`, `seed_points.json` and `imaging_parameters.json` in mobstr3D's
+  own formats. Options: `--frame-of-seed` (default 5), `--end-frame` (default -1, last
+  frame), `--phase-quality cropped|masked`, `--contour-method marching_squares|cv2_find_contours`.
+
+  Start the OpenRecon MRD server with `openrecon-mobstr3d --host 0.0.0.0 --port 9002`
+  and select the `mobstr3d` configuration. See /opt/mobstr3d/OpenReconREADME.md.
+
+  Citation: G. E. Harpur et al., "mobstr3D: Open-Source Software for Analysing Cine DENSE
+  CMR to Quantify Regional Heart Motion and Strain," JCMR 28:102336, 2026.
+  https://doi.org/10.1016/j.jocmr.2025.102336
+
+icon: "data:image/png;base64,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"
