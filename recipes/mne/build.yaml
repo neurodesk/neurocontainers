@@ -10,8 +10,8 @@ architectures:
 
 variables:
   mne_version: "1.13.2"
-  vscode_version: "1.144.0"
-  pipeline_commit: "89b040fd1b22a0e0398b56d06dc61acf2daa295d"
+  vscode_version: "1.144.1"
+  pipeline_commit: "1b86a975f4b8bd3d3dda4df98da5a1600a3d433f"
   miniconda_version: py311_25.5.1-0
   vscode_arch:
     try:
