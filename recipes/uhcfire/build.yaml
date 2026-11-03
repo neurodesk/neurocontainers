@@ -17,7 +17,7 @@ files:
 
     cd /opt/code/python-ismrmrd-server
 
-    exec python3 main.py -r -H=0.0.0.0 -p=9002 "$@"
+    exec python3 main.py -d uhcfire -r -H=0.0.0.0 -p=9002 "$@"
 
     '
 variables:

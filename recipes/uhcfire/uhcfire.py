@@ -39,7 +39,31 @@ def geometry(images):
     ], dtype=np.float64)
 
 
+def exam_identity(metadata):
+    study = getattr(getattr(metadata, 'studyInformation', None), 'studyInstanceUID', None)
+    if not study:
+        raise ValueError('MRD studyInstanceUID is required to isolate exams')
+    frame = getattr(getattr(metadata, 'measurementInformation', None), 'frameOfReferenceUID', None)
+    patient = getattr(getattr(metadata, 'subjectInformation', None), 'patientID', None)
+    return hashlib.sha256(json.dumps([study, frame, patient]).encode()).hexdigest()
+
+
+def atomic_write(path, writer):
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
+        temporary = Path(tmp.name)
+        try:
+            writer(tmp)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
 def reconstruct(images, settings, metadata):
+    identity = exam_identity(metadata)
+    final = flag(settings.get('final', False))
+    register = flag(settings.get('register', True))
     group = str(settings.get('group', '')).strip()
     if not group:
         raise ValueError('Set group to a unique identifier for this exam and TI pair')
@@ -48,15 +72,17 @@ def reconstruct(images, settings, metadata):
     if short >= long:
         raise ValueError('shortti must be less than longti')
     ti = settings.get('ti')
-    if ti is None:
+    if ti is None or ti == '':
         values = getattr(getattr(metadata, 'sequenceParameters', None), 'TI', [])
         if len(values) != 1:
             raise ValueError('Provide ti in milliseconds or exactly one metadata TI')
         ti = values[0]
     ti = positive(ti)
-    if ti not in (short, long):
-        raise ValueError('Current TI must equal shortti or longti')
-    if not images or any(im.getHead().image_type != ismrmrd.IMTYPE_MAGNITUDE
+    matches = [value for value in (short, long) if abs(ti - value) <= 0.05]
+    if len(matches) != 1:
+        raise ValueError('Current TI must match exactly one configured TI within 0.05 ms')
+    ti = matches[0]
+    if not images or any(im.getHead().image_type not in (0, ismrmrd.IMTYPE_MAGNITUDE)
                          for im in images):
         raise ValueError('Supply one magnitude volume per acquisition')
     images = sorted(images, key=lambda im: int(im.getHead().slice))
@@ -75,24 +101,24 @@ def reconstruct(images, settings, metadata):
     # Serialize acquisition replacement and final reads across server processes.
     with (folder / 'lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        manifest = json.dumps({'shortti': short, 'longti': long}, sort_keys=True)
+        manifest = json.dumps({'shortti': short, 'longti': long, 'exam': identity}, sort_keys=True)
         manifest_path = folder / 'pair.json'
         if manifest_path.exists() and manifest_path.read_text() != manifest:
-            raise ValueError('This group already belongs to a different TI pair')
-        manifest_path.write_text(manifest)
-        target = folder / ('short.npz' if ti == short else 'long.npz')
-        with tempfile.NamedTemporaryFile(dir=folder, suffix='.npz', delete=False) as tmp:
-            temporary = Path(tmp.name)
-            try:
-                np.savez(tmp, data=data, geometry=geom)
-                tmp.flush()
-                os.fsync(tmp.fileno())
-                os.replace(temporary, target)
-            finally:
-                temporary.unlink(missing_ok=True)
-        if not flag(settings.get('final', False)):
-            return []
+            raise ValueError('This group already belongs to a different exam or TI pair')
         paths = [folder / name for name in ('short.npz', 'long.npz')]
+        for path in paths:
+            if path.exists():
+                with np.load(path, allow_pickle=False) as saved:
+                    if (saved['data'].shape != data.shape
+                            or saved['geometry'].shape != geom.shape
+                            or not np.allclose(saved['geometry'], geom, atol=1e-4, rtol=0)):
+                        raise ValueError('TI acquisitions have mismatched image geometry')
+        if not manifest_path.exists():
+            atomic_write(manifest_path, lambda stream: stream.write(manifest.encode()))
+        target = folder / ('short.npz' if ti == short else 'long.npz')
+        atomic_write(target, lambda stream: np.savez(stream, data=data, geometry=geom))
+        if not final:
+            return []
         if not all(path.exists() for path in paths):
             raise ValueError('Final acquisition saved, but the other TI is missing')
         arrays = []
@@ -103,7 +129,7 @@ def reconstruct(images, settings, metadata):
                         or not np.allclose(saved['geometry'], geom, atol=1e-4, rtol=0)):
                     raise ValueError('TI acquisitions have mismatched image geometry')
                 arrays.append(saved['data'].copy())
-        results = make_dsir(*arrays, register=flag(settings.get('register', True)))
+        results = make_dsir(*arrays, register=register)
     output = []
     for series, (name, volume) in enumerate(zip(('dSIR', 'lSIR', 'aSIR'), results), 101):
         uid = '2.25.' + str(uuid.uuid4().int)
@@ -111,6 +137,7 @@ def reconstruct(images, settings, metadata):
             image = ismrmrd.Image.from_array(volume[:, :, index][None, None], transpose=False)
             head = source.getHead()
             head.data_type = image.getHead().data_type
+            head.image_type = ismrmrd.IMTYPE_REAL
             head.image_series_index = series
             head.image_index = index + 1
             image.setHead(head)
@@ -133,14 +160,19 @@ def process(connection, config, metadata):
             config = json.loads(config) if config.lstrip().startswith('{') else {}
         settings = config.get('parameters', config)
         images = []
+        originals = []
         for item in connection:
             if item is None:
                 break
+            if isinstance(item, ismrmrd.Waveform):
+                continue
             if not isinstance(item, ismrmrd.Image):
                 raise ValueError('UHC requires reconstructed MRD image input')
-            images.append(item)
+            originals.append(item)
+            if item.getHead().image_type in (0, ismrmrd.IMTYPE_MAGNITUDE):
+                images.append(item)
         output = reconstruct(images, settings, metadata)
-        for image in output:
+        for image in originals + output:
             connection.send_image(image)
     except Exception:
         message = traceback.format_exc()

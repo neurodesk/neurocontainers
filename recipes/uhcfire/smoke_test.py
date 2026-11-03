@@ -1,11 +1,15 @@
 """Exercise separate acquisition calls against persisted data and real MRD images."""
 import os
 import tempfile
+from types import SimpleNamespace
 
 import ismrmrd
 import numpy as np
 
-from uhcfire import reconstruct
+from uhcfire import process, reconstruct
+
+META = SimpleNamespace(studyInformation=SimpleNamespace(studyInstanceUID="1.2.3"),
+                       sequenceParameters=SimpleNamespace(TI=[250]))
 
 
 def images(value):
@@ -25,17 +29,17 @@ def main():
     with tempfile.TemporaryDirectory() as directory:
         os.environ['UHC_DATA_DIR'] = directory
         settings = dict(group='exam-a', shortti=250, longti=600, ti=250, register=False)
-        assert reconstruct(images(3), settings, None) == []
+        assert reconstruct(images(3), settings, META) == []
         settings.update(ti=600, final=True)
-        output = reconstruct(images(1), settings, None)
+        output = reconstruct(images(1), settings, META)
         assert len(output) == 6
         assert output[0].data.dtype == np.int16
         assert output[0].data[0, 0, 32, 32] == 5000
         assert {im.getHead().image_series_index for im in output} == {101, 102, 103}
-        assert np.array_equal(output[0].data, reconstruct(images(1), settings, None)[0].data)
+        assert np.array_equal(output[0].data, reconstruct(images(1), settings, META)[0].data)
         settings['group'] = 'exam-b'
         try:
-            reconstruct(images(1), settings, None)
+            reconstruct(images(1), settings, META)
         except ValueError as error:
             assert 'missing' in str(error)
         else:
@@ -46,11 +50,57 @@ def main():
         head.position = (10, 0, 0)
         shifted[0].setHead(head)
         try:
-            reconstruct(shifted, settings, None)
+            reconstruct(shifted, settings, META)
         except ValueError as error:
             assert 'geometry' in str(error)
         else:
             raise AssertionError('Geometry mismatch accepted')
+        # A rejected replacement must leave the previous valid acquisition intact.
+        assert np.array_equal(output[0].data, reconstruct(images(1), settings, META)[0].data)
+        other_exam = SimpleNamespace(studyInformation=SimpleNamespace(studyInstanceUID='9.8.7'))
+        try:
+            reconstruct(images(1), settings, other_exam)
+        except ValueError as error:
+            assert 'exam' in str(error)
+        else:
+            raise AssertionError('Mixed exams accepted')
+        settings.update(group='handler', ti='', final=False)
+        source = images(3)
+        head = source[0].getHead()
+        head.image_type = 0
+        source[0].setHead(head)
+        phase = images(1)[0]
+        head = phase.getHead()
+        head.image_type = ismrmrd.IMTYPE_PHASE
+        phase.setHead(head)
+        waveform = ismrmrd.Waveform.from_array(np.zeros((1, 10), np.uint32))
+
+        class Connection:
+            def __init__(self, items):
+                self.items, self.sent, self.errors, self.closed = items, [], [], False
+
+            def __iter__(self):
+                return iter(self.items + [None])
+
+            def send_image(self, image):
+                self.sent.append(image)
+
+            def send_logging(self, level, message):
+                self.errors.append(message)
+
+            def send_close(self):
+                self.closed = True
+
+        connection = Connection([waveform] + source + [phase])
+        process(connection, {'parameters': settings}, META)
+        assert connection.closed and not connection.errors
+        assert connection.sent == source + [phase]
+        settings.update(ti=600, final=True)
+        connection = Connection(images(1))
+        process(connection, {'parameters': settings}, META)
+        assert connection.closed and not connection.errors
+        assert len(connection.sent) == 8
+        assert connection.sent[2].data[0, 0, 32, 32] == 5000
     print('UHC persistence and reconstruction passed')
 
 
