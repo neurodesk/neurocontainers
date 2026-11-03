@@ -1,12 +1,13 @@
 {
   "apps": {
-    "uhcfire 1.0.0": {
+    "prostatefiducialseg 8.0.4": {
       "version": "20261103",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "image reconstruction"
+    "image segmentation",
+    "body"
   ]
 }

@@ -165,17 +165,53 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def slice_order(images):
-    """Indices of `images` sorted along the slice normal (read x phase), as GDCM/SimpleITK
-    sort a DICOM series; this gives the voxel layout of the training NIfTIs."""
+def slice_positions(images):
+    """Position of each image along the slice normal (read x phase), in mm."""
     n = np.cross(np.array(images[0].read_dir), np.array(images[0].phase_dir))
-    return np.argsort([float(np.dot(np.array(im.position), n)) for im in images], kind='stable')
+    return np.array([float(np.dot(np.array(im.position), n)) for im in images])
+
+
+def split_volumes(images, tol=1e-3):
+    """Indices of `images` grouped into volumes with one image per slice position.
+
+    A series can hold several images at each position (repetitions, averages, contrasts or
+    sets the scanner did not combine); the k-th image arriving at a position goes to volume k.
+    When all images share one position (positions not filled in), the series is one volume."""
+    z = slice_positions(images)
+    if len(images) > 1 and np.ptp(z) <= tol:
+        return [list(range(len(images)))]
+    seen, groups = [], []
+    for i, zi in enumerate(z):
+        k = sum(abs(zi - zj) <= tol for zj in seen)
+        seen.append(zi)
+        if k == len(groups):
+            groups.append([])
+        groups[k].append(i)
+    return groups
+
+
+def slice_spacing(images, z):
+    """Slice spacing (mm): median step between the sorted slice positions, else the image
+    header's slice thickness (field_of_view[2] / matrix_size[2])."""
+    steps = np.diff(np.sort(z))
+    steps = steps[steps > 1e-3]
+    if len(steps):
+        return float(np.median(steps)), 'slice positions'
+    h = images[0].getHead()
+    return float(h.field_of_view[2]) / max(int(h.matrix_size[2]), 1), 'header slice thickness'
 
 
 def to_volume(images):
-    """MRD images -> (z, y, x) volume in the training (dcm2niix) layout: z = slices sorted
-    along the normal, y = rows bottom-up, x = columns. Returns (vol, order, spacing_zyx)."""
-    order = slice_order(images)
+    """MRD images of one volume -> (z, y, x) volume in the training (dcm2niix) layout: z = slices
+    sorted along the normal (as GDCM/SimpleITK sort a DICOM series), y = rows bottom-up,
+    x = columns. Returns (vol, order, spacing_zyx); images[order[j]] is slice j."""
+    z = slice_positions(images)
+    if len(images) > 1 and np.ptp(z) <= 1e-3:
+        logging.warning("SeedSeg: all %d images have the same slice position; using the image header slice "
+                        "index (or arrival order) and slice thickness", len(images))
+        order = np.argsort([im.slice for im in images], kind='stable')
+    else:
+        order = np.argsort(z, kind='stable')
     sl = [np.asarray(images[i].data, np.float64).reshape(images[i].data.shape[-2:]) for i in order]  # [row, col]
     vol = np.stack(sl)[:, ::-1, :]
     h = images[0].getHead()
@@ -184,12 +220,13 @@ def to_volume(images):
     # MRD field_of_view/matrix_size are (read/x=cols, phase/y=rows, slice)
     vx = fov[0] / (mat[0] if mat[0] == cols else cols)
     vy = fov[1] / (mat[1] if mat[1] == rows else rows)
-    if len(images) > 1:
-        pos = np.array([images[i].position for i in order])
-        dz = float(np.median(np.linalg.norm(np.diff(pos, axis=0), axis=1)))
-    else:
-        dz = float(fov[2])
-    return vol, order, np.array([dz, vy, vx])
+    dz, source = slice_spacing(images, z)
+    spacing = np.array([dz, vy, vx])
+    logging.info("SeedSeg: slice spacing %.4f mm from the %s", dz, source)
+    if not (np.all(np.isfinite(spacing)) and np.all(spacing > 0)):
+        raise ValueError(f"SeedSeg: invalid voxel spacing {spacing} mm (z, y, x) from the image headers "
+                         f"(field_of_view {fov}, matrix_size {mat})")
+    return vol, order, spacing
 
 
 def marker_outline(mask):
@@ -200,7 +237,7 @@ def marker_outline(mask):
 
 
 def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirror=False, lazy=False):
-    """Detection on one series. Returns (det, mask [image,row,col] with value = rank, summary)."""
+    """Detection on one volume. Returns (det, mask [image,row,col] with value = rank, order, summary)."""
     vol, order, spacing = to_volume(images)
     logging.info("Volume (z,y,x) %s, spacing %s mm", vol.shape, np.round(spacing, 4))
     xyz = seedseg_onnx.n4_correct_xyz(vol.T)  # N4 on the NIfTI-order array, as for training
@@ -217,7 +254,7 @@ def run_seedseg(images, k=3, folds=('0', '1', '2', '3', '4'), device='cpu', mirr
         z, y, x = c['centroid_vox']
         summary.append(dict(rank=c['rank'], mean_prob=round(c['mean_prob'], 4), image=int(order[int(round(z))]),
                             row=round(vol.shape[1] - 1 - y, 1), col=round(x, 1), volume_mm3=round(c['volume_mm3'], 1)))
-    return det, mask, summary
+    return det, mask, order, summary
 
 
 def process_image(images, connection, config, metadata):
@@ -251,12 +288,29 @@ def process_image(images, connection, config, metadata):
 
     head = [img.getHead() for img in images]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
-    det, mask, summary = run_seedseg(images, k, folds, device, mirror, lazy)
-    flag = det['count_flag']
-    desc = f"SeedSeg {len(det['markers'])}of{k}" + ("_CHECK" if flag else "")
-    logging.info("SeedSeg: %s, %d candidates, %s, %.1f s", desc, det['n_candidates'], summary, time.time() - t0)
+    groups = split_volumes(images)
+    if len(groups) > 1:
+        logging.info("SeedSeg: %d images at %d slice positions; processing %d volumes separately",
+                     len(images), len(groups[0]), len(groups))
+    outline = np.zeros((len(images),) + np.asarray(images[0].data).shape[-2:], bool)
+    desc, comment, info = [None] * len(images), [None] * len(images), [None] * len(images)
+    for g in groups:
+        det, m, order, summary = run_seedseg([images[i] for i in g], k, folds, device, mirror, lazy)
+        for sm in summary:
+            sm['image'] = g[sm['image']]
+        o = np.zeros(m.shape, bool)
+        o[order] = marker_outline(m[order])  # outline in slice order, not arrival order
+        outline[g] = o
+        flag = det['count_flag']
+        d = f"SeedSeg {len(det['markers'])}of{k}" + ("_CHECK" if flag else "")
+        logging.info("SeedSeg: %s, %d candidates, %s, %.1f s", d, det['n_candidates'], summary, time.time() - t0)
+        c = d + ': ' + '; '.join(f"#{sm['rank']} p={sm['mean_prob']:.3f}" for sm in summary)
+        j = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary,
+                            device=device, device_reason=reason, networks=[int(f) + 1 for f in folds],
+                            mirroring=bool(mirror)))
+        for i in g:
+            desc[i], comment[i], info[i] = d, c, j
 
-    outline = marker_outline(mask)
     BitsStored = 12
     maxVal = 2 ** BitsStored - 1
     data = np.stack([np.asarray(img.data, np.float64).reshape(img.data.shape[-2:]) for img in images])
@@ -264,10 +318,6 @@ def process_image(images, connection, config, metadata):
     data[outline] = maxVal
     data = np.around(data).astype(np.int16)
 
-    info = json.dumps(dict(k=k, count_flag=bool(flag), n_candidates=det['n_candidates'], markers=summary,
-                           device=device, device_reason=reason, networks=[int(f) + 1 for f in folds],
-                           mirroring=bool(mirror)))
-    comment = desc + ': ' + '; '.join(f"#{s['rank']} p={s['mean_prob']:.3f}" for s in summary)
     imagesOut = []
     for i in range(len(images)):
         im = ismrmrd.Image.from_array(data[i][None, None], transpose=False)  # [cha z y x]
@@ -279,9 +329,9 @@ def process_image(images, connection, config, metadata):
         tmpMeta['ImageProcessingHistory'] = ['PYTHON', 'SEEDSEG']
         tmpMeta['WindowCenter'] = str((maxVal + 1) / 2)
         tmpMeta['WindowWidth'] = str(maxVal + 1)
-        tmpMeta['SequenceDescriptionAdditional'] = desc
-        tmpMeta['ImageComments'] = comment
-        tmpMeta['SeedSegMarkers'] = base64.b64encode(info.encode()).decode()
+        tmpMeta['SequenceDescriptionAdditional'] = desc[i]
+        tmpMeta['ImageComments'] = comment[i]
+        tmpMeta['SeedSegMarkers'] = base64.b64encode(info[i].encode()).decode()
         tmpMeta['Keep_image_geometry'] = 1
         if tmpMeta.get('ImageRowDir') is None:
             tmpMeta['ImageRowDir'] = ["{:.18f}".format(v) for v in oldHeader.read_dir]
