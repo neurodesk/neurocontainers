@@ -3,6 +3,7 @@
 import fcntl
 import hashlib
 import json
+from itertools import combinations
 import logging
 import os
 from pathlib import Path
@@ -62,15 +63,21 @@ def atomic_write(path, writer):
 
 def reconstruct(images, settings, metadata):
     identity = exam_identity(metadata)
-    final = flag(settings.get('final', False))
     register = flag(settings.get('register', True))
     group = str(settings.get('group', '')).strip()
     if not group:
-        raise ValueError('Set group to a unique identifier for this exam and TI pair')
-    short = positive(settings.get('shortti', 300))
-    long = positive(settings.get('longti', 500))
-    if short >= long:
-        raise ValueError('shortti must be less than longti')
+        raise ValueError('Set group to a unique identifier for this exam and acquisition set')
+    trigger = positive(settings.get('triggerti', 778))
+    configured = settings.get('expectedtis', '300,500,778')
+    if not isinstance(configured, str) or not configured.strip():
+        raise ValueError('Set expectedtis to the comma-separated TI values for this acquisition group')
+    expected = sorted(positive(value.strip()) for value in configured.split(','))
+    if any(b - a <= 0.1 for a, b in zip(expected, expected[1:])):
+        raise ValueError('Expected TIs must be distinct and separated by more than 0.1 ms')
+    if len(expected) < 2 or trigger not in expected:
+        raise ValueError('Expected TIs must contain at least two values and include triggerti')
+    if len(expected) * (len(expected) - 1) // 2 * 3 > 65000:
+        raise ValueError('Too many TI pairs for MRD series numbering')
     ti = settings.get('ti')
     if ti is None or ti == '':
         values = getattr(getattr(metadata, 'sequenceParameters', None), 'TI', [])
@@ -78,10 +85,11 @@ def reconstruct(images, settings, metadata):
             raise ValueError('Provide ti in milliseconds or exactly one metadata TI')
         ti = values[0]
     ti = positive(ti)
-    matches = [value for value in (short, long) if abs(ti - value) <= 0.05]
+    matches = [value for value in expected if abs(ti - value) <= 0.05]
     if len(matches) != 1:
         raise ValueError('Current TI must match exactly one configured TI within 0.05 ms')
     ti = matches[0]
+    final = ti == trigger
     if not images or any(im.getHead().image_type not in (0, ismrmrd.IMTYPE_MAGNITUDE)
                          for im in images):
         raise ValueError('Supply one magnitude volume per acquisition')
@@ -101,12 +109,15 @@ def reconstruct(images, settings, metadata):
     # Serialize acquisition replacement and final reads across server processes.
     with (folder / 'lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        manifest = json.dumps({'shortti': short, 'longti': long, 'exam': identity}, sort_keys=True)
-        manifest_path = folder / 'pair.json'
+        manifest = json.dumps({'exam': identity,
+                               'expectedtis': expected, 'triggerti': trigger}, sort_keys=True)
+        manifest_path = folder / 'acquisitions.json'
         if manifest_path.exists() and manifest_path.read_text() != manifest:
-            raise ValueError('This group already belongs to a different exam or TI pair')
-        paths = [folder / name for name in ('short.npz', 'long.npz')]
-        for path in paths:
+            raise ValueError('This group already belongs to a different exam or acquisition set')
+        paths = {value: folder / f'ti-{value.hex()}.npz' for value in expected}
+        if (folder / 'pair.json').exists():
+            raise ValueError('This group contains legacy pair data; choose a new acquisition group')
+        for path in paths.values():
             if path.exists():
                 with np.load(path, allow_pickle=False) as saved:
                     if (saved['data'].shape != data.shape
@@ -115,23 +126,27 @@ def reconstruct(images, settings, metadata):
                         raise ValueError('TI acquisitions have mismatched image geometry')
         if not manifest_path.exists():
             atomic_write(manifest_path, lambda stream: stream.write(manifest.encode()))
-        target = folder / ('short.npz' if ti == short else 'long.npz')
-        atomic_write(target, lambda stream: np.savez(stream, data=data, geometry=geom))
+        target = paths[ti]
+        atomic_write(target, lambda stream: np.savez(stream, data=data, geometry=geom, ti_ms=ti))
         if not final:
             return []
-        if not all(path.exists() for path in paths):
-            raise ValueError('Final acquisition saved, but the other TI is missing')
-        arrays = []
-        for path in paths:
+        missing = [value for value, path in paths.items() if not path.exists()]
+        if missing:
+            raise ValueError(f'Trigger acquisition saved, but expected TIs are missing: {missing}')
+        arrays = {}
+        for value, path in paths.items():
             with np.load(path, allow_pickle=False) as saved:
-                if (saved['data'].shape != data.shape
-                        or saved['geometry'].shape != geom.shape
-                        or not np.allclose(saved['geometry'], geom, atol=1e-4, rtol=0)):
-                    raise ValueError('TI acquisitions have mismatched image geometry')
-                arrays.append(saved['data'].copy())
-        results = make_dsir(*arrays, register=register)
+                arrays[value] = saved['data'].copy()
     output = []
-    for series, (name, volume) in enumerate(zip(('dSIR', 'lSIR', 'aSIR'), results), 101):
+    for pair_index, (short, long) in enumerate(combinations(expected, 2)):
+        results = make_dsir(arrays[short], arrays[long], register=register)
+        output.extend(output_images(images, results, short, long, 101 + 3 * pair_index))
+    return output
+
+
+def output_images(images, results, short, long, first_series):
+    output = []
+    for series, (name, volume) in enumerate(zip(('dSIR', 'lSIR', 'aSIR'), results), first_series):
         uid = '2.25.' + str(uuid.uuid4().int)
         for index, source in enumerate(images):
             image = ismrmrd.Image.from_array(volume[:, :, index][None, None], transpose=False)

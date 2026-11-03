@@ -1,5 +1,8 @@
 """Exercise separate acquisition calls against persisted data and real MRD images."""
 import os
+import hashlib
+from itertools import combinations
+from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 
@@ -28,9 +31,9 @@ def images(value):
 def main():
     with tempfile.TemporaryDirectory() as directory:
         os.environ['UHC_DATA_DIR'] = directory
-        settings = dict(group='exam-a', shortti=250, longti=600, ti=250, register=False)
+        settings = dict(group='exam-a', ti=250, register=False, expectedtis='250,600', triggerti=600)
         assert reconstruct(images(3), settings, META) == []
-        settings.update(ti=600, final=True)
+        settings.update(ti=600)
         output = reconstruct(images(1), settings, META)
         assert len(output) == 6
         assert output[0].data.dtype == np.int16
@@ -64,7 +67,7 @@ def main():
             assert 'exam' in str(error)
         else:
             raise AssertionError('Mixed exams accepted')
-        settings.update(group='handler', ti='', final=False)
+        settings.update(group='handler', ti='')
         source = images(3)
         head = source[0].getHead()
         head.image_type = 0
@@ -95,12 +98,35 @@ def main():
         process(connection, {'parameters': settings}, META)
         assert connection.closed and not connection.errors
         assert connection.sent == source + [phase]
-        settings.update(ti=600, final=True)
+        settings.update(ti=600)
         connection = Connection(images(1))
         process(connection, {'parameters': settings}, META)
         assert connection.closed and not connection.errors
         assert len(connection.sent) == 8
         assert connection.sent[2].data[0, 0, 32, 32] == 5000
+        for expected in ('300,500,778', '100,200,300,400,500,600,778'):
+            settings.update(group='set-' + expected, expectedtis=expected, triggerti=778)
+            values = list(map(float, expected.split(',')))
+            pairs = list(combinations(values, 2))
+            for ti in values:
+                settings['ti'] = ti
+                result = reconstruct(images(ti), settings, META)
+                assert len(result) == (6 * len(pairs) if ti == 778 else 0)
+            for pair_index, (short, long) in enumerate(pairs):
+                dsir = result[pair_index * 6]
+                assert dsir.data[0, 0, 32, 32] == round(10000 * (short - long) / (short + long))
+                meta = ismrmrd.Meta.deserialize(dsir.attribute_string)
+                assert meta['SequenceDescriptionAdditional'] == f'dSIR {short:g}/{long:g} ms'
+            assert len({image.getHead().image_series_index for image in result}) == 3 * len(pairs)
+            folder = Path(directory) / hashlib.sha256(settings['group'].encode()).hexdigest()
+            assert len(list(folder.glob('ti-*.npz'))) == len(expected.split(','))
+        settings.update(group='early-trigger', expectedtis='250,600,778', ti=778)
+        try:
+            reconstruct(images(1), settings, META)
+        except ValueError as error:
+            assert 'missing' in str(error)
+        else:
+            raise AssertionError('Trigger processed an incomplete acquisition set')
     print('UHC persistence and reconstruction passed')
 
 
