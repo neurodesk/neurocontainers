@@ -1,0 +1,108 @@
+name: uhcfire
+version: 1.0.0
+architectures:
+- x86_64
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzEzMjk0YiIvPjxyZWN0IHg9IjQiIHk9IjUiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiM3ZGQzZmMiLz48cmVjdCB4PSIxMyIgeT0iMTIiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiMzNGQzOTkiLz48cGF0aCBkPSJNOSAxNWg1LjJNMTIuNCAxMi44IDE1IDE1bC0yLjYgMi4yIiBmaWxsPSJub25lIiBzdHJva2U9IiNmOGZhZmMiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48Y2lyY2xlIGN4PSI3LjUiIGN5PSI4LjUiIHI9IjEuNiIgZmlsbD0iI2Y4ZmFmYyIvPjxwYXRoIGQ9Ik0xNS4yIDE2LjRoMy4yTTE2LjggMTQuOHYzLjIiIHN0cm9rZT0iI2Y4ZmFmYyIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==
+files:
+- name: uhcfire.py
+  filename: uhcfire.py
+- name: make_dsir.py
+  filename: make_dsir.py
+- name: rigid2.py
+  filename: rigid2.py
+- name: smoke_test.py
+  filename: smoke_test.py
+- name: uhcfire
+  contents: '#!/bin/sh
+
+    cd /opt/code/python-ismrmrd-server
+
+    exec python3 main.py -r -H=0.0.0.0 -p=9002 "$@"
+
+    '
+variables:
+  openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
+  openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
+  openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
+  openrecon_ismrmrd_version: 1.14.2
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+  numpy_version: 1.26.4
+  scipy_version: 1.13.1
+auto_update:
+  container_version: false
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: base_image
+    method: oci_digest
+    image: ubuntu
+    tag: '22.04'
+    target:
+      variable: base_image_digest
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  - id: numpy
+    method: pypi
+    package: numpy
+    dependency: true
+    target:
+      variable: numpy_version
+  - id: scipy
+    method: pypi
+    package: scipy
+    dependency: true
+    target:
+      variable: scipy_version
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+  - environment:
+      DEBIAN_FRONTEND: noninteractive
+  - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
+  - include: macros/openrecon/neurodocker.yaml
+  - run:
+    - python3 -m pip install numpy=={{ context.numpy_version }} scipy=={{ context.scipy_version }}
+    - cp {{ get_file("uhcfire.py") }} /opt/code/python-ismrmrd-server/uhcfire.py
+    - cp {{ get_file("make_dsir.py") }} /opt/code/python-ismrmrd-server/make_dsir.py
+    - cp {{ get_file("rigid2.py") }} /opt/code/python-ismrmrd-server/rigid2.py
+    - cp {{ get_file("smoke_test.py") }} /opt/code/python-ismrmrd-server/smoke_test.py
+  - environment:
+      UHC_DATA_DIR: /tmp/share/uhcfire
+      PYTHONPATH: /opt/code/python-ismrmrd-server
+  - run:
+    - install -m 0755 {{ get_file("uhcfire") }} /usr/local/bin/uhcfire
+deploy:
+  bins:
+  - uhcfire
+domains:
+- neuroimaging
+categories:
+- image reconstruction
+readme: UHC FIRE 1.0.0. Receives one magnitude volume as single-channel 2D MRD slices per acquisition.
+  Implements dSIR, lSIR and aSIR using the supplied make_dsir.py and rigid2.py example. See README.md
+  for configuration and persistent storage requirements.

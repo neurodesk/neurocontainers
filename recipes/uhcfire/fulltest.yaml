@@ -1,0 +1,7 @@
+name: uhcfire
+version: 1.0.0
+tests:
+  - name: persisted inversion time reconstruction
+    description: Save separate acquisitions, combine a configurable TI pair and reject unrelated or mismatched scans.
+    command: python3 /opt/code/python-ismrmrd-server/smoke_test.py
+    expected_output_contains: UHC persistence and reconstruction passed
