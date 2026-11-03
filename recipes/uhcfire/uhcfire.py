@@ -74,10 +74,10 @@ def reconstruct(images, settings, metadata):
     expected = sorted(positive(value.strip()) for value in configured.split(','))
     if any(b - a <= 0.1 for a, b in zip(expected, expected[1:])):
         raise ValueError('Expected TIs must be distinct and separated by more than 0.1 ms')
-    if len(expected) < 2 or trigger not in expected:
-        raise ValueError('Expected TIs must contain at least two values and include triggerti')
-    if len(expected) * (len(expected) - 1) // 2 * 3 > 65000:
-        raise ValueError('Too many TI pairs for MRD series numbering')
+    if len(expected) != 3:
+        raise ValueError('Configure exactly three expected TIs')
+    if trigger not in expected:
+        raise ValueError('Expected TIs must include triggerti')
     ti = settings.get('ti')
     if ti is None or ti == '':
         values = getattr(getattr(metadata, 'sequenceParameters', None), 'TI', [])

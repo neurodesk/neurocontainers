@@ -10,7 +10,7 @@ The calculation uses `make_dsir.py` and `rigid2.py` from the supplied example.
 Use identical settings on all sequences, except the current TI:
 
 - Acquisition group: a unique name for this exam and acquisition set.
-- Expected TIs: `300,500,778` initially. Enter a comma-separated list to use more TIs.
+- Expected TIs: `300,500,778` initially. Exactly three distinct TIs are required; their values are configurable.
 - TI that triggers processing: `778` ms.
 - Current TI: leave empty to read the single TI from MRD sequence metadata, or
   enter this sequence's TI in milliseconds.
@@ -27,7 +27,7 @@ and returns originals plus these derived series:
 | 300 / 778 | dSIR, lSIR, aSIR | 104–106 |
 | 500 / 778 | dSIR, lSIR, aSIR | 107–109 |
 
-Seven distinct TIs produce 21 pairs and 63 derived image series. Each series
+The three TIs produce three pairs and nine derived image series. Each series
 name identifies the metric and TI pair. Pairs are ordered by increasing short
 TI, then increasing long TI. Signed int16 output uses the example's factor of
 10000. Inputs must share image geometry; registration corrects in-plane motion
@@ -65,7 +65,7 @@ Acquire the missing TIs, then resend the trigger acquisition to compute.
 Successful computation retains inputs. Remove the group's hashed directory
 only when no acquisition is running and the data are no longer needed.
 
-Local and container smoke tests cover two-, three- and seven-TI sets. Scanner
+Local and container smoke tests cover three-TI sets and reject other TI counts. Scanner
 display, signed image scaling and motion correction quality still require
 validation with representative scanner data. The supplied source archive
 contains no license declaration; no third-party license has been inferred.

@@ -113,7 +113,7 @@ domains:
 - neuroimaging
 categories:
 - image reconstruction
-readme: 'UHC FIRE {{ context.version }} stores separate inversion-time acquisitions and computes dSIR,
+readme: 'UHC FIRE {{ context.version }} stores exactly three separate inversion-time acquisitions and computes dSIR,
   lSIR and aSIR for every short/long pair when the configured trigger TI arrives. Scanner defaults: expected
   TIs 300,500,778 ms; trigger 778 ms. Mount persistent storage at /tmp/share/uhcfire. See README.md for
   configuration.'

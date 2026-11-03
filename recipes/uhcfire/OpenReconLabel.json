@@ -89,12 +89,12 @@
     {
       "id": "expectedtis",
       "label": {
-        "en": "Expected TIs (comma separated)"
+        "en": "Three TIs (comma separated)"
       },
       "type": "string",
       "default": "300,500,778",
       "information": {
-        "en": "List all TIs in this acquisition group, including the trigger TI. Use the same list on every sequence."
+        "en": "Enter exactly three distinct TIs, including the trigger TI. Use the same list on every sequence."
       }
     },
     {
