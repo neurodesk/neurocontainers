@@ -3,9 +3,11 @@ version: 0.61.0_23112021_beta
 copyright:
   - license: MPL-2.0
     url: https://github.com/KUL-Radneuron/KUL_VBG/blob/8ec6cee1cc15f222791d807c333daf2ff2483d78/Licence.txt
-  - name: FreeSurfer software license
+  - license: other-open
+    name: FreeSurfer software license
     url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
-  - name: FSL license
+  - license: other-closed
+    name: FSL license
     url: https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html
 architectures:
   - x86_64

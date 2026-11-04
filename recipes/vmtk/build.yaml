@@ -4,7 +4,8 @@ version: 1.5.2
 copyright:
   - license: BSD-3-Clause
     url: https://github.com/vmtk/vmtk
-  - license: LicenseRef-TetGen-1.4.3
+  - license: other-closed
+    name: TetGen 1.4.3 license
     url: https://github.com/vmtk/vmtk/blob/v1.5.2/vtkVmtk/Utilities/tetgen1.4.3/LICENSE
 
 architectures:

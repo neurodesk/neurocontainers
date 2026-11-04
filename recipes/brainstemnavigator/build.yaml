@@ -4,7 +4,8 @@ epoch: 1
 copyright:
   - license: MIT
     url: https://github.com/neurodesk/neurocontainers/blob/main/LICENSE
-  - name: User-supplied Brainstem Navigator atlas agreement
+  - license: other-closed
+    name: User-supplied Brainstem Navigator atlas agreement
     url: https://www.nitrc.org/frs/download.php/17380/BrainstemNavigatorv1.0.zip
 architectures:
   - x86_64

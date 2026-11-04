@@ -29,6 +29,10 @@ variables:
 name: sovabids
 version: "0.4.7"
 
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/yjmantilla/sovabids/blob/main/LICENSE
+
 architectures:
   - x86_64
   - aarch64

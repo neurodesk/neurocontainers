@@ -2,7 +2,8 @@ name: fetalsynthseg
 version: 1.0.0
 
 copyright:
-  - name: FetalSynthSeg Academic Non-Commercial Research License (UNIL)
+  - license: other-closed
+    name: FetalSynthSeg Academic Non-Commercial Research License (UNIL)
     url: https://github.com/Medical-Image-Analysis-Laboratory/FetalSynthSeg/blob/main/LICENSE
 
 architectures:

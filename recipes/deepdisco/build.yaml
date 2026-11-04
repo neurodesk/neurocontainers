@@ -3,7 +3,8 @@ version: "20251008"
 description: DeepDisco predicts brain connectivity maps from binary lesion or region masks using trained 3D U-Net models.
  
 copyright:
-  - name: LicenseRef-DeepDisco
+  - license: other-closed
+    name: DeepDisco
     url: https://github.com/annamatsulevits/DeepDisco
  
 architectures:

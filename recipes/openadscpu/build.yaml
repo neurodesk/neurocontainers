@@ -4,7 +4,8 @@ variables:
 name: openadscpu
 version: 1.0.0
 copyright:
-  - name: JHU Non-Profit Research Software License Agreement
+  - license: other-closed
+    name: JHU Non-Profit Research Software License Agreement
     url: https://github.com/farialab/OpenADS/blob/main/LICENSE
 architectures:
   - x86_64

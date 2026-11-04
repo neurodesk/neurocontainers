@@ -8,7 +8,8 @@ copyright:
     url: https://github.com/simnibs/brainsynth/blob/v{{ context.brainsynth_version }}/LICENSE
   - license: GPL-3.0-only
     url: https://github.com/simnibs/cortech/blob/v{{ context.cortech_version }}/LICENSE
-  - license: LicenseRef-FreeSurfer
+  - license: other-open
+    name: FreeSurfer Software License Agreement
     url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
 
 architectures:

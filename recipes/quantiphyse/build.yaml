@@ -14,7 +14,8 @@ copyright:
   url: https://github.com/physimals/oxasl_mp/blob/master/LICENSE
 - license: BSD-3-Clause
   url: https://github.com/physimals/maskslic/blob/master/LICENSE.txt
-- license: LicenseRef-FSL
+- license: other-closed
+  name: FSL non-commercial license
   url: https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html
 variables:
   cloudpickle_version: 3.1.2

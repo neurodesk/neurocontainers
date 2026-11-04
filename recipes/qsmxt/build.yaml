@@ -5,7 +5,8 @@ copyright:
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
   - license: BSD-2-Clause
     url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
-  - name: ep3d-highres-preprocessing (no license file upstream; packaged with the author's permission)
+  - license: other-closed
+    name: ep3d-highres-preprocessing (no license file upstream; packaged with the author's permission)
     url: https://github.com/mrphysics-bonn/ep3d-highres-preprocessing
   - license: BSD-2-Clause
     url: https://github.com/rordenlab/niimath/blob/master/LICENSE

@@ -1,6 +1,10 @@
 name: topaz
 version: 0.3.20
 
+copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/tbepler/topaz/blob/master/LICENSE
+
 architectures:
   - x86_64
   - aarch64

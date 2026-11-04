@@ -2,8 +2,8 @@ name: rstudio
 version: 2026.10.1
 
 copyright:
-  - license: AGPL-3.0
-    url: https://spdx.org/licenses/AGPL-3.0.html
+  - license: AGPL-3.0-only
+    url: https://github.com/rstudio/rstudio/blob/main/COPYING
 
 architectures:
   - x86_64

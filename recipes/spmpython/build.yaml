@@ -1,8 +1,11 @@
 name: spmpython
 version: "25.1.2.post2"
 copyright:
-  - name: GPL-2.0
+  - license: GPL-2.0-or-later
     url: https://github.com/spm/spm-python/blob/main/LICENCE
+  - license: GPL-3.0-or-later
+    name: Bundled FieldTrip wrappers
+    url: https://pypi.org/project/spm-python/25.1.2.post2/
 architectures:
   - x86_64
   - aarch64

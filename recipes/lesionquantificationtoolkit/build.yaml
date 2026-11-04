@@ -4,8 +4,8 @@ variables:
 name: lesionquantificationtoolkit
 version: 0.1.0
 copyright:
-  - name: NONE
-    url: https://github.com/jdwor/LQT
+  - license: GPL-2.0-only
+    url: https://github.com/jdwor/LQT/blob/ab5801bd5ef2d5a9c3c6d75c332d0ef2fa6968b8/DESCRIPTION
 architectures:
   - x86_64
   - aarch64

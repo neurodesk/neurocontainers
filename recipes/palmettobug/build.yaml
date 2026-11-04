@@ -1,5 +1,9 @@
 name: palmettobug
 version: "0.2.11" # https://github.com/immunecells/HARMONI
+copyright:
+  - license: GPL-3.0-only
+    url: https://palmettobug.readthedocs.io/en/stable/WelcometoPalmettoBUG.html#licensing-information
+
 architectures:
   - x86_64
 auto_update:

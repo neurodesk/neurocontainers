@@ -10,6 +10,11 @@ variables:
 name: wftfi
 version: 1.0.0
 
+copyright:
+  - license: other-closed
+    name: wfTFI
+    url: https://gitlab.com/thomshaw92/wftfi
+
 architectures:
   - x86_64
   - aarch64

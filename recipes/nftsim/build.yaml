@@ -1,5 +1,9 @@
 name: nftsim
 version: 1.0.2
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainDynamicsUSYD/nftsim/blob/master/LICENSE
+
 architectures:
   - x86_64
   - aarch64
