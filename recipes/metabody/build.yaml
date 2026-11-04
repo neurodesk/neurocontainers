@@ -1,5 +1,12 @@
 name: metabody
 version: 1.0.5
+zenodo_license: other-closed
+copyright:
+  - license: MIT
+    name: NeuroDesk Metabody integration
+    url: https://github.com/NeuroDesk/neurocontainers/blob/main/LICENSE
+  - name: AFNI license and exceptions
+    url: https://github.com/afni/afni/blob/master/LICENSE.txt
 architectures:
     - x86_64
 

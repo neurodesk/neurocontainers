@@ -1,6 +1,8 @@
 name: cryosparc
 version: 1.0.0
 epoch: 1
+zenodo_license: other-closed
+
 copyright:
   - license: MIT
     url: https://github.com/NeuroDesk/neurocontainers/blob/main/LICENSE
