@@ -16,8 +16,8 @@ variables:
 name: flames
 version: 1.0.0
 copyright:
-  - license: GPL-3.0-only
-    url: https://huggingface.co/spaces/FrancescoLR/FLAMeS/tree/main
+  - license: CC-BY-NC-4.0
+    url: https://huggingface.co/FrancescoLR/FLAMeS-model/blob/{{ context.model_commit }}/README.md
 architectures:
   - x86_64
   - aarch64

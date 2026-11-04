@@ -8,8 +8,9 @@ version: "26.3.07"
 # https://afni.nimh.nih.gov/about_afni
 
 copyright:
-  - license: GPL-3.0-only
-    url: https://afni.nimh.nih.gov/legal_info
+  - license: other-closed
+    name: AFNI public domain core and restricted third-party components
+    url: https://github.com/afni/afni/blob/master/LICENSE.txt
 
 architectures:
   - x86_64
