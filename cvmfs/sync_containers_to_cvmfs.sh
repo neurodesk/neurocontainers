@@ -729,6 +729,13 @@ elif [[ $PREFETCH_STATUS -ne 0 ]]; then
     exit 2
 fi
 
+# Preserve signed-release evidence for both new and previously installed images.
+# Enable only after the artifact-signing staging acceptance has succeeded.
+if [[ "${CVMFS_MIRROR_SIGNATURES:-false}" == true ]]; then
+    source "$SCRIPT_DIR/mirror_signature_sidecars.sh"
+    mirror_signature_sidecars "$SCRIPT_DIR" /cvmfs/neurodesk.ardc.edu.au "$LOG_TEMP" || exit 2
+fi
+
 # update neurocommand installation for the lxde menus:
 
 # to get this to work I manually created these on the CVMFS stratum 0 server:

@@ -49,15 +49,65 @@ cosign verify-blob --certificate-identity "$identity" --certificate-oidc-issuer 
 
 Check the signed statement's SIF hash against your downloaded file and confirm
 the intended version, candidate head and merge commit. The same SIF bundle can
-verify identical bytes copied to CVMFS; CVMFS operators must mirror the sidecars
-or obtain them from the official S3 location. This PR does not change CVMFS
-mirroring or the separate manual build workflow.
+verify identical bytes obtained from another download location. It does not
+verify the unpacked directory served by CVMFS. The separate manual build workflow
+does not produce these signatures.
 
 Existing releases without bundles remain unsigned. A missing bundle or failed
 verification must never be interpreted as a verified release. Rerunning a
 trusted promotion may create fresh signatures for the same immutable bytes;
 it does not alter the SIF. Signing or required sidecar publication failure stops
 release finalization. Fulcio/Rekor and registry availability are required.
+
+## Mirror sidecars on CVMFS
+
+After staging acceptance, the Stratum 0 operator can set
+`CVMFS_MIRROR_SIGNATURES=true` for `cvmfs/sync_containers_to_cvmfs.sh`. This is
+disabled by default and does not enable artifact signing. Both new and previously
+installed containers in the current catalog are considered. The mirror stores
+the three files under:
+
+```text
+/cvmfs/neurodesk.ardc.edu.au/containers/NAME/signatures/NAME.simg.sigstore.json
+/cvmfs/neurodesk.ardc.edu.au/containers/NAME/signatures/NAME.simg.promotion.json
+/cvmfs/neurodesk.ardc.edu.au/containers/NAME/signatures/NAME.simg.promotion.sigstore.json
+```
+
+Install the AWS CLI on the publisher and grant its read credentials `s3:ListBucket`
+and `s3:GetObject` on the `neurocontainers` bucket. Listing is needed because an
+anonymous request for an absent S3 key can return 403; that response cannot safely
+be treated as an unsigned release. `CVMFS_SIGNATURE_BUCKET` selects a staging
+bucket. An optional `CVMFS_SIGNATURE_SOURCE` HTTP endpoint must return 404 for
+absent keys; permission failures remain errors.
+
+To preview without a CVMFS transaction, use the same current log-format inventory
+as the sync and an empty staging directory outside CVMFS:
+
+```bash
+signature_stage=$(mktemp -d)
+python3 cvmfs/mirror_signature_sidecars.py prepare \
+  --repo-root /cvmfs/neurodesk.ardc.edu.au --log /path/to/current-log.txt \
+  --staging "$signature_stage"
+```
+
+Exit 0 means no changes; 1 means complete sidecar sets were staged; 2 means an
+error. The JSON report lists changed, unsigned and not-installed releases.
+Only a successful listing with all three files absent counts as unsigned.
+Partial sets, malformed JSON, denied access, changed staged bytes and loss of
+previously mirrored sidecars fail the operation. The sync downloads everything
+before opening a transaction, applies only that completed staging plan, and
+publishes the sets together. An apply failure aborts the transaction. Unchanged
+sets cause no publication; unsigned releases remain usable and unsigned.
+
+Mirroring preserves bytes and is not cryptographic verification. Use the
+`cosign verify-blob` commands above against an original SIF and the mirrored
+bundles. Do not pass the unpacked `NAME.simg/` directory as a SIF. A staging
+operator run must still demonstrate successful publication and failure rollback
+before enabling this on the production cron job. New `signatures` directories
+use mode 0755 and files use 0644, even with a restrictive publisher umask;
+existing directory permissions remain operator-controlled.
+
+## Accept signing in staging
 
 Before enabling production signing, run a trusted staging promotion with GitHub
 OIDC and test registry/S3 destinations:
