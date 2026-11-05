@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "whitematterlesions 0.5.20261103": {
+      "version": "20261104",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "machine learning"
+  ]
+}
