@@ -1,0 +1,103 @@
+{
+  "general": {
+    "name": {
+      "en": "MP2RAGE Denoise"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "Denoises MP2RAGE UNI using INV1 and INV2 with the easy-mp2rage O\u2019Brien robust combination (noise factor 6). OpenRecon config: mp2ragedenoise. Supply exactly three magnitude series, UNI=0, INV1=1, INV2=2 by default; configure uniseries/inv1series/inv2series to match the scanner. Requires matching complete single-plane volumes. Scanner volumes are reoriented to RAS for noise estimation, then restored to UNI geometry. NIfTI CLI preserves input voxel order, matching the webapp. Research use only. See OpenReconREADME.md for provenance and verification."
+    },
+    "id": "mp2ragedenoise",
+    "regulatory_information": {
+      "device_trade_name": "MP2RAGE Denoise",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2026/11/06",
+      "material_number": "mp2ragedenoise_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "safety_advices": "",
+      "special_operating_instructions": "Research MP2RAGE denoising",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 4,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "Configuration"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "mp2ragedenoise",
+          "name": {
+            "en": "MP2RAGE Denoise"
+          }
+        }
+      ],
+      "default": "mp2ragedenoise"
+    },
+    {
+      "id": "uniseries",
+      "label": {
+        "en": "UNI MRD series index"
+      },
+      "type": "int",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 65535
+    },
+    {
+      "id": "inv1series",
+      "label": {
+        "en": "INV1 MRD series index"
+      },
+      "type": "int",
+      "default": 1,
+      "minimum": 0,
+      "maximum": 65535
+    },
+    {
+      "id": "inv2series",
+      "label": {
+        "en": "INV2 MRD series index"
+      },
+      "type": "int",
+      "default": 2,
+      "minimum": 0,
+      "maximum": 65535
+    },
+    {
+      "id": "noisefactor",
+      "label": {
+        "en": "Noise factor"
+      },
+      "type": "double",
+      "default": 6,
+      "minimum": 0.1,
+      "maximum": 100,
+      "unit": {
+        "en": "x"
+      }
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+name: mp2ragedenoise
+version: 0.1.0
+architectures:
+  - x86_64
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxMzI5NGIiLz48cGF0aCBkPSJNMTIgMzJoMTBsNS0xNiAxMCAzMiA1LTE2aDEwIiBmaWxsPSJub25lIiBzdHJva2U9IiM3ZGQzZmMiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjMyIiB5PSI2MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMTAiPlVOSTwvdGV4dD48L3N2Zz4=
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/neurodesk/webapps/blob/af1bc1ea1a86353dd80d340b9ce353d52a9bf52f/apps/easy-mp2rage/LICENSE
+files:
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: mp2ragedenoise.py
+    filename: mp2ragedenoise.py
+  - name: mp2rage_denoise_core.py
+    filename: mp2rage_denoise_core.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: LICENSE
+    filename: LICENSE
+  - name: mp2ragedenoise
+    contents: |
+      #!/bin/sh
+      exec python /opt/code/python-ismrmrd-server/mp2ragedenoise.py "$@"
+variables:
+  openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
+  openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
+  openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
+  openrecon_ismrmrd_version: 1.14.2
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+auto_update:
+  container_version: false
+  method: sources
+  local:
+    - macros/openrecon
+    - macros/openrecon_i2i
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: '22.04'
+      target:
+        variable: base_image_digest
+    - id: openrecon_ismrmrd
+      method: github_release
+      repo: ismrmrd/ismrmrd
+      target:
+        variable: openrecon_ismrmrd_version
+        value: version
+    - id: openrecon_siemens
+      method: github_commit
+      repo: ismrmrd/siemens_to_ismrmrd
+      ref: HEAD
+      target:
+        variable: openrecon_siemens_commit
+    - id: openrecon_python_tools
+      method: github_commit
+      repo: ismrmrd/ismrmrd-python-tools
+      ref: HEAD
+      target:
+        variable: openrecon_python_tools_commit
+    - id: openrecon_server
+      method: github_commit
+      repo: astewartau/python-ismrmrd-server
+      ref: fix/ismrmrd-compatibility
+      target:
+        variable: openrecon_server_commit
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
+    - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_i2i/helpers.yaml
+    - run:
+        - cp {{ get_file("mp2ragedenoise.py") }} /opt/code/python-ismrmrd-server/mp2ragedenoise.py
+        - cp {{ get_file("mp2rage_denoise_core.py") }} /opt/code/python-ismrmrd-server/mp2rage_denoise_core.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("LICENSE") }} /opt/code/python-ismrmrd-server/LICENSE
+        - install -m 0755 {{ get_file("mp2ragedenoise") }} /usr/local/bin/mp2ragedenoise
+deploy:
+  bins:
+    - mp2ragedenoise
+domains:
+  - neuroimaging
+categories:
+  - image reconstruction
+readme: "Denoises MP2RAGE UNI using INV1 and INV2 with the easy-mp2rage O\u2019Brien robust combination\
+  \ (noise factor 6). OpenRecon config: mp2ragedenoise. Supply exactly three magnitude series, UNI=0,\
+  \ INV1=1, INV2=2 by default; configure uniseries/inv1series/inv2series to match the scanner. Requires\
+  \ matching complete single-plane volumes. Scanner volumes are reoriented to RAS for noise estimation,\
+  \ then restored to UNI geometry. NIfTI CLI preserves input voxel order, matching the webapp. Research\
+  \ use only. See OpenReconREADME.md for provenance and verification."

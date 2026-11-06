@@ -1,0 +1,55 @@
+[
+  {
+    "id": "marques-brain",
+    "label": "7 T brain — MP2RAGE with measured B1",
+    "description": "Real brain UNI, INV1, INV2 and measured B1 images from José Marques’s MP2RAGE reference dataset, with the published acquisition settings. Supports T1 correction and UNI denoising.",
+    "expectedResult": "A B1-corrected T1 map of the brain. Select Denoise UNI to remove background noise using the two inversion images. The B1 map is already measured; raw SA2RAGE-to-B1 estimation is not part of this example.",
+    "files": [
+      {
+        "role": "uni",
+        "name": "MP2RAGE_UNI.nii.gz",
+        "url": "https://huggingface.co/datasets/neurodeskorg/webapps/resolve/ce91e4ce4213f1e572275c634002e966604b1626/examples/easy-mp2rage/marques-brain/MP2RAGE_UNI.nii.gz",
+        "sha256": "9d6823388d2b24bdbed27773fea461f8f25a6723dbe8b74c33b1400d358d8c27",
+        "bytes": 11235272
+      },
+      {
+        "role": "inv1",
+        "name": "MP2RAGE_INV1.nii.gz",
+        "url": "https://huggingface.co/datasets/neurodeskorg/webapps/resolve/ce91e4ce4213f1e572275c634002e966604b1626/examples/easy-mp2rage/marques-brain/MP2RAGE_INV1.nii.gz",
+        "sha256": "4883c1c3bc2c195b3812c481163c172b205c9026e030e35de33c076427c0324e",
+        "bytes": 6647924
+      },
+      {
+        "role": "inv2",
+        "name": "MP2RAGE_INV2.nii.gz",
+        "url": "https://huggingface.co/datasets/neurodeskorg/webapps/resolve/ce91e4ce4213f1e572275c634002e966604b1626/examples/easy-mp2rage/marques-brain/MP2RAGE_INV2.nii.gz",
+        "sha256": "cf63efa154f2765e50531651c64e75bd3cdc8b2b1a11166f94e851976684ab56",
+        "bytes": 7930922
+      },
+      {
+        "role": "b1",
+        "name": "B1map_relative.nii.gz",
+        "url": "https://huggingface.co/datasets/neurodeskorg/webapps/resolve/ce91e4ce4213f1e572275c634002e966604b1626/examples/easy-mp2rage/marques-brain/B1_relative.nii.gz",
+        "sha256": "3b9782220d5a2470494bc1acea1acf63ad31836aaa4613a1829377c61c618098",
+        "bytes": 10760495
+      }
+    ],
+    "parameters": {
+      "mp": {
+        "tr": 6,
+        "ti1": 0.8,
+        "ti2": 2.7,
+        "fa1": 4,
+        "fa2": 5,
+        "nz1": 35,
+        "nz2": 72,
+        "trflash": 0.0067,
+        "inveff": 0.96
+      },
+      "b1": {
+        "type": "relative",
+        "refangle": 80
+      }
+    }
+  }
+]
