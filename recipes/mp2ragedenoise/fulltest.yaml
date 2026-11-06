@@ -1,0 +1,10 @@
+name: mp2ragedenoise
+version: 0.1.0
+tests:
+- name: Denoising CLI
+  command: mp2ragedenoise --help
+  expected_output_contains: --noise-factor
+- name: Numerical smoke test
+  command: 'cd /opt/code/python-ismrmrd-server && python -c ''import numpy as np;
+    from mp2ragedenoise import denoise; a=np.ones((12,12,12)); r=denoise(a*2048,a,a);
+    assert np.isfinite(r).all(); assert r.shape == a.shape; assert 0 <= r.min() <= r.max() < 2048'' '
