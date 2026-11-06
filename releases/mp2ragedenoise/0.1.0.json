@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "mp2ragedenoise 0.1.0": {
+      "version": "20261106",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
