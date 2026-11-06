@@ -1,5 +1,9 @@
 name: slicegrappa
 version: 0.1.2
+
+copyright:
+  - license: MIT
+    url: https://github.com/NeuroDesk/neurocontainers/blob/main/LICENSE
 architectures:
   - x86_64
 

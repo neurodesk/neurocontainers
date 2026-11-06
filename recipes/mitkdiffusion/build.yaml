@@ -1,6 +1,10 @@
 name: mitkdiffusion
 version: "2024.11.26"
 
+copyright:
+  - license: BSD-3-Clause
+    url: https://docs.mitk.org/diffusion/nightly/
+
 architectures:
   - x86_64
 

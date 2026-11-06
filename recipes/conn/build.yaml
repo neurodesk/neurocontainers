@@ -1,6 +1,10 @@
 name: conn
 version: 22a
 
+copyright:
+  - license: MIT
+    url: https://web.conn-toolbox.org/home
+
 architectures:
   - x86_64
 
