@@ -1,15 +1,15 @@
 name: scipion
-version: 3.8.3
+version: "3.9.0"
 copyright:
   - license: GPL-3.0-or-later
     url: https://github.com/scipion-em/scipion-app/blob/devel/LICENSE.txt
 architectures:
   - x86_64
 variables:
-  upstream_version: 3.8.3
-  pyworkflow_version: 3.11.7
+  upstream_version: "3.9.0"
+  pyworkflow_version: "3.12.0"
   pwem_version: 3.11.1
-  installer_version: 2.1.1
+  installer_version: "3.0.0"
   python_version: 3.10.22
 auto_update:
   method: sources
@@ -84,8 +84,8 @@ files:
   - name: scipion3.sh
     filename: scipion3.sh
   - name: miniforge_installer
-    url: https://github.com/conda-forge/miniforge/releases/download/26.7.2-0/Miniforge3-Linux-x86_64.sh
-    sha256: 281b0ac7d550802efc81af633225a5e6116d29ae72f3ab4eae7168c3931a4c05
+    url: "https://github.com/conda-forge/miniforge/releases/download/26.9.4-1/Miniforge3-Linux-x86_64.sh"
+    sha256: "571b410272cc434f28bc6c5c49ca8ffd4a4d1bcba9f57f1b6baccdb46446cfcc"
 domains:
   - neuroimaging
 categories:
