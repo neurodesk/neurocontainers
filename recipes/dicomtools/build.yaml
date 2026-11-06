@@ -3,7 +3,6 @@ variables:
 
 name: dicomtools
 version: "1.1.0"
-zenodo_license: other-open
 
 copyright:
   - name: DCMTK copyright and license

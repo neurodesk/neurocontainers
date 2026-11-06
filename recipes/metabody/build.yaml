@@ -1,6 +1,5 @@
 name: metabody
 version: 1.0.5
-zenodo_license: other-closed
 copyright:
   - license: MIT
     name: NeuroDesk Metabody integration

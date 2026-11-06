@@ -439,8 +439,7 @@ def validate_license(instance, attribute, value: Any) -> None:
     except InvalidLicenseExpression as error:
         raise ValueError(
             f"Invalid SPDX license expression '{value}'. For a custom license, "
-            "use 'name' with a URL, or 'license: other-open' / "
-            "'license: other-closed' with a URL for Zenodo publication."
+            "use 'name' with a URL."
         ) from error
 
 

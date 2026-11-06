@@ -118,14 +118,13 @@ field accepts an [SPDX identifier or expression](https://spdx.org/licenses/).
 Custom `LicenseRef-` identifiers require a `url`. SPDX values `NOASSERTION` and
 `NONE` also require a URL and do not identify a license for DOI publication.
 
-For a custom license, `name` and `url` preserve its title and terms. To publish
-that recipe through Neurocommand's Zenodo integration, also set `license` to
-`other-open` or `other-closed`, according to the upstream terms:
+For a custom license, `name` and `url` preserve its title and terms. This is
+sufficient for recipes with custom or multiple licenses; no separate
+`zenodo_license` field is needed:
 
 ```yaml
 copyright:
-  - license: other-closed
-    name: Academic non-commercial research license
+  - name: Academic non-commercial research license
     url: https://example.org/LICENSE
 ```
 
