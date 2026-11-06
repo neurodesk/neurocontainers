@@ -6,6 +6,7 @@ copyright:
   - license: LGPL-2.1-or-later
     url: https://github.com/UCL/STIR/blob/rel_{{ context.upstream_version }}/LICENSES/LGPL-2.1.txt
   - license: LicenseRef-PARAPET
+    name: PARAPET license
     url: https://github.com/UCL/STIR/blob/rel_{{ context.upstream_version }}/LICENSES/PARAPET-license.txt
   - license: MIT
     url: https://github.com/fmtlib/fmt/blob/{{ context.fmt_commit }}/LICENSE

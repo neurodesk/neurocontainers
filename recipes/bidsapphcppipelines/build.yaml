@@ -1,5 +1,13 @@
 name: bidsapphcppipelines
 version: "4.3.0"
+
+copyright:
+  - name: HCP Pipelines license
+    url: https://github.com/Washington-University/HCPpipelines/blob/master/LICENSE.md
+  - name: FreeSurfer Software License Agreement
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+  - name: FSL Software License
+    url: https://fsl.fmrib.ox.ac.uk/fsl/docs/#/license
 # https://hub.docker.com/r/bids/hcppipelines/tags
 
 architectures:

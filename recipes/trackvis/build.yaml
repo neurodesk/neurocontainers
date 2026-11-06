@@ -1,6 +1,10 @@
 name: trackvis
 version: 0.6.1
 
+copyright:
+  - name: TrackVis Academic Research End-User Software License Agreement
+    url: https://trackvis.org/docs/?subsect=license
+
 architectures:
   - x86_64
 

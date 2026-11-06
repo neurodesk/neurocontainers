@@ -1,6 +1,10 @@
 name: bidsappaa
 version: "0.2.0"
 
+copyright:
+  - name: Automatic Analysis Software Licence Agreement
+    url: https://github.com/bids-apps/aa/blob/master/license.txt
+
 # https://hub.docker.com/r/bids/aa/tags
 
 architectures:

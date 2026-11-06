@@ -5,6 +5,10 @@ variables:
 name: cosmomvpa
 version: "1.1.0"
 
+copyright:
+  - license: MIT
+    url: https://github.com/CoSMoMVPA/CoSMoMVPA/blob/master/COPYING
+
 architectures:
   - x86_64
   - aarch64

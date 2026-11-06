@@ -4,6 +4,10 @@ variables:
 name: gimp
 version: 2.10.36
 
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://gitlab.gnome.org/GNOME/gimp/-/blob/gimp-2-10/COPYING
+
 architectures:
   - x86_64
   - aarch64

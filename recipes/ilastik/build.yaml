@@ -1,6 +1,11 @@
 name: ilastik
 version: 1.4.2
 
+copyright:
+  - license: GPL-2.0-or-later
+    name: ilastik GPL with extension exception
+    url: https://www.ilastik.org/about
+
 architectures:
   - x86_64
 

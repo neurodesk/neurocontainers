@@ -1,6 +1,10 @@
 name: samsrfx
 version: "v10.004.0"
 
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/samsrf/samsrf/blob/master/LICENSE
+
 architectures:
   - x86_64
 

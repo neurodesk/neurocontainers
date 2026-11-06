@@ -1,6 +1,10 @@
 name: tgvqsm
 version: 1.0.0
 
+copyright:
+  - name: TGVQSM+ distribution (no license declared)
+    url: https://www.neuroimaging.at/media/qsm/TGVQSM-plus.zip
+
 architectures:
   - x86_64
 

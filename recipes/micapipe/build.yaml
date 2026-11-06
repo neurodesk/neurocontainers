@@ -1,5 +1,9 @@
 name: micapipe
 version: v0.2.3
+
+copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/MICA-MNI/micapipe/blob/master/LICENSE
 # https://hub.docker.com/r/micalab/micapipe/tags
 
 architectures:

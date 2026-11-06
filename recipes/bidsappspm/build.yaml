@@ -1,5 +1,11 @@
 name: bidsappspm
 version: 0.0.20
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/bids-apps/SPM/blob/master/LICENSE
+  - license: GPL-2.0-or-later
+    url: https://github.com/spm/spm/blob/main/LICENCE
 # https://hub.docker.com/r/bids/spm/tags
 
 architectures:
