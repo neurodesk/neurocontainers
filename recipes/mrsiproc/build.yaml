@@ -2,7 +2,8 @@ name: mrsiproc
 version: "0.3.0"
 
 copyright:
-  - name: MRSI pipeline source (no license declared)
+  - license: NOASSERTION
+    name: MRSI pipeline source (no license declared)
     url: https://github.com/korbinian90/mrsi_pipeline_neurodesk
 
 architectures:
