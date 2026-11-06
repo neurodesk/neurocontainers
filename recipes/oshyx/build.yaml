@@ -1,6 +1,10 @@
 name: oshyx
 version: "0.4.0"
 
+copyright:
+  - license: MIT
+    url: https://github.com/Cadaei-Yuvxvs/OSHy-X/blob/main/LICENSE
+
 architectures:
   - x86_64
 

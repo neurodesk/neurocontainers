@@ -5,9 +5,9 @@ name: dicomtools
 version: "1.1.0"
 
 copyright:
-  - name: dcmtk license
+  - name: DCMTK copyright and license
     url: https://support.dcmtk.org/docs/file_copyright.html
-  - name: dcm2niix license
+  - license: BSD-2-Clause
     url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
 
 architectures:

@@ -1,5 +1,9 @@
 name: bidsappbrainsuite
 version: "23a"
+
+copyright:
+  - license: GPL-2.0-only
+    url: https://github.com/bids-apps/BrainSuite/blob/master/LICENSE.txt
 # https://hub.docker.com/r/bids/brainsuite/tags
 
 architectures:

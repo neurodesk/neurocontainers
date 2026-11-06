@@ -5,6 +5,10 @@ variables:
 name: fatsegnet
 version: "1.1.0-gpu"
 
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/Deep-MI/FatSegNet/blob/master/LICENSE
+
 architectures:
   - x86_64
 

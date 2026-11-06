@@ -1,5 +1,11 @@
 name: mgltools
 version: "1.5.7"
+
+copyright:
+  - name: MGLTools license agreements
+    url: https://ccsb.scripps.edu/mgltools/downloads/
+  - name: MSMS academic use terms
+    url: https://ccsb.scripps.edu/msms/license/
 # check for latest version: https://ccsb.scripps.edu/mgltools/downloads/
 
 architectures:

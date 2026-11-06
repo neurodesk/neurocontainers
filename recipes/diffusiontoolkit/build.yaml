@@ -1,6 +1,10 @@
 name: diffusiontoolkit
 version: 0.6.4.1
 
+copyright:
+  - name: TrackVis and Diffusion Toolkit Academic Research End-User Software License Agreement
+    url: https://trackvis.org/docs/?subsect=license
+
 architectures:
   - x86_64
 

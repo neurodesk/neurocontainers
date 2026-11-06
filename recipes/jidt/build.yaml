@@ -1,5 +1,9 @@
 name: jidt
 version: "1.6.1"
+
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/jlizier/jidt/blob/master/license-gplv3.txt
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
 
 architectures:

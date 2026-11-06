@@ -1,6 +1,10 @@
 name: niistat
 version: 1.0.20191216
 
+copyright:
+  - license: GPL-2.0-only
+    url: https://github.com/neurolabusc/NiiStat/blob/master/LICENSE
+
 architectures:
   - x86_64
   - aarch64
