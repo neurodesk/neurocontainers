@@ -1,10 +1,10 @@
 flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
 openneuro_version: "2026.9.1"
 mne_version: "1.13.2"
-autoreject_version: "0.5.1"
+autoreject_version: "0.5.2"
 mne_bids_version: "0.20.0"
 mnelab_version: 1.5.4
-vscode_version: "1.144.1"
+vscode_version: "1.145.1"
 pipeline_commit: "1b86a975f4b8bd3d3dda4df98da5a1600a3d433f"
 name: mneextended
 version: "1.2.0"
