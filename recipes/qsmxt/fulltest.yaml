@@ -1,8 +1,8 @@
 name: qsmxt
-version: "10.0.0"
-upstream_version: "10.0.0"
-qsmxt_source_sha256: 6a839d0c617426c48f48f4e4a2c67a4283e3e814912a1aa21a1537170a8d6a00
-rust_version: "1.98.0"
+version: "11.0.0"
+upstream_version: "11.0.0"
+qsmxt_source_sha256: "6fe9b38bb9f12ac4c674f9b32ad9902ee310d68bedbf157ddd6695baa2d7af61"
+rust_version: "1.99.1"
 native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
 native_build_script_sha256: 30f4ea2bad991cc00e067f47efe16bcd71e4509e25f0bc5ff0f152de42367b99
 qsm_core_patch_sha256: a714c9e2c6b7f730cd5337c77da1d5657c9dee302e61f8df3b05f2048b169053
