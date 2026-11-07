@@ -148,7 +148,9 @@
       "values": [
         { "id": "default", "name": { "en": "Default (ROMEO)" } },
         { "id": "romeo", "name": { "en": "ROMEO" } },
-        { "id": "laplacian", "name": { "en": "Laplacian" } }
+        { "id": "laplacian", "name": { "en": "Laplacian" } },
+        { "id": "prelude", "name": { "en": "PRELUDE" } },
+        { "id": "medi-region-growing", "name": { "en": "MEDI region growing" } }
       ],
       "default": "romeo",
       "information": { "en": "Choose this stage with Pipeline preset set to Custom. Named presets override this choice. Complete methods ignore stages they replace." }
@@ -189,6 +191,7 @@
         { "id": "tikhonov", "name": { "en": "Tikhonov" } },
         { "id": "nltv", "name": { "en": "NLTV" } },
         { "id": "medi", "name": { "en": "MEDI" } },
+        { "id": "star", "name": { "en": "STAR" } },
         { "id": "ilsqr", "name": { "en": "iLSQR" } },
         { "id": "lsqr", "name": { "en": "LSQR" } },
         { "id": "heidi", "name": { "en": "HEIDI" } },
@@ -201,6 +204,7 @@
         { "id": "amp-pe", "name": { "en": "AMP-PE" } },
         { "id": "xqsm", "name": { "en": "xQSM" } },
         { "id": "qsmnet", "name": { "en": "QSMnet" } },
+        { "id": "qsmnetme", "name": { "en": "QSMnetME" } },
         { "id": "qsmnet-plus", "name": { "en": "QSMnet+" } },
         { "id": "autoqsm", "name": { "en": "AutoQSM" } },
         { "id": "qsmgan", "name": { "en": "QSMGAN" } },
