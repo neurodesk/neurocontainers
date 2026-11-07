@@ -1,7 +1,7 @@
 name: scipion
-version: 3.8.3
-upstream_version: 3.8.3
-pyworkflow_version: 3.11.7
+version: "3.9.0"
+upstream_version: "3.9.0"
+pyworkflow_version: "3.12.0"
 pwem_version: 3.11.1
 tests:
   - name: Scipion release
