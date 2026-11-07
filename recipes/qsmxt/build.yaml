@@ -22,10 +22,8 @@ variables:
   openrecon_ismrmrd_version: "1.15.0"
   upstream_version: "11.0.0"
   qsmxt_source_sha256: "6fe9b38bb9f12ac4c674f9b32ad9902ee310d68bedbf157ddd6695baa2d7af61"
-  qsm_core_commit: "42ab620190ad315c9dcf7aa8ec4a036402002b7e"
-  qsm_core_patch_sha256: a714c9e2c6b7f730cd5337c77da1d5657c9dee302e61f8df3b05f2048b169053
-  native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
-  native_build_script_sha256: 30f4ea2bad991cc00e067f47efe16bcd71e4509e25f0bc5ff0f152de42367b99
+  qsm_core_commit: "8a655f4c31b9b0f657c35fe812e7f0bf8867d368"
+  native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
   rust_version: "1.99.1"
   rust_x86_64_sha256: "231fcae47ee950621374725b5fc3b5441d2fbda2955ac45dd7dc816d8876cfe7"
   qsmxt_x86_64_sha256: "f74d61589634bb1da3617c80346da92a100eeeacbf8443288cd7c4e88d9e77ce"
@@ -213,7 +211,7 @@ build:
         - python3 -m pip install --break-system-packages --no-cache-dir antspyx=={{ context.antspyx_version }}
 
     - run:
-        - bash {{ get_file("build-native.sh") }} {{ get_file("qsmxt_source") }} {{ get_file("rust_toolchain") }} {{ get_file("reuse-single-echo-magnitude.patch") }} {{ context.upstream_version }} {{ context.rust_version }} {{ context.qsm_core_commit }} {{ context.native_patch_sha256 }} {{ context.native_build_script_sha256 }} {{ get_file("parallel-native-kernels.patch") }} {{ context.qsm_core_patch_sha256 }}
+        - bash {{ get_file("build-native.sh") }} {{ get_file("qsmxt_source") }} {{ get_file("rust_toolchain") }} {{ context.upstream_version }} {{ context.rust_version }} {{ context.qsm_core_commit }} {{ context.native_build_script_sha256 }}
 
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
@@ -354,10 +352,6 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlE
 files:
   - name: build-native.sh
     filename: build-native.sh
-  - name: reuse-single-echo-magnitude.patch
-    filename: reuse-single-echo-magnitude.patch
-  - name: parallel-native-kernels.patch
-    filename: parallel-native-kernels.patch
   - name: qsmxt_source
     url: https://github.com/QSMxT/QSMxT/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
     sha256: "{{ context.qsmxt_source_sha256 }}"

@@ -3,10 +3,8 @@ version: "11.0.0"
 upstream_version: "11.0.0"
 qsmxt_source_sha256: "6fe9b38bb9f12ac4c674f9b32ad9902ee310d68bedbf157ddd6695baa2d7af61"
 rust_version: "1.99.1"
-native_patch_sha256: 5a01558691a210d8b3a472f96a3dcde932bedf3cb20c7b451dc60972dd9ba652
-native_build_script_sha256: 30f4ea2bad991cc00e067f47efe16bcd71e4509e25f0bc5ff0f152de42367b99
-qsm_core_patch_sha256: a714c9e2c6b7f730cd5337c77da1d5657c9dee302e61f8df3b05f2048b169053
-qsm_core_commit: "42ab620190ad315c9dcf7aa8ec4a036402002b7e"
+native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
+qsm_core_commit: "8a655f4c31b9b0f657c35fe812e7f0bf8867d368"
 niimath_version: "1.0.20261016"
 
 test_data:
@@ -102,11 +100,9 @@ tests:
       assert info['rustc'].startswith('rustc ${rust_version} ')
       with Path('/opt/qsmxt/qsmxt').open('rb') as stream:
           assert info['binary_sha256'] == hashlib.file_digest(stream, 'sha256').hexdigest()
-      assert info['patch_sha256'] == '${native_patch_sha256}'
       assert info['build_script_sha256'] == '${native_build_script_sha256}'
       assert info['qsm_core_source'].endswith('#${qsm_core_commit}')
-      assert info['qsm_core_patched'] is True
-      assert info['qsm_core_patch_sha256'] == '${qsm_core_patch_sha256}'
+      assert info['qsm_core_patched'] is False
       assert len(info['cargo_lock_sha256']) == 64
       PY
       ! command -v rustc
