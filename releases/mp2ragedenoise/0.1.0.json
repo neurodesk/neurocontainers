@@ -1,7 +1,7 @@
 {
   "apps": {
     "mp2ragedenoise 0.1.0": {
-      "version": "20261106",
+      "version": "20261107",
       "exec": "",
       "apptainer_args": []
     }
