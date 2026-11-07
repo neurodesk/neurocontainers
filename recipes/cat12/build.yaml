@@ -1,6 +1,6 @@
 # this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
-version: "26.0.2"
+version: "26.0.3"
 
 copyright:
   - license: GPL-2.0-or-later
@@ -13,15 +13,15 @@ architectures:
   - x86_64
 
 variables:
-  upstream_version: "26.0.2"
+  upstream_version: "26.0.3"
   matlab_version: 2023b
   matlab_runtime_version: R2023b
   matlab_mcr_root: "/opt/mcr/{{ context.matlab_runtime_version }}"
 
 files:
   - name: cat12.zip
-    url: "https://github.com/ChristianGaser/cat12/releases/download/26.0.2/CAT_R2023b_MCR_Linux.zip"
-    sha256: "0150c423be23b2f68acd9b3ea02a69993c8177439b4dc044b7f0f4d0272cd597"
+    url: "https://github.com/ChristianGaser/cat12/releases/download/26.0.3/CAT_R2023b_MCR_Linux.zip"
+    sha256: "594f1ea3e576f455922455e6fc691ed3545f0b08ac6041057ff5fe39ae20c504"
 
 auto_update:
   container_version: "cat12"
