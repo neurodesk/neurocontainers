@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "dicompare 0.15.6": {
+      "version": "20261107",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control",
+    "data organisation"
+  ]
+}
