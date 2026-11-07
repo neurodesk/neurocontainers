@@ -806,3 +806,13 @@ tests:
     description: Check CUDA compiler exists
     command: "bash -lc 'ls /usr/local/cuda-11.8/bin/nvcc'"
     expected_output_contains: "nvcc"
+
+  - name: RELION GPU code covers Volta to Hopper
+    description: relion_refine carries real code for every CUDA architecture the recipe lists
+    command: "bash -lc '/usr/local/cuda-11.8/bin/cuobjdump --list-elf $(command -v relion_refine) | grep -o \"sm_[0-9]*\" | sort -u | tr \"\\n\" \" \"'"
+    expected_output_contains: "sm_70 sm_75 sm_80 sm_86 sm_89 sm_90"
+
+  - name: RELION GPU code carries PTX for newer GPUs
+    description: relion_refine carries compute_90 PTX so GPUs after Hopper can JIT-compile it
+    command: "bash -lc '/usr/local/cuda-11.8/bin/cuobjdump --list-ptx $(command -v relion_refine)'"
+    expected_output_contains: "sm_90"
