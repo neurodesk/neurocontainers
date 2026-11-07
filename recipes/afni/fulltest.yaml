@@ -1,6 +1,6 @@
 name: afni
-version: "26.3.07"
-afni_version: "26.3.07"
+version: "26.3.09"
+afni_version: "26.3.09"
 required_files:
 - dataset: ds000001
   files:
