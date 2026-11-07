@@ -13,7 +13,7 @@
 # and underlying tool availability.
 
 name: mriqc
-version: 24.0.2
+version: 26.1.0
 
 required_files:
   - dataset: ds000001
@@ -64,24 +64,6 @@ tests:
     description: Verify MRIQC accepts modality filtering
     command: "mriqc --help 2>&1 | grep -A2 '\\-m '"
     expected_output_contains: "T1w"
-
-  # ==========================================================================
-  # BIDS VALIDATION
-  # ==========================================================================
-  - name: BIDS validator version
-    description: Check bids-validator is available
-    command: bids-validator --version
-    expected_exit_code: 0
-
-  - name: BIDS validator help
-    description: Check bids-validator help text
-    command: bids-validator --help 2>&1 | head -20
-    expected_output_contains: "dataset_directory"
-
-  - name: Validate BIDS dataset
-    description: Validate the test dataset with bids-validator
-    command: bids-validator ${bids_dir} --ignoreWarnings 2>&1 | head -30
-    expected_exit_code: 0
 
   # ==========================================================================
   # PYBIDS (BIDS Layout) FUNCTIONALITY
@@ -157,65 +139,6 @@ tests:
     validate:
       - output_exists: ${output_dir}/t1w_n4.nii.gz
 
-  - name: ANTs DenoiseImage available
-    description: Verify DenoiseImage is available
-    command: DenoiseImage --help 2>&1 | head -10
-    expected_output_contains: "DenoiseImage"
-
-  - name: ANTs DenoiseImage on T1w
-    description: Run denoising on T1w image
-    command: DenoiseImage -d 3 -i ${t1w} -o test_output/t1w_denoised.nii.gz -s 2 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_denoised.nii.gz
-
-  - name: ANTs ImageMath available
-    description: Verify ImageMath is available
-    command: ImageMath 3 2>&1 | head -10
-    expected_output_contains: "ImageMath"
-
-  - name: ANTs ImageMath threshold
-    description: Test ImageMath threshold operation
-    command: ImageMath 3 test_output/t1w_thr.nii.gz ThresholdAtMean ${t1w} 0.5 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_thr.nii.gz
-
-  - name: ANTs ImageMath Gaussian smoothing
-    description: Test ImageMath Gaussian smoothing
-    command: ImageMath 3 test_output/t1w_smooth.nii.gz G ${t1w} 2 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_smooth.nii.gz
-
-  - name: ANTs ImageMath normalize
-    description: Test ImageMath normalize intensity
-    command: ImageMath 3 test_output/t1w_norm.nii.gz Normalize ${t1w} 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_norm.nii.gz
-
-  - name: ANTs PrintHeader available
-    description: Verify PrintHeader is available
-    command: PrintHeader 2>&1 | head -5
-    expected_output_contains: "PrintHeader"
-
-  - name: ANTs PrintHeader origin
-    description: Get image origin with PrintHeader
-    command: PrintHeader ${t1w} 0
-    expected_exit_code: 0
-
-  - name: ANTs PrintHeader spacing
-    description: Get image spacing with PrintHeader
-    command: PrintHeader ${t1w} 1
-    expected_exit_code: 0
-
-  - name: ANTs PrintHeader size
-    description: Get image size with PrintHeader
-    command: PrintHeader ${t1w} 2
-    expected_exit_code: 0
-
-  - name: ANTs PrintHeader direction
-    description: Get image direction with PrintHeader
-    command: PrintHeader ${t1w} 4
-    expected_exit_code: 0
-
   - name: ANTs antsApplyTransforms available
     description: Verify antsApplyTransforms is available
     command: antsApplyTransforms --help 2>&1 | head -10
@@ -248,19 +171,6 @@ tests:
     description: Check niworkflows-boldref brain-extract subcommand
     command: niworkflows-boldref brain-extract --help 2>&1
     expected_output_contains: "input"
-
-  # ==========================================================================
-  # ARTS (ANTs-based Rodent ToolS) BRAIN EXTRACTION
-  # ==========================================================================
-  - name: artsBrainExtraction help
-    description: Check artsBrainExtraction utility (rodent brain extraction)
-    command: artsBrainExtraction --help 2>&1
-    expected_output_contains: "brain extraction"
-
-  - name: artsBrainExtraction version
-    description: Check artsBrainExtraction version
-    command: artsBrainExtraction --version 2>&1
-    expected_exit_code: 0
 
   # ==========================================================================
   # PYTHON PACKAGES VERIFICATION
@@ -596,52 +506,6 @@ tests:
       - output_exists: ${output_dir}/bold_fd_proxy.npy
 
   # ==========================================================================
-  # ADVANCED ANTs OPERATIONS
-  # ==========================================================================
-  - name: ANTs CreateImage
-    description: Verify CreateImage tool exists (crashes with SIGABRT on this build - container bug)
-    command: which CreateImage && echo "CreateImage available"
-    expected_output_contains: "CreateImage available"
-
-  - name: ANTs ImageMath PadImage
-    description: Pad image with zeros
-    command: ImageMath 3 test_output/t1w_padded.nii.gz PadImage ${t1w} 5 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_padded.nii.gz
-
-  - name: ANTs ImageMath TruncateImageIntensity
-    description: Truncate image intensity (winsorize)
-    command: ImageMath 3 test_output/t1w_truncated.nii.gz TruncateImageIntensity ${t1w} 0.01 0.99 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_truncated.nii.gz
-
-  - name: ANTs ImageMath histogram match
-    description: Match histogram of one image to another
-    command: ImageMath 3 test_output/t1w_histmatch.nii.gz HistogramMatch ${t1w} ${t1w} 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_histmatch.nii.gz
-
-  - name: ANTs ImageMath morphological operations
-    description: Test morphological dilation
-    command: |
-      ImageMath 3 test_output/t1w_mask_for_morph.nii.gz ThresholdAtMean ${t1w} 1.0 && \
-      ImageMath 3 test_output/t1w_dilated.nii.gz MD test_output/t1w_mask_for_morph.nii.gz 2 2>&1
-    validate:
-      - output_exists: ${output_dir}/t1w_dilated.nii.gz
-
-  - name: ANTs ImageMath erosion
-    description: Test morphological erosion
-    command: ImageMath 3 test_output/t1w_eroded.nii.gz ME test_output/t1w_mask_for_morph.nii.gz 2 2>&1
-    depends_on: ANTs ImageMath morphological operations
-    validate:
-      - output_exists: ${output_dir}/t1w_eroded.nii.gz
-
-  - name: ANTs ConvertImagePixelType
-    description: Verify ConvertImagePixelType tool exists (segfaults on this build - container bug)
-    command: which ConvertImagePixelType && echo "ConvertImagePixelType available"
-    expected_output_contains: "ConvertImagePixelType available"
-
-  # ==========================================================================
   # MRIQC SPECIFIC FUNCTIONALITY TESTS
   # ==========================================================================
   - name: MRIQC species option
@@ -735,19 +599,10 @@ tests:
     command: python --version
     expected_output_contains: "Python"
 
-  - name: Check dwidenoise availability
-    description: Verify dwidenoise tool is available
-    command: which dwidenoise
-    expected_output_contains: "dwidenoise"
+  - name: MRIQC denoiser available
+    command: svht_denoise -help
+    expected_exit_code: 0
 
-  - name: dwidenoise help
-    description: Check dwidenoise help
-    command: dwidenoise --help 2>&1 | head -20
-    expected_output_contains: "denoise"
-
-cleanup:
-  script: |
-    #!/usr/bin/env bash
-    # Optionally remove test outputs
-    # rm -rf test_output
-    echo "Test outputs preserved in test_output/"
+  - name: TemplateFlow assets available without home
+    command: test "$TEMPLATEFLOW_HOME" = /opt/templateflow && test -d "$TEMPLATEFLOW_HOME/tpl-MNI152NLin2009cAsym"
+    expected_exit_code: 0

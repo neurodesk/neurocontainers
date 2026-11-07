@@ -1,5 +1,5 @@
 name: mriqc
-version: 24.0.2
+version: 26.1.0
 
 copyright:
   - license: Apache-2.0
@@ -17,7 +17,11 @@ build:
   kind: neurodocker
   base-image: nipreps/mriqc:{{ context.version }}
   pkg-manager: apt
-  directives: []
+  directives:
+    - run:
+        - mv /home/mriqc/.cache/templateflow /opt/templateflow
+    - environment:
+        TEMPLATEFLOW_HOME: /opt/templateflow
 
 deploy:
   bins:
@@ -28,10 +32,7 @@ readme: |-
   ## mriqc/{{ context.version }} ##
   MRIQC extracts no-reference IQMs (image quality metrics) from structural (T1w and T2w) and functional MRI (magnetic resonance imaging) data.
 
-  NOTE: MRIQC has its $HOME variable hardcoded to be /home/mriqc. This can lead to problems on HPCs. A workaround is to run this before mriqc:
-  ```
-  export neurodesk_singularity_opts="--home $HOME:/home"
-  ```
+  Bundled TemplateFlow templates are available at `/opt/templateflow`, independent of the runtime home directory.
 
   example for running:
   ```
