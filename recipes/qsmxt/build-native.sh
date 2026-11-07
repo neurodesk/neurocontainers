@@ -3,16 +3,11 @@ set -euo pipefail
 
 source_archive=$1
 rust_archive=$2
-source_patch=$3
-upstream_version=$4
-rust_version=$5
-core_commit=$6
-patch_sha256=$7
-script_sha256=$8
-core_patch=$9
-core_patch_sha256=${10}
-printf '%s  %s\n' "$patch_sha256" "$source_patch" "$script_sha256" "$0" \
-    "$core_patch_sha256" "$core_patch" | sha256sum -c -
+upstream_version=$3
+rust_version=$4
+core_commit=$5
+script_sha256=$6
+printf '%s  %s\n' "$script_sha256" "$0" | sha256sum -c -
 build_root=$(mktemp -d /tmp/qsmxt-build.XXXXXX)
 trap 'rm -rf "$build_root"' EXIT
 
@@ -27,7 +22,6 @@ export CARGO_TARGET_DIR="$build_root/target"
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 test "$(rustc --version | cut -d' ' -f2)" = "$rust_version"
 cd "$build_root/source"
-patch --batch --fuzz=0 -p1 < "$source_patch"
 
 # The release workflow sets these two package versions from its tag. Update only
 # their lock entries so --locked retains every upstream dependency and checksum.
@@ -37,22 +31,21 @@ import re
 import sys
 
 version = sys.argv[1]
-for name in ("Cargo.toml", "crates/qsmxt-config/Cargo.toml"):
+for name in ("Cargo.toml", "crates/qsmxt-engine/Cargo.toml"):
     path = Path(name)
     text, count = re.subn(r'^version = "0\.0\.0"', f'version = "{version}"', path.read_text(), count=1, flags=re.M)
     assert count == 1, name
     path.write_text(text)
 path = Path("Cargo.lock")
 text = path.read_text()
-for name in ("qsmxt", "qsmxt-config"):
+for name in ("qsmxt", "qsmxt-engine"):
     old = f'name = "{name}"\nversion = "0.0.0"'
     assert text.count(old) == 1, name
     text = text.replace(old, f'name = "{name}"\nversion = "{version}"')
 path.write_text(text)
 PY
 
-# Patch only the pinned checkout inside this build's private Cargo directory.
-# Keeping its git source identity retains the complete upstream lockfile.
+# Verify the core dependency against the upstream lockfile before building.
 cargo fetch --locked
 core_source=$(python3 - "$core_commit" <<'PYCORE'
 import json
@@ -70,12 +63,11 @@ subprocess.run(["git", "-C", str(source), "diff", "--exit-code"], check=True, st
 print(source)
 PYCORE
 )
-patch --batch --fuzz=0 -p1 -d "$core_source" < "$core_patch"
 cargo test --manifest-path "$core_source/Cargo.toml" --release --locked --jobs 4 --features parallel --lib
-cargo test --release --locked --jobs 4 --bin qsmxt single_echo_handoff
+cargo test --release --locked --jobs 4 -p qsmxt-engine --lib
 cargo build --release --locked --jobs 4 --bin qsmxt
 install -m 755 "$CARGO_TARGET_DIR/release/qsmxt" /opt/qsmxt/qsmxt
-python3 - "$source_archive" "$source_patch" "$upstream_version" "$0" "$core_commit" "$core_patch" <<'PY'
+python3 - "$source_archive" "$upstream_version" "$0" "$core_commit" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -86,23 +78,20 @@ import tomllib
 def sha256(path):
     return hashlib.file_digest(Path(path).open("rb"), "sha256").hexdigest()
 
-source, patch, version, build_script, core_commit, core_patch = sys.argv[1:]
+source, version, build_script, core_commit = sys.argv[1:]
 lock = tomllib.loads(Path("Cargo.lock").read_text())
 core = next(p for p in lock["package"] if p["name"] == "qsm-core")
 assert core["source"].endswith("#" + core_commit), core["source"]
 info = {
     "upstream_version": version,
     "source_sha256": sha256(source),
-    "patch_sha256": sha256(patch),
     "build_script_sha256": sha256(build_script),
     "cargo_lock_sha256": sha256("Cargo.lock"),
     "rustc": subprocess.check_output(["rustc", "-Vv"], text=True),
     "qsm_core_version": core["version"],
     "qsm_core_source": core["source"],
-    "qsm_core_patch_sha256": sha256(core_patch),
-    "qsm_core_patched": True,
+    "qsm_core_patched": False,
     "binary_sha256": sha256("/opt/qsmxt/qsmxt"),
-    "handoff_tests_passed": 2,
 }
 Path("/opt/qsmxt/native-build.json").write_text(json.dumps(info, indent=2) + "\n")
 PY
