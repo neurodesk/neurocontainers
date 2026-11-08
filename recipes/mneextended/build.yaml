@@ -3,11 +3,11 @@ variables:
   debian_ca_sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
   debian_security_snapshot: 20260901T000000Z
   mne_version: "1.13.2"
-  autoreject_version: "0.5.1"
+  autoreject_version: "0.5.2"
   mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
   pyedflib_version: "0.1.42"
-  vscode_version: "1.144.1"
+  vscode_version: "1.145.1"
   vscode_platform:
     try:
       - value: linux-deb-x64
