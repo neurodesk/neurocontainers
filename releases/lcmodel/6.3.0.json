@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "lcmodel 6.3.0": {
+      "version": "20261109",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "spectroscopy",
+    "image reconstruction"
+  ]
+}
