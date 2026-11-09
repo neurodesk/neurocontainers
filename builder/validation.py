@@ -419,7 +419,11 @@ def validate_copyright_templates(recipe_dict: Dict[str, Any]) -> None:
                     f"copyright[{number - 1}].{field} {value!r}: copyright templates may "
                     "only be {{ context.<key> }} where key is version, name or a scalar "
                     "top-level variable (rendered by apps.json for DOI publication)"
-                    + (f"; unknown or non-scalar: {', '.join(unknown)}" if unknown else "")
+                    + (
+                        f"; unknown or non-scalar: {', '.join(unknown)}"
+                        if unknown
+                        else ""
+                    )
                 )
 
 

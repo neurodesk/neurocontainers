@@ -114,7 +114,10 @@ def _recipe_with_copyright(url, variables=None):
             "https://example.com/blob/v{{ context.tool_version }}/LICENSE",
             {"tool_version": "{{ context.version }}"},
         ),
-        ("https://example.com/blob/rel_{{ upstream_version }}/LICENSE", {"upstream_version": "6.4.0"}),
+        (
+            "https://example.com/blob/rel_{{ upstream_version }}/LICENSE",
+            {"upstream_version": "6.4.0"},
+        ),
     ],
 )
 def test_copyright_templates_apps_json_can_render_are_accepted(url, variables):
