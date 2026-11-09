@@ -1,0 +1,134 @@
+{
+  "general": {
+    "name": {
+      "en": "LCModel"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "LCModel quantification of single-voxel MR spectra, returned as the LCModel report image with the concentration table in its metadata"
+    },
+    "id": "lcmodel",
+    "regulatory_information": {
+      "device_trade_name": "LCModel",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "NeuroDesk, https://neurodesk.org",
+      "made_in": "",
+      "manufacture_date": "2026/11/09",
+      "material_number": "lcmodel_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "",
+      "udi": "",
+      "safety_advices": "Research use",
+      "special_operating_instructions": "See OpenReconREADME.md",
+      "additional_relevant_information": "Based on the LCModel MRD App by Kelvin Chow, https://github.com/kspaceKelvin/LCModel-MRD-App"
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 2048,
+    "min_count_required_cpu_cores": 1,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "Analysis"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "lcmodel",
+          "name": {
+            "en": "LCModel"
+          }
+        }
+      ],
+      "default": "lcmodel"
+    },
+    {
+      "id": "filebas",
+      "label": {
+        "en": "Basis file"
+      },
+      "type": "string",
+      "default": "basis/3t/press_te30_3t_v3.basis",
+      "information": {
+        "en": "Basis set path relative to the server folder. Bundled sets are under basis/1.5t, basis/3t, basis/7t and basis/9.4t. Match field strength, sequence and TE."
+      }
+    },
+    {
+      "id": "ppmst",
+      "label": {
+        "en": "Analysis window start"
+      },
+      "type": "double",
+      "minimum": -2.0,
+      "maximum": 10.0,
+      "default": 4.0,
+      "unit": {
+        "en": "ppm"
+      }
+    },
+    {
+      "id": "ppmend",
+      "label": {
+        "en": "Analysis window end"
+      },
+      "type": "double",
+      "minimum": -2.0,
+      "maximum": 10.0,
+      "default": 0.2,
+      "unit": {
+        "en": "ppm"
+      }
+    },
+    {
+      "id": "pngdpi",
+      "label": {
+        "en": "Report resolution"
+      },
+      "type": "int",
+      "minimum": 50,
+      "maximum": 400,
+      "default": 198,
+      "unit": {
+        "en": "dpi"
+      }
+    },
+    {
+      "id": "grayscale",
+      "label": {
+        "en": "Grayscale report"
+      },
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "plotSpectra",
+      "label": {
+        "en": "Send spectrum plot series"
+      },
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "sendOriginal",
+      "label": {
+        "en": "Send original spectra"
+      },
+      "type": "boolean",
+      "default": false
+    }
+  ]
+}

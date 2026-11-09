@@ -617,6 +617,58 @@ tests:
     command: bash -lc 'test -f /.singularity.d/runscript && echo "runscript found"'
     expected_output_contains: "runscript found"
 
+  # ==========================================================================
+  # FIRE / OPENRECON SERVER
+  # ==========================================================================
+  - name: MRD server resolves default basis file
+    description: Verify the server folder exposes the bundled basis sets used by lcmodel.py.
+    command: test -f /opt/code/python-ismrmrd-server/basis/3t/press_te30_3t_v3.basis && echo "server basis found"
+    expected_output_contains: "server basis found"
+
+  - name: LCModel analysis over MRD
+    description: >-
+      Serve the lcmodel config, send the upstream 3T PRESS TE 30 water reference and
+      water-suppressed scans, and check the returned report carries the water-scaled
+      LCModel concentration table published by the LCModel MRD App.
+    timeout: 300
+    script: |
+      set -euo pipefail
+      out=$(mktemp -d)
+      port=$((20000 + RANDOM % 20000))
+      cd /opt/code/python-ismrmrd-server
+      python3 main.py -v -H=127.0.0.1 -p=$port -l=$out/server.log &
+      server=$!
+      trap 'kill $server 2>/dev/null || true' EXIT
+      for _ in $(seq 60); do
+        python3 -c "import socket; socket.create_connection(('127.0.0.1', $port), 1)" 2>/dev/null && break
+        sleep 1
+      done
+      cp /opt/datasets/mrd/*.h5 $out/
+      python3 client.py -c lcmodel -p $port -o $out/ref_results.h5 $out/svs_se_30_REF.h5
+      python3 client.py -c lcmodel -p $port -o $out/results.h5 $out/svs_se_30.h5
+      python3 - "$out/results.h5" <<'EOF'
+      import base64, sys
+      import h5py, ismrmrd
+      path = sys.argv[1]
+      with h5py.File(path, "r") as f:
+          group = next(iter(f.keys()))
+      with ismrmrd.Dataset(path, group, False) as dset:
+          series = [s for s in dset.list() if s.startswith("image")]
+          images = [dset.read_image(s, 0) for s in series]
+      reports = [i for i in images if "LCModelTable" in ismrmrd.Meta.deserialize(i.attribute_string)]
+      assert len(reports) == 1, f"expected one LCModel report, got {len(reports)}"
+      report = reports[0]
+      channels, _, rows, cols = report.data.shape
+      assert report.image_type == 6 and channels == 3 and min(rows, cols) > 1000, report.data.shape
+      table = base64.b64decode(ismrmrd.Meta.deserialize(report.attribute_string)["LCModelTable"]).decode()
+      assert "filh2o=" in table, "water reference was not used"
+      naa = next(l.split() for l in table.splitlines() if l.split()[-1:] == ["NAA+NAAG"])
+      # Upstream's published result for this dataset: 6.361, 2%, 1.279 /Cr+PCr.
+      assert naa[:3] == ["6.361", "2%", "1.279"], f"NAA+NAAG differs from upstream result: {naa}"
+      print(f"LCModel MRD analysis passed: NAA+NAAG {naa[0]}, /Cr+PCr {naa[2]}")
+      EOF
+    expected_output_contains: "LCModel MRD analysis passed"
+
 cleanup:
   script: |
     #!/usr/bin/env bash
