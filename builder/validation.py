@@ -387,6 +387,42 @@ def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str
             )
 
 
+# Neurodesk/apps.json reads `copyright` from recipe git history without the
+# builder and renders only these substitutions (scripts/license_terms.py
+# render_copyright) before writing the catalog and minting Zenodo DOIs.
+_COPYRIGHT_TEMPLATE = re.compile(r"\{\{\s*(?:context\.)?([A-Za-z_]\w*)\s*\}\}")
+
+
+def validate_copyright_templates(recipe_dict: Dict[str, Any]) -> None:
+    """Allow only `{{ context.<key> }}` in copyright, key = version, name or a scalar variable."""
+    entries = recipe_dict.get("copyright")
+    if not isinstance(entries, list):
+        return
+    variables = recipe_dict.get("variables")
+    allowed = {"version", "name"} | {
+        key
+        for key, value in (variables if isinstance(variables, dict) else {}).items()
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool)
+    }
+    for number, entry in enumerate(entries, 1):
+        if not isinstance(entry, dict):
+            continue
+        for field in ("license", "name", "url"):
+            value = entry.get(field)
+            if not isinstance(value, str) or ("{{" not in value and "{%" not in value):
+                continue
+            keys = _COPYRIGHT_TEMPLATE.findall(value)
+            remainder = _COPYRIGHT_TEMPLATE.sub("", value)
+            unknown = sorted(set(keys) - allowed)
+            if "{{" in remainder or "{%" in remainder or unknown:
+                raise ValueError(
+                    f"copyright[{number - 1}].{field} {value!r}: copyright templates may "
+                    "only be {{ context.<key> }} where key is version, name or a scalar "
+                    "top-level variable (rendered by apps.json for DOI publication)"
+                    + (f"; unknown or non-scalar: {', '.join(unknown)}" if unknown else "")
+                )
+
+
 def validate_recipe_template_syntax(recipe_dict: Dict[str, Any]):
     """Validate Jinja2 syntax in recipe fields rendered by builder."""
     if "readme" in recipe_dict:
@@ -1051,6 +1087,7 @@ def validate_recipe_dict(
         recipe_copy = recipe_dict.copy()
 
         validate_recipe_template_syntax(recipe_copy)
+        validate_copyright_templates(recipe_copy)
 
         # Parse copyright if present
         if "copyright" in recipe_copy and recipe_copy["copyright"]:

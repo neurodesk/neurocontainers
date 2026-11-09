@@ -115,8 +115,30 @@ This is `name`, `version`, `architectures`, and `readme`.
 
 The optional `copyright` list records upstream license information. The `license`
 field accepts an [SPDX identifier or expression](https://spdx.org/licenses/).
-Custom `LicenseRef-` identifiers require a `url`. SPDX values `NOASSERTION` and
-`NONE` also require a URL and do not identify a license for DOI publication.
+Custom `LicenseRef-` identifiers require a `url`. SPDX values `NOASSERTION` (no
+license could be determined) and `NONE` (no license granted) also require a URL,
+pointing at the upstream source. Use them only when upstream really declares no
+license. Do not use them to skip finding one.
+
+The Zenodo DOI workflow in [Neurodesk/apps.json](https://github.com/Neurodesk/apps.json)
+still mints a DOI for these images, but the record has no license (no `rights`), so
+Zenodo does not show its `cc-by-4.0` default. A custom `name` such as `Unknown` or
+"No license published" is handled the same way. When one of these entries sits
+next to a real license, only the real license is published:
+
+```yaml
+copyright:
+  - license: NOASSERTION
+    name: Tool source (no license declared)   # optional, shown in apps.json
+    url: https://github.com/example/tool
+```
+
+Copyright values may pin the license to the packaged version with
+`{{ context.<key> }}`, where the key is `version`, `name` or a scalar top-level
+variable, e.g. `url: https://github.com/MASILab/PreQual/blob/v{{ context.version }}/LICENSE.md`.
+apps.json reads recipes from git without the builder and renders only these
+substitutions for the catalog and Zenodo, so validation rejects filters,
+expressions, `{% %}` blocks and arch-dependent (mapping) variables there.
 
 For a custom license, `name` and `url` preserve its title and terms. This is
 sufficient for recipes with custom or multiple licenses; no separate
