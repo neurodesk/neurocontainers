@@ -157,6 +157,7 @@ build:
         - tar xf '{{ get_file("lcm_64_tar") }}'
         - gunzip -c lcm-core.tar.gz | tar xf -
         - rm -rf lcm-core.tar.gz
+        - chmod -R a+rwx /opt/lcmodel-{{ context.upstream_version }}
     - workdir: /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/basis-sets
     - run:
         - unzip '{{ get_file("basis_3t_zip") }}'
@@ -168,6 +169,7 @@ build:
         - mv mrs-basis-sets-{{ context.mrs_basis_sets_commit }}/slaser/lcmodel/siemens/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024 .
         - mv mrs-basis-sets-{{ context.mrs_basis_sets_commit }}/slaser/lcmodel/siemens/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048 .
         - rm -rf mrs-basis-sets-{{ context.mrs_basis_sets_commit }}
+        - chmod -R a+rwx /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/basis-sets
     # LCModel has been free since 2021 and only checks that .lcmodel/license
     # exists - the file must stay EMPTY. The licence key that used to be shipped
     # here was deliberately removed in 9fe69805; do not add content back.
@@ -189,7 +191,9 @@ build:
         - gui-defaults
         - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/profiles/1/gui-defaults
     - run:
-        - chmod a+rwx /opt/lcmodel-{{ context.upstream_version }} -R
+        # Large files got their mode in the layer that created them; touching
+        # them again here would store a second copy in this layer.
+        - find /opt/lcmodel-{{ context.upstream_version }} ! -perm -0777 -exec chmod a+rwx {} +
         - chmod 644 /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/license
     # LCModel MRD App (https://github.com/kspaceKelvin/LCModel-MRD-App). It
     # resolves its basis file relative to PYTHONPATH, so the server's basis
