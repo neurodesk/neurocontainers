@@ -1,5 +1,5 @@
 name: blender
-version: 5.2.3
+version: 5.3.0
 default_timeout: 120
 tests:
 - name: Check blender version
