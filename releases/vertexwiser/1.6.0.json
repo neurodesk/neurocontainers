@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "vertexwiser 1.6.0": {
+      "version": "20261110",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "workflows"
+  ]
+}
