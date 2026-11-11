@@ -1,9 +1,9 @@
 variables:
-  afni_version: "26.3.10"
-  afni_sha256: "531a5209eb54221c92e90db92ed31a9ec84a0e5b3912e61a122894e44e9b469d"
+  afni_version: "26.3.11"
+  afni_sha256: "0d02c0520a751c7acab63e80d9f41ba70a7c9167357482f5404dc58e9898a223"
 
 name: afni
-version: "26.3.10"
+version: "26.3.11"
 # https://hub.docker.com/r/afni/afni_make_build/tags
 # https://afni.nimh.nih.gov/about_afni
 
