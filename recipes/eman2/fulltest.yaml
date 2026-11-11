@@ -1,6 +1,6 @@
 name: eman2
-version: 2.99.85
-upstream_version: 2.99.85
+version: "2.99.86"
+upstream_version: "2.99.86"
 tests:
   - name: reports its version
     command: e2version.py
