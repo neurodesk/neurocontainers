@@ -223,7 +223,9 @@ pin_container: true
 Recipe validation (`builder/validation.py`) enforces:
 - **Architectures**: Must be `x86_64` or `aarch64`
 - **Categories**: Must match the 27-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
-- **Licenses**: Should use SPDX identifiers
+- **Licenses**: Should use SPDX identifiers. `NOASSERTION`/`NONE` (with a `url` to the
+  upstream source) mean that no license is known; apps.json publishes such images'
+  DOIs without a license, so use them only when upstream truly has none
 - **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `domains`, `icon`
 - **Optional**: `deploy` — omitting it is valid, though most recipes want it
 

@@ -59,6 +59,14 @@ def test_invalid_copyright_metadata_is_rejected(entry):
         {"license": "{{ context.license_id }}"},
         {"license": "LicenseRef-Example", "url": "https://example.com/LICENSE"},
         {"license": "NOASSERTION", "url": "https://example.com"},
+        {"license": "NONE", "url": "https://example.com"},
+        # No-license forms apps.json publishes as a DOI without rights.
+        {
+            "license": "NOASSERTION",
+            "name": "Tool source (no license declared)",
+            "url": "https://example.com",
+        },
+        {"name": "Unknown", "url": "https://example.com"},
         {"name": "Custom license", "url": "https://example.com/LICENSE"},
         {
             "license": "other-closed",
@@ -72,6 +80,65 @@ def test_valid_copyright_metadata_is_preserved(entry):
     result = parse_copyright_from_dict(entry)
     for field, value in entry.items():
         assert getattr(result, field) == value
+
+
+def _recipe_with_copyright(url, variables=None):
+    recipe = {
+        "name": "test-app",
+        "version": "1.1.0",
+        "architectures": ["x86_64"],
+        "categories": ["fetal imaging"],
+        "domains": ["neuroimaging"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+        "copyright": [{"name": "Upstream terms", "url": url}],
+    }
+    if variables is not None:
+        recipe["variables"] = variables
+    return recipe
+
+
+@pytest.mark.parametrize(
+    "url, variables",
+    [
+        # prequal / mipview / stir shapes: rendered by apps.json for DOIs.
+        ("https://example.com/blob/v{{ context.version }}/LICENSE.md", None),
+        ("https://example.com/blob/v{{context.version}}/LICENSE", None),
+        ("https://example.com/{{ context.name }}/LICENSE", None),
+        (
+            "https://example.com/blob/v{{ context.tool_version }}/LICENSE",
+            {"tool_version": "{{ context.version }}"},
+        ),
+        (
+            "https://example.com/blob/rel_{{ upstream_version }}/LICENSE",
+            {"upstream_version": "6.4.0"},
+        ),
+    ],
+)
+def test_copyright_templates_apps_json_can_render_are_accepted(url, variables):
+    validate_recipe_dict(_recipe_with_copyright(url, variables))
+
+
+@pytest.mark.parametrize(
+    "url, variables",
+    [
+        ("https://example.com/{{ context.version | replace('.', '') }}/LICENSE", None),
+        ("https://example.com/{{ context.missing }}/LICENSE", None),
+        (
+            "https://example.com/{{ context.arch_url }}/LICENSE",
+            {"arch_url": {"x86_64": "a", "aarch64": "b"}},
+        ),
+        ("https://example.com/{% if true %}a{% endif %}/LICENSE", None),
+    ],
+)
+def test_copyright_templates_apps_json_cannot_render_are_rejected(url, variables):
+    with pytest.raises(ValueError, match="copyright templates may only be"):
+        validate_recipe_dict(_recipe_with_copyright(url, variables))
 
 
 def test_valid_minimal_recipe():
