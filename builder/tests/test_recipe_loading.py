@@ -126,6 +126,37 @@ def test_compile_loads_readme_url(
     assert requested_urls == ["https://example.com/readme-1.2.3.md"]
 
 
+def test_compile_citation_only_structured_readme_keeps_readme_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_dir = tmp_path / "readme-test"
+    write_minimal_recipe(
+        recipe_dir,
+        readme_url="https://example.com/readme.md",
+        structured_readme={"citation": "Example citation."},
+    )
+    monkeypatch.setattr(
+        "builder.recipe._read_readme_url", lambda url: "Remote readme."
+    )
+
+    compiled = compile_recipe(recipe_dir, architecture="x86_64")
+
+    assert compiled.readme == "Remote readme."
+
+
+def test_compile_rejects_citation_only_structured_readme_as_readme(
+    tmp_path: Path,
+) -> None:
+    recipe_dir = tmp_path / "readme-test"
+    write_minimal_recipe(
+        recipe_dir, structured_readme={"citation": "Example citation."}
+    )
+
+    with pytest.raises(ValueError, match="README.*cannot be empty"):
+        compile_recipe(recipe_dir, architecture="x86_64")
+
+
 def test_compile_rejects_empty_readme(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "readme-test"
     write_minimal_recipe(recipe_dir, readme="   \n")
