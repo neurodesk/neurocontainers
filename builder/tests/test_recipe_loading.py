@@ -136,9 +136,7 @@ def test_compile_citation_only_structured_readme_keeps_readme_url(
         readme_url="https://example.com/readme.md",
         structured_readme={"citation": "Example citation."},
     )
-    monkeypatch.setattr(
-        "builder.recipe._read_readme_url", lambda url: "Remote readme."
-    )
+    monkeypatch.setattr("builder.recipe._read_readme_url", lambda url: "Remote readme.")
 
     compiled = compile_recipe(recipe_dir, architecture="x86_64")
 
