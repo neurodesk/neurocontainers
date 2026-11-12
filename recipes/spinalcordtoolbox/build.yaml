@@ -191,3 +191,7 @@ files:
   - name: openrecon_label
     filename: OpenReconLabel.gpu.json
     condition: context.options.gpu
+
+structured_readme:
+  citation: |-
+    De Leener B, Lévy S, Dupont SM, et al. SCT: Spinal Cord Toolbox, an open-source software for processing spinal cord MRI data. NeuroImage. 2017;145(Pt A):24-43. doi:10.1016/j.neuroimage.2016.10.009

@@ -716,6 +716,32 @@ def test_structured_readme_allows_missing_optional_fields():
     assert result.structured_readme.citation == ""
 
 
+def test_structured_readme_accepts_citation_only():
+    """A recipe can carry a catalogue citation without a structured README body."""
+    recipe = {
+        "name": "structured-readme-test",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "domains": ["neuroimaging"],
+        "icon": VALID_ICON,
+        "readme": "Existing readme.",
+        "structured_readme": {"citation": "Example citation."},
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [{"install": ["curl"]}],
+        },
+    }
+
+    result = validate_recipe_dict(recipe)
+
+    assert result.structured_readme.citation == "Example citation."
+    assert result.structured_readme.description == ""
+    assert result.structured_readme.example == ""
+
+
 def test_file_info_accepts_refresh_flag():
     """Test validation accepts URL-backed files that force refresh."""
     file_info = FileInfo(

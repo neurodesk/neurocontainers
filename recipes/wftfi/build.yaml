@@ -100,3 +100,7 @@ readme: |-
   More documentation can be found here: https://gitlab.com/christofboehm/wftfi
 
   ----------------------------------
+
+structured_readme:
+  citation: |-
+    Boehm C, Sollmann N, Meineke J, et al. Preconditioned water-fat total field inversion: application to spine quantitative susceptibility mapping. Magn Reson Med. 2022;87(1):417-430. doi:10.1002/mrm.28903

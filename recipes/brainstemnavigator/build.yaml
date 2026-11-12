@@ -104,3 +104,11 @@ readme: |
   Atlas-specific registration testing requires your authorized private download.
   The container version identifies this locally maintained inspection workflow.
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC
+
+structured_readme:
+  citation: |-
+    Bianciardi M, Toschi N, Edlow BL, et al. Toward an In Vivo Neuroimaging Template of Human Brainstem Nuclei of the Ascending Arousal, Autonomic, and Motor Systems. Brain Connect. 2015;5(10):597-607. doi:10.1089/brain.2015.0347
+
+    Bianciardi M, Strong C, Toschi N, et al. A probabilistic template of human mesopontine tegmental nuclei from in vivo 7 T MRI. NeuroImage. 2018;170:222-230. doi:10.1016/j.neuroimage.2017.04.070
+
+    García-Gomar MG, Strong C, Toschi N, et al. In vivo Probabilistic Structural Atlas of the Inferior and Superior Colliculi, Medial and Lateral Geniculate Nuclei and Superior Olivary Complex in Humans Based on 7 Tesla MRI. Front Neurosci. 2019;13:764. doi:10.3389/fnins.2019.00764

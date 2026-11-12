@@ -65,3 +65,7 @@ readme: |
   In BrkRaw 0.5, `convert` and `convert-batch` replace `tonii` and `tonii_all`.
   The old `bids_helper`, `bids_convert`, `brk-backup`, and `gui` commands are no
   longer provided. This container exposes the current command-line interface.
+
+structured_readme:
+  citation: |-
+    Lee SH, Devenyi GA, Ban W, Shih YYI. BrkRaw: A modular toolkit for Bruker MRI raw-data handling (Zenodo). 2026. doi:10.5281/zenodo.3818614

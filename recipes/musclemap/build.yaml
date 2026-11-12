@@ -377,3 +377,7 @@ copyright:
     url: https://zenodo.org/records/20043148
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
+
+structured_readme:
+  citation: |-
+    McKay MJ, Weber KA, Wesselink EO, et al. MuscleMap: An Open-Source, Community-Supported Consortium for Whole-Body Quantitative MRI of Muscle. J Imaging. 2024;10(11):262. doi:10.3390/jimaging10110262

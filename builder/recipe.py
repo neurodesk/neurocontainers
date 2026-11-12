@@ -116,7 +116,9 @@ def _render_structured_readme(
         key: str(rendered.get(key) or "").strip()
         for key in ("description", "example", "documentation", "citation")
     }
-    if not any(fields.values()):
+    # Without a description or example the fields are catalogue metadata, such
+    # as a citation; they must not replace a readme_url README in the image.
+    if not (fields["description"] or fields["example"]):
         return ""
 
     sections = [

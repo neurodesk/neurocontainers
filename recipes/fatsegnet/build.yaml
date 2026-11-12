@@ -119,3 +119,7 @@ readme: |-
   More documentation can be found here: https://github.com/Deep-MI/FatSegNet
 
   ----------------------------------
+
+structured_readme:
+  citation: |-
+    Estrada S, Lu R, Conjeti S, et al. FatSegNet: A fully automated deep learning pipeline for adipose tissue segmentation on abdominal dixon MRI. Magnetic Resonance in Medicine. 2020;83(4):1471-1483. doi:10.1002/mrm.28022
