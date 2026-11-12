@@ -53,8 +53,10 @@ build:
     # the S1 sample subject and colormaps under <prefix>/share/pycortex but leaves
     # defaults.cfg pointing at a non-existent site-packages/filestore, so the
     # installed defaults are rewritten to the shipped data. The subject cache
-    # moves to the user's home because the image filesystem is read-only, and
-    # S1/views is created here because pycortex creates it on first surface read.
+    # moves to the user's home because the image filesystem is read-only.
+    # webshow prints the viewer URL instead of opening a browser, since the
+    # image has none; open the URL in the Neurodesk desktop browser.
+    # S1/views is created because pycortex creates it on first surface read.
     # Rendering one flatmap and one static WebGL viewer precomputes the S1
     # surface info (curvature, equivolume areas) that pycortex otherwise writes
     # into the filestore on first use.
@@ -70,6 +72,7 @@ build:
           cfg.set('basic', 'filestore', '/opt/pycortex/share/pycortex/db');
           cfg.set('basic', 'cache', '~/.cache/pycortex');
           cfg.set('webgl', 'colormaps', '/opt/pycortex/share/pycortex/colormaps');
+          cfg.set('webshow', 'open_browser', 'false');
           cfg.write(open(path, 'w'))"
         - test -f /opt/pycortex/share/pycortex/db/S1/overlays.svg
         - mkdir -p /opt/pycortex/share/pycortex/db/S1/views
@@ -126,7 +129,14 @@ readme: |
   ```
   cp -r /opt/pycortex/share/pycortex/db ~/pycortex-db
   ```
-  Flatmap caches are written to ~/.cache/pycortex.
+  Flatmap caches are written to ~/.cache/pycortex. A pycortex options.cfg
+  already in ~/.config/pycortex from another installation takes precedence over
+  the container defaults; delete or edit it if pycortex cannot find S1.
+
+  `cortex.webshow(vol)` starts the interactive viewer and prints its URL
+  (http://localhost:<port>/mixer.html); open that URL in a browser on the same
+  machine. To write a self-contained viewer to disk instead, use
+  `cortex.webgl.make_static('viewer_dir', vol)`.
 
   Importing subjects (`cortex.freesurfer.import_subj`) needs FreeSurfer, and
   automatic flattening needs Blender; neither is in this container.

@@ -5,6 +5,11 @@ pycortex_version: "1.4.0"
 test_data:
   output_dir: test_output
 
+# Each test gets a fresh pycortex config so a host ~/.config/pycortex cannot
+# override the container defaults under test.
+env_setup: |
+  export XDG_CONFIG_HOME="$(mktemp -d)"
+
 setup:
   script: |
     #!/usr/bin/env bash
@@ -55,3 +60,19 @@ tests:
       print('webgl ok')
       PYTHON
     expected_output_contains: "webgl ok"
+
+  - name: interactive viewer serves without a browser
+    description: webshow defaults to printing the URL and serving the mixer page.
+    command: |
+      python3 - <<'PYTHON'
+      import urllib.request
+      import cortex
+      vol = cortex.Volume.random('S1', 'fullhead')
+      server = cortex.webshow(vol, port=18234)
+      try:
+          with urllib.request.urlopen('http://localhost:18234/mixer.html', timeout=60) as response:
+              print('webshow status', response.status)
+      finally:
+          server.stop()
+      PYTHON
+    expected_output_contains: "webshow status 200"
