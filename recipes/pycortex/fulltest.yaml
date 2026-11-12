@@ -1,0 +1,78 @@
+name: pycortex
+version: 1.4.0
+pycortex_version: "1.4.0"
+
+test_data:
+  output_dir: test_output
+
+# Each test gets a fresh pycortex config so a host ~/.config/pycortex cannot
+# override the container defaults under test.
+env_setup: |
+  export XDG_CONFIG_HOME="$(mktemp -d)"
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  - name: pycortex version
+    description: The deployed Python imports the tracked pycortex release.
+    command: python3 -c "from importlib.metadata import version; import cortex; print('pycortex', version('pycortex'))"
+    expected_output_contains: "pycortex ${pycortex_version}"
+
+  - name: compiled extensions load
+    description: The Cython OpenCTM and formats extensions built from the sdist import.
+    command: python3 -c "import cortex.openctm, cortex.formats; print('extensions ok')"
+    expected_output_contains: "extensions ok"
+
+  - name: bundled filestore resolves
+    description: The default database finds the shipped S1 subject and its fullhead transform.
+    command: python3 -c "import cortex; print(cortex.database.default_filestore); print(sorted(cortex.db.subjects)); print(cortex.db.get_xfm('S1', 'fullhead').shape)"
+    expected_output_contains: "/opt/pycortex/share/pycortex/db"
+
+  - name: S1 flatmap with ROI labels
+    description: Render a flatmap PNG with curvature and Inkscape-rasterised ROI overlays from the read-only filestore.
+    command: |
+      python3 - <<'PYTHON'
+      import os
+      import cortex
+      vol = cortex.Volume.random('S1', 'fullhead')
+      out = 'test_output/flatmap.png'
+      cortex.quickflat.make_png(out, vol, with_curvature=True, with_rois=True, with_labels=True)
+      from PIL import Image
+      im = Image.open(out)
+      assert im.size[0] > 500, im.size
+      print('flatmap ok', im.size)
+      PYTHON
+    expected_output_contains: "flatmap ok"
+
+  - name: static WebGL viewer
+    description: Build a standalone WebGL viewer for S1 without starting a server.
+    command: |
+      python3 - <<'PYTHON'
+      import os
+      import cortex
+      vol = cortex.Volume.random('S1', 'fullhead')
+      cortex.webgl.make_static('test_output/webgl', vol)
+      assert os.path.exists('test_output/webgl/index.html')
+      print('webgl ok')
+      PYTHON
+    expected_output_contains: "webgl ok"
+
+  - name: interactive viewer serves without a browser
+    description: webshow defaults to printing the URL and serving the mixer page.
+    command: |
+      python3 - <<'PYTHON'
+      import urllib.request
+      import cortex
+      vol = cortex.Volume.random('S1', 'fullhead')
+      server = cortex.webshow(vol, port=18234)
+      try:
+          with urllib.request.urlopen('http://localhost:18234/mixer.html', timeout=60) as response:
+              print('webshow status', response.status)
+      finally:
+          server.stop()
+      PYTHON
+    expected_output_contains: "webshow status 200"
