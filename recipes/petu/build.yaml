@@ -324,3 +324,8 @@ readme: |-
   The dust-threshold options are in voxels, with 26-connectivity.
 
   More documentation can be found here: https://github.com/BrainLesion/PeTu
+
+  Citation:
+  ```
+  Piffer A, Buchner JA, Gennari AG, et al. Enhancing efficiency in paediatric brain tumour segmentation using a pathologically diverse single-center clinical dataset. arXiv. 2025. doi:10.48550/arXiv.2507.22152
+  ```

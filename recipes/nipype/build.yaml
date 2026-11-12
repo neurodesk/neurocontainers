@@ -260,6 +260,13 @@ readme: |-
 
   To run applications outside of this container: ml nipype/{{ context.version }}
 
+  Citation:
+  ```
+  Gorgolewski K, Burns CD, Madison C, Clark D, Halchenko YO, Waskom ML, Ghosh SS. Nipype: a flexible, lightweight and extensible neuroimaging data processing framework in Python. Front Neuroinform. 2011;5:13. doi:10.3389/fninf.2011.00013
+
+  Esteban O, Markiewicz CJ, Burns C, et al. nipy/nipype (Zenodo). 2026. doi:10.5281/zenodo.596855
+  ```
+
   ----------------------------------
 
 files:

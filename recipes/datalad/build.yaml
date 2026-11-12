@@ -95,3 +95,8 @@ readme: |
   You may also want to read the guide: http://handbook.datalad.org/en/latest/
 
   To run container outside of this environment: ml datalad/{{context.version}}
+
+  Citation:
+  ```
+  Halchenko YO, Meyer K, Poldrack B, et al. DataLad: distributed system for joint management of code, data, and their relationship. J Open Source Softw. 2021;6(63):3262. doi:10.21105/joss.03262
+  ```

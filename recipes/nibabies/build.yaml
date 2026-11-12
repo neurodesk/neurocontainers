@@ -15,7 +15,8 @@ structured_readme:
     nibabies --help
     ```
   documentation: https://nibabies.readthedocs.io/en/latest/
-  citation: Please cite appropriately when using this container.
+  citation: |-
+    Goncalves M, Markiewicz CJ, Esteban O, Feczko E, Poldrack RA, Fair DA. NiBabies: a robust preprocessing pipeline for infant functional MRI (Zenodo). 2026. doi:10.5281/zenodo.4917621
 readme: |-
   ----------------------------------
   ## nibabies/{{ context.version }} ##
@@ -36,7 +37,7 @@ readme: |-
 
   Citation:
   ```
-  Please cite appropriately when using this container.
+  Goncalves M, Markiewicz CJ, Esteban O, Feczko E, Poldrack RA, Fair DA. NiBabies: a robust preprocessing pipeline for infant functional MRI (Zenodo). 2026. doi:10.5281/zenodo.4917621
   ```
 
   To run container outside of this environment: ml nibabies/{{ context.version }}

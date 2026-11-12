@@ -85,6 +85,11 @@ readme: |-
 
   To run applications outside of this container: ml root/{{ context.version }}
 
+  Citation:
+  ```
+  Brun R, Rademakers F. ROOT — An object oriented data analysis framework. Nuclear Instruments and Methods in Physics Research Section A. 1997;389(1-2):81-86. doi:10.1016/S0168-9002(97)00048-X
+  ```
+
   ----------------------------------
 
 domains:

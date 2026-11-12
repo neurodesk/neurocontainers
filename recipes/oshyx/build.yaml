@@ -45,7 +45,7 @@ readme: |-
 
   OSHy-X is an atlas repository (https://osf.io/zge9t) and containerised Python script that automatically segments the hypothalamus and fornix at 3T and 7T in both T1w and T2w scans.
 
-  If you intend to use OSHy-X, please cite this paper: TBA
+  If you intend to use OSHy-X, please cite the paper listed under Citation below.
 
   For more information, please visit https://github.com/Cadaei-Yuvxvs/OSHy-X
 
@@ -126,6 +126,11 @@ readme: |-
   * `sub-XX_TargetMaskImageMajorityVoting.nii.gz`: Labelled voxels where Joint Label Fusion was not performed. This is the case when 80% or more of the atlases agree on the same voxel.
   * `sub-XX_TargetMaskImageMajorityVoting_Mask`: A mask of voxels where Joint Label Fusion segmentation is performed.
   * `sub-XX_volumes.csv`: Volumes of the four labels (as described above). Units for volume are in mm<sup>3</sup>.
+
+  Citation:
+  ```
+  Chang J, Steyn F, Ngo S, et al. Open-Source Hypothalamic-ForniX (OSHy-X) atlases and segmentation tool for 3T and 7T. J Open Source Softw. 2022;7(76):4368. doi:10.21105/joss.04368
+  ```
 
   ----------------------------------
 

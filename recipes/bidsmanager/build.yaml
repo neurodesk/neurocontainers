@@ -110,6 +110,11 @@ readme: |-
 
   To run container outside of this environment: ml bidsmanager/{{ context.version }}
 
+  Citation:
+  ```
+  López Vilaret KM, Rieger J. BIDS Manager (version 1.5.2). 2026. https://github.com/ANCPLabOldenburg/BIDS-Manager
+  ```
+
   ----------------------------------
 
 domains:

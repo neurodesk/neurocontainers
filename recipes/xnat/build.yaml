@@ -515,3 +515,8 @@ readme: |
   normal XNAT setup UI/API; configure the site and credentials before regular use.
   Runtime tests start the real server, initialize the database and site, create a project
   through the authenticated API and verify a complete NIfTI upload/download with access checks.
+
+  Citation:
+  ```
+  Marcus DS, Olsen TR, Ramaratnam M, Buckner RL. The extensible neuroimaging archive toolkit: an informatics platform for managing, exploring, and sharing neuroimaging data. Neuroinformatics. 2007;5(1):11-33. doi:10.1385/NI:5:1:11
+  ```

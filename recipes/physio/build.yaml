@@ -111,6 +111,13 @@ readme: |
 
   To run container outside of this environment: ml physio/{{ context.version }}
 
+  Citation:
+  ```
+  Kasper L, Bollmann S, Diaconescu AO, et al. The PhysIO Toolbox for Modeling Physiological Noise in fMRI Data. J Neurosci Methods. 2017;276:56-72. doi:10.1016/j.jneumeth.2016.10.019
+
+  Frässle S, Aponte EA, Bollmann S, et al. TAPAS: An Open-Source Software Package for Translational Neuromodeling and Computational Psychiatry. Front Psychiatry. 2021;12:680811. doi:10.3389/fpsyt.2021.680811
+  ```
+
   ----------------------------------
 
 domains:

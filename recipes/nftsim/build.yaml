@@ -11,7 +11,8 @@ structured_readme:
   description: NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
   example: nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
   documentation: https://github.com/BrainDynamicsUSYD/nftsim
-  citation: ''
+  citation: |-
+    Sanz-Leon P, Robinson PA, Knock SA, et al. NFTsim: Theory and simulation of multiscale neural field dynamics. PLoS Comput Biol. 2018;14(8):e1006387. doi:10.1371/journal.pcbi.1006387
 variables:
   base_image_tag: 1.0.2
   base_image:
@@ -117,7 +118,7 @@ readme: |-
 
   Citation:
   ```
-
+  Sanz-Leon P, Robinson PA, Knock SA, et al. NFTsim: Theory and simulation of multiscale neural field dynamics. PLoS Comput Biol. 2018;14(8):e1006387. doi:10.1371/journal.pcbi.1006387
   ```
 
   To run container outside of this environment: ml nftsim/1.0.2

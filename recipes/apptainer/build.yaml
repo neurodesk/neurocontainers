@@ -122,4 +122,11 @@ readme: |-
 
   To run container outside of this environment: ml apptainer/{{ context.version }}
 
+  Citation:
+  ```
+  Singularity Developers. Singularity (Zenodo). 2021. doi:10.5281/zenodo.1310023
+
+  Kurtzer GM, Sochat V, Bauer MW. Singularity: Scientific containers for mobility of compute. PLoS One. 2017;12(5):e0177459. doi:10.1371/journal.pone.0177459
+  ```
+
   ----------------------------------

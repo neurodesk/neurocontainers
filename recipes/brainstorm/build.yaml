@@ -72,6 +72,11 @@ readme: |-
 
   To run applications outside of this container: ml brainstorm/{{ context.version }}
 
+  Citation:
+  ```
+  Tadel F, Baillet S, Mosher JC, Pantazis D, Leahy RM. Brainstorm: a user-friendly application for MEG/EEG analysis. Comput Intell Neurosci. 2011;2011:879716. doi:10.1155/2011/879716
+  ```
+
   ----------------------------------
 
 domains:

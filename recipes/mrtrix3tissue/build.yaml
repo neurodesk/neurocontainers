@@ -54,6 +54,13 @@ readme: |
 
   To run container outside of this environment: ml mrtrix3tissue/{{ context.version }}
 
+  Citation:
+  ```
+  MRtrix3Tissue. https://3Tissue.github.io
+
+  Tournier JD, Smith R, Raffelt D, et al. MRtrix3: a fast, flexible and open software framework for medical image processing and visualisation. NeuroImage. 2019;202:116137. doi:10.1016/j.neuroimage.2019.116137
+  ```
+
   ----------------------------------
 
 domains:

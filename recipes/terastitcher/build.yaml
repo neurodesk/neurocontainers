@@ -108,6 +108,14 @@ readme: |
   More documentation can be found here: http://abria.github.io/TeraStitcher/
 
   To run container outside of this environment: ml terastitcher/{{ context.version }}
+
+  Citation:
+  ```
+  Bria A, Iannello G. TeraStitcher - A tool for fast automatic 3D-stitching of teravoxel-sized microscopy images. BMC Bioinformatics. 2012;13:316. doi:10.1186/1471-2105-13-316
+
+  Bria A, Bernaschi M, Guarrasi M, Iannello G. Exploiting Multi-Level Parallelism for Stitching Very Large Microscopy Images. Front Neuroinform. 2019;13:41. doi:10.3389/fninf.2019.00041
+  ```
+
   ----------------------------------
 
 files:

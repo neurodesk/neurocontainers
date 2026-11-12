@@ -76,6 +76,11 @@ readme: |-
 
   To run container outside of this environment: ml dsistudio/{{ context.version }}
 
+  Citation:
+  ```
+  Yeh FC. DSI Studio: an integrated tractography platform and fiber data hub for accelerating brain research. Nat Methods. 2025;22(8):1617-1619. doi:10.1038/s41592-025-02762-8
+  ```
+
   License: Unless required by applicable law or agreed to in writing, DSI Studio is distributed under Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode Commercial use requires a paid software license.
 
   ----------------------------------

@@ -46,6 +46,11 @@ readme: |
 
   https://unfmontreal.github.io/Dcm2Bids
 
+  Citation:
+  ```
+  Boré A, Guay S, Bedetti C, Meisler S, Guenther N. Dcm2Bids (version 3.1.1, Zenodo). 2023. doi:10.5281/zenodo.8436509
+  ```
+
 domains:
   - neuroimaging
 categories:

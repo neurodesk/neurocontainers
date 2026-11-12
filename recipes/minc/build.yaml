@@ -103,6 +103,11 @@ readme: |-
 
   To run container outside of this environment: ml minc/{{ context.version }}
 
+  Citation:
+  ```
+  Vincent RD, Neelin P, Khalili-Mahani N, et al. MINC 2.0: a flexible format for multi-modal images. Front Neuroinform. 2016;10:35. doi:10.3389/fninf.2016.00035
+  ```
+
   ----------------------------------
 
 domains:

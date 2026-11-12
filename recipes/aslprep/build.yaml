@@ -42,6 +42,13 @@ readme: |-
 
   To run container outside of this environment: ml aslprep/{{ context.version }}
 
+  Citation:
+  ```
+  Adebimpe A, Bertolero M, Dolui S, et al. ASLPrep: a platform for processing of arterial spin labeled MRI and quantification of regional brain perfusion. Nat Methods. 2022;19(6):683-686. doi:10.1038/s41592-022-01458-7
+
+  Salo T, Adebimpe A, Bertolero M, et al. ASLPrep: A Robust Preprocessing Pipeline for ASL Data (Zenodo). 2026. doi:10.5281/zenodo.3759082
+  ```
+
   License: 3-clause BSD license, https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
 
   ----------------------------------

@@ -59,6 +59,11 @@ readme: |-
 
   To run applications outside of this container: ml qsirecon/{{ context.version }}
 
+  Citation:
+  ```
+  Cieslak M, Cook PA, He X, et al. QSIPrep: an integrative platform for preprocessing and reconstructing diffusion MRI data. Nat Methods. 2021;18(7):775-778. doi:10.1038/s41592-021-01185-5
+  ```
+
   ------------------
 
 domains:

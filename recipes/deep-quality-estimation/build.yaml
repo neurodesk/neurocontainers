@@ -344,3 +344,8 @@ readme: |-
 
   More documentation can be found here:
   https://github.com/BrainLesion/deep_quality_estimation
+
+  Citation:
+  ```
+  Kofler F, Ezhov I, Fidon L, et al. Deep Quality Estimation: Creating Surrogate Models for Human Quality Ratings. arXiv. 2022. doi:10.48550/arXiv.2205.10355
+  ```

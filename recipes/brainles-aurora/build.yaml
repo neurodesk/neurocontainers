@@ -516,3 +516,10 @@ readme: |-
   container.
 
   More documentation can be found here: https://github.com/BrainLesion/AURORA
+
+  Citation:
+  ```
+  Buchner JA, Peeken JC, Etzel L, et al. Identifying core MRI sequences for reliable automatic brain metastasis segmentation. Radiotherapy and Oncology. 2023;188:109901. doi:10.1016/j.radonc.2023.109901
+
+  Buchner JA, Kofler F, Etzel L, et al. Development and external validation of an MRI-based neural network for brain metastasis segmentation in the AURORA multicenter study. Radiotherapy and Oncology. 2023;178:109425. doi:10.1016/j.radonc.2022.11.014
+  ```

@@ -86,6 +86,11 @@ readme: |
 
   To run container outside of this environment: ml ashs/{{ context.version }}
 
+  Citation:
+  ```
+  Yushkevich PA, Pluta JB, Wang H, et al. Automated volumetry and regional thickness analysis of hippocampal subfields and medial temporal cortical structures in mild cognitive impairment. Hum Brain Mapp. 2015;36(1):258-287. doi:10.1002/hbm.22627
+  ```
+
   License: GNU General Public License (GPL)
   ----------------------------------
 variables:

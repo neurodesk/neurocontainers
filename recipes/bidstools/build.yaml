@@ -159,6 +159,13 @@ readme: |-
 
   To run container outside of this environment: ml bidstools/{{ context.version }}
 
+  Citation:
+  ```
+  Halchenko YO, Goncalves M, Ghosh S, et al. HeuDiConv: flexible DICOM conversion into structured directory layouts (Zenodo). 2026. doi:10.5281/zenodo.1012598
+
+  Li X, Morgan PS, Ashburner J, Smith J, Rorden C. The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 2016;264:47-56. doi:10.1016/j.jneumeth.2016.03.001
+  ```
+
   ----------------------------------
 
 domains:

@@ -45,7 +45,8 @@ structured_readme:
       --fs-subjects-dir "$SUBJECTS_DIR"
     ```
   documentation: https://petprep.readthedocs.io/en/latest/
-  citation: ""
+  citation: |-
+    Nørgaard M, Esteban O, Matheson GJ, et al. PETPrep: a robust preprocessing pipeline for positron emission tomography (PET) neuroimaging. 15th International Symposium on Functional Neuroreceptor Mapping of the Living Brain (NRM), Uppsala. 2026. https://github.com/nipreps/petprep/blob/main/CITATION.cff
 readme: |-
   ----------------------------------
   ## petprep/{{ context.version }} ##
@@ -65,7 +66,7 @@ readme: |-
 
   Citation:
   ```
-
+  Nørgaard M, Esteban O, Matheson GJ, et al. PETPrep: a robust preprocessing pipeline for positron emission tomography (PET) neuroimaging. 15th International Symposium on Functional Neuroreceptor Mapping of the Living Brain (NRM), Uppsala. 2026. https://github.com/nipreps/petprep/blob/main/CITATION.cff
   ```
 
   To run container outside of this environment: ml petprep/{{ context.version }}

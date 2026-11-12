@@ -78,4 +78,10 @@ readme: |
   More documentation can be found here: https://github.com/bids-apps/BrainSuite
 
   To run container outside of this environment: ml bidsappbrainsuite/{{ context.version }}
+
+  Citation:
+  ```
+  Shattuck DW, Leahy RM. BrainSuite: an automated cortical surface identification tool. Med Image Anal. 2002;6(2):129-142. doi:10.1016/S1361-8415(02)00054-3
+  ```
+
   ----------------------------------
