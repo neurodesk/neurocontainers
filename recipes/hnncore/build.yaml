@@ -100,6 +100,11 @@ readme: |-
 
    https://jonescompneurolab.github.io/hnn-core
 
+  Citation:
+  ```
+  Jas M, Thorpe R, Tolley N, et al. HNN-core: A Python software for cellular and circuit-level interpretation of human MEG/EEG. J Open Source Softw. 2023;8(92):5848. doi:10.21105/joss.05848
+  ```
+
 domains:
   - neuroimaging
 categories:

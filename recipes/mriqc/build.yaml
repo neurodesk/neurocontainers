@@ -62,6 +62,11 @@ readme: |-
 
   To run applications outside of this container: ml mriqc/{{ context.version }}
 
+  Citation:
+  ```
+  Esteban O, Birman D, Schaer M, Koyejo OO, Poldrack RA, Gorgolewski KJ. MRIQC: Advancing the automatic prediction of image quality in MRI from unseen sites. PLoS One. 2017;12(9):e0184661. doi:10.1371/journal.pone.0184661
+  ```
+
   ----------------------------------
 
 domains:

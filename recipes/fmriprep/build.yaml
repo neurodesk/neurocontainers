@@ -38,6 +38,13 @@ readme: |-
 
   To run applications outside of this container: ml fmriprep/{{ context.version }}
 
+  Citation:
+  ```
+  Esteban O, Markiewicz CJ, Blair RW, et al. fMRIPrep: a robust preprocessing pipeline for functional MRI. Nat Methods. 2019;16(1):111-116. doi:10.1038/s41592-018-0235-4
+
+  Markiewicz CJ, Esteban O, Goncalves M, Poldrack RA, Gorgolewski KJ. fMRIPrep: a robust preprocessing pipeline for functional MRI (Zenodo). 2026. doi:10.5281/zenodo.852659
+  ```
+
   ----------------------------------
 domains:
   - neuroimaging

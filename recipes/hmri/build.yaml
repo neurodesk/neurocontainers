@@ -68,6 +68,11 @@ readme: |-
 
   To run container outside of this environment: ml hmri/{{ context.version }}
 
+  Citation:
+  ```
+  Tabelow K, Balteau E, Ashburner J, et al. hMRI - A toolbox for quantitative MRI in neuroscience and clinical research. NeuroImage. 2019;194:191-210. doi:10.1016/j.neuroimage.2019.01.029
+  ```
+
   ----------------------------------
 
 domains:

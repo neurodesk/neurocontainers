@@ -51,7 +51,6 @@ readme: |
 
   Citation:
   ```
-  TBD
   ```
 
   To run container outside of this environment: ml palmettobug/{{ context.version }}

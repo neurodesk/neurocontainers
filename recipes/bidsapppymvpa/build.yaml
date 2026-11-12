@@ -55,6 +55,11 @@ readme: |
 
   To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml bidsapppymvpa/{{ context.version }}
 
+  Citation:
+  ```
+  Torabian S, Vélez N, Sochat V, Halchenko YO, Grossman ED. The PyMVPA BIDS-App: a robust multivariate pattern analysis pipeline for fMRI data. Front Neurosci. 2023;17:1233416. doi:10.3389/fnins.2023.1233416
+  ```
+
   ----------------------------------
 
 domains:

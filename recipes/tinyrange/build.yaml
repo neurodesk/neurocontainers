@@ -22,7 +22,7 @@ structured_readme:
     tinyrange --help
     ```
   documentation: This container was created from scratch.
-  citation: Please cite appropriately when using this container.
+  citation: ''
 readme: |-
   ----------------------------------
   ## tinyrange/{{ context.version }} ##
@@ -43,7 +43,6 @@ readme: |-
 
   Citation:
   ```
-  Please cite appropriately when using this container.
   ```
 
   To run container outside of this environment: ml tinyrange/{{ context.version }}

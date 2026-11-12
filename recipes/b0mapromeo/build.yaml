@@ -215,4 +215,9 @@ readme: |
   masking, scanner scaling and runtime parameters.
 
   Starting pipeline: https://github.com/tbrierre/recon_me_b0map_romeo
+
+  Citation:
+  ```
+  Dymerska B, Eckstein K, Bachrata B, Siow B, Trattnig S, Shmueli K, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magn Reson Med. 2021;85(4):2294-2308. doi:10.1002/mrm.28563
+  ```
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxNDI4M2UiLz48ZWxsaXBzZSBjeD0iMzIiIGN5PSIzMiIgcng9IjE4IiByeT0iMjQiIGZpbGw9IiM4OWQ0ZDgiLz48cGF0aCBkPSJNMTggMjBjMjUtMTMgOSAyNCAyOCAxN00xNCAzMmMyMC0xNCAyMCAyMiAzNCA2TTE5IDQzYzE0LTExIDEzIDggMjMgNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZDg1OTUxIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIyMiIgeT0iMzciIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjE2IiBmaWxsPSIjMTQyODNlIj5CMDwvdGV4dD48L3N2Zz4=

@@ -87,9 +87,10 @@ domains:
   - neuroimaging
 categories:
   - image reconstruction
-readme: "Denoises MP2RAGE UNI using INV1 and INV2 with the easy-mp2rage O\u2019Brien robust combination\
-  \ (noise factor 6). OpenRecon config: mp2ragedenoise. Supply exactly three magnitude series, UNI=0,\
-  \ INV1=1, INV2=2 by default; configure uniseries/inv1series/inv2series to match the scanner. Requires\
-  \ matching complete single-plane volumes. Scanner volumes are reoriented to RAS for noise estimation,\
-  \ then restored to UNI geometry. NIfTI CLI preserves input voxel order, matching the webapp. Research\
-  \ use only. See OpenReconREADME.md for provenance and verification."
+readme: |-
+  Denoises MP2RAGE UNI using INV1 and INV2 with the easy-mp2rage O’Brien robust combination (noise factor 6). OpenRecon config: mp2ragedenoise. Supply exactly three magnitude series, UNI=0, INV1=1, INV2=2 by default; configure uniseries/inv1series/inv2series to match the scanner. Requires matching complete single-plane volumes. Scanner volumes are reoriented to RAS for noise estimation, then restored to UNI geometry. NIfTI CLI preserves input voxel order, matching the webapp. Research use only. See OpenReconREADME.md for provenance and verification.
+
+  Citation:
+  ```
+  O'Brien KR, Kober T, Hagmann P, et al. Robust T1-weighted structural brain imaging and morphometry at 7T using MP2RAGE. PLoS One. 2014;9(6):e99676. doi:10.1371/journal.pone.0099676
+  ```

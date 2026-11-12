@@ -152,10 +152,13 @@ categories:
   - quantitative imaging
   - image reconstruction
   - phase processing
-readme: 'Resample a saved B0 field map into a target scan and estimate absolute Cima.X shims with Shimming Toolbox.
-
+readme: |
+  Resample a saved B0 field map into a target scan and estimate absolute Cima.X shims with Shimming Toolbox.
 
   Run the ISMRMRD server with config shim_toolbox. Both containers require the same host share mounted at /tmp/share. Select the source B0MapId and provide the field-map acquisition baseline, verified limits, and HFS isocentre when those were not saved by b0mapromeo. See /opt/shim_toolbox/OpenReconREADME.md.
 
-  '
+  Citation:
+  ```
+  D'Astous A, Cereza G, Papp D, Gilbert KM, Stockmann JP, Alonso-Ortiz E, et al. Shimming toolbox: An open-source software toolbox for B0 and B1 shimming in MRI. Magn Reson Med. 2023;89(4):1401-1417. doi:10.1002/mrm.29528
+  ```
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxNDI4M2UiLz48ZWxsaXBzZSBjeD0iMzIiIGN5PSIzMiIgcng9IjE4IiByeT0iMjQiIGZpbGw9IiM4OWQ0ZDgiLz48cGF0aCBkPSJNMTggMjBjMjUtMTMgOSAyNCAyOCAxN00xNCAzMmMyMC0xNCAyMCAyMiAzNCA2TTE5IDQzYzE0LTExIDEzIDggMjMgNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZDg1OTUxIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIyMiIgeT0iMzciIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjE2IiBmaWxsPSIjMTQyODNlIj5CMDwvdGV4dD48L3N2Zz4=

@@ -184,58 +184,42 @@ deploy:
 apptainer_args:
 - --bind
 - /dev/fuse
-readme: '----------------------------------
-
+readme: |-
+  ----------------------------------
   ## neurocommand/{{ context.version }} ##
 
-
   Neurocommand is a complete neuroimaging environment that provides access to the
-
   NeuroDesk software ecosystem via CVMFS.
 
-
-  CVMFS access requires a host FUSE device and suitable mount permissions. Private mounts inside a container use unprivileged
-  user and mount namespaces, with a writable private cache; see https://cvmfs.readthedocs.io/en/2.14/cpt-configure/. The module
-  system is included.
-
+  CVMFS access requires a host FUSE device and suitable mount permissions. Private mounts inside a container use unprivileged user and mount namespaces, with a writable private cache; see https://cvmfs.readthedocs.io/en/2.14/cpt-configure/. The module system is included.
 
   ```bash
-
   # Run with FUSE support (required for CVMFS)
-
   apptainer exec --bind /dev/fuse neurocommand.sif unshare --user --map-root-user --mount --fork /bin/bash
 
-
   # List available modules
-
   module avail
 
-
   # Load a module
-
   module load fsl/6.0.7.6
-
   ```
 
-
   **Included Tools:**
-
   - Apptainer/Singularity container runtime
-
   - lmod module system
-
   - DataLad for data management
-
   - Python with: pandas, nilearn, matplotlib, nipype, osfclient
-
 
   More documentation: https://www.neurodesk.org/
 
-
   To run container outside of this environment: ml neurocommand/{{ context.version }}
 
+  Citation:
+  ```
+  Renton AI, Dao TT, Johnstone T, et al. Neurodesk: an accessible, flexible and portable data analysis environment for reproducible neuroimaging. Nat Methods. 2024;21(5):804-808. doi:10.1038/s41592-023-02145-x
+  ```
 
-  ----------------------------------'
+  ----------------------------------
 files:
 - name: cvmfs_release_latest_all_deb
   url: https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest_all.deb

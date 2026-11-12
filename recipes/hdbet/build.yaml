@@ -94,6 +94,12 @@ readme: |
   More documentation can be found here: https://github.com/MIC-DKFZ/HD-BET
 
   To run container outside of this environment: ml hdbet/{{ context.version }}
+
+  Citation:
+  ```
+  Isensee F, Schell M, Pflueger I, et al. Automated brain extraction of multisequence MRI using artificial neural networks. Hum Brain Mapp. 2019;40(17):4952-4964. doi:10.1002/hbm.24750
+  ```
+
   ----------------------------------
 
 files:

@@ -133,6 +133,15 @@ readme: |-
 
   To run container outside of this environment: ml brainager/{{ context.version }}
 
+  Citation:
+  ```
+  Clausen AN, Fercho KA, Monsour M, et al. Assessment of brain age in posttraumatic stress disorder: Findings from the ENIGMA PTSD and brain age working groups. Brain Behav. 2022;12(1):e2413. doi:10.1002/brb3.2413
+
+  Hobday H, Cole JH, Stanyard RA, et al. Tissue volume estimation and age prediction using rapid structural brain scans. Sci Rep. 2022;12(1):12005. doi:10.1038/s41598-022-14904-5
+
+  Biondo F, Jewell A, Pritchard M, et al. Brain-age is associated with progression to dementia in memory clinic patients. Neuroimage Clin. 2022;36:103175. doi:10.1016/j.nicl.2022.103175
+  ```
+
   ----------------------------------
 
 domains:

@@ -103,7 +103,8 @@ structured_readme:
   description: QuPath is an open-source software for bioimage analysis, especially digital pathology. This container includes the BIOP Cellpose extension and a preconfigured Cellpose 3 environment.
   example: QuPath --help
   documentation: https://qupath.github.io/
-  citation: ''
+  citation: |-
+    Bankhead P, Loughrey MB, Fernández JA, et al. QuPath: Open source software for digital pathology image analysis. Sci Rep. 2017;7(1):16878. doi:10.1038/s41598-017-17204-5
 
 auto_update:
   method: github_release

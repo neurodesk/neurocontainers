@@ -97,4 +97,9 @@ readme: |
   and check each model's license before use.
 
   [Stable documentation](https://github.com/neuronets/nobrainer/tree/1.2.1)
+
+  Citation:
+  ```
+  Kaczmarzyk J, McClure P, Zulfikar W, et al. neuronets/nobrainer (Zenodo). 2023. doi:10.5281/zenodo.4995077
+  ```
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAACIUlEQVR4nO1ZsXHDMAy0c1kiI6SOF8gYcakdXOVU2a60g8us4QXSawStkYJ3PBwpksCDMKMz/1xYtvT4B0kQkvZfH5fdlvHSWoAW3UBrdAOt0Q20RjfQGt1Aa7xakI7TkPrrfLrVjbWv1cxlRKdQxUwFA4B0CqUNlQGldArYBm6Ao97LEp0sAliFKuZeyYkYsFAPM4sN2KnH+GUGAvb3zzf3EZEUGUQeBAYobxAVsJFn4HvgGrCeOXBEZBGnks0fBHrm8XAFGDxYBvLJoAqkcNemGDiDoO1G8wryF/qrfn6/YQFlA3Ea5vviv/vYVFARVDpVT5lT0QNUuB+gIjjtgD9Hk3gP0MB8X2i25vviU5XxcD7d3L/jNIzTEDDE6eeg0MxpuvxxGlLfYc4Y9W8pV4dCoz4Pk3viVZVu2lSPZXVTbyQ3hpUBv17pLxaBTAyktMau9MAfq/i+hZY/qi+uPO7QV9IMDx+IgaDlcod0G07N/tgG3cscj9RGhQdbHOkU1MbxcFXux4U1EE/ZIP20qxGVnVQTFXfU+WWDjwCNimXRXaUcBLwKuahBOwnzwCgbCEZwtZfeyRdf6vzg92LZ3fzjdZaBeBCqdMJFHs6uhy9iTHR1Hu4UMupk9BEFa+CRHvixZIv4MR5EUcRVyNqDlB8po3YeAGZwH7Dw8NA3NHC86mzP/ZaSYsPviWNs8k19KzxHN/qf0Q20RjfQGt1Aa/wBO84lttHeu4QAAAAASUVORK5CYII=

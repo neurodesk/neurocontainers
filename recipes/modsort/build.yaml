@@ -214,3 +214,8 @@ readme: |-
   rather than an absolute requirement.
 
   More documentation can be found here: https://github.com/BrainLesion/modsort
+
+  Citation:
+  ```
+  Kofler F, Rosier M, Astaraki M, et al. BrainLesion Suite: a flexible and user-friendly framework for modular brain lesion image analysis (arXiv). 2025. doi:10.48550/arXiv.2507.09036
+  ```

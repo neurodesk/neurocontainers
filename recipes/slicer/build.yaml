@@ -246,4 +246,10 @@ readme: |
   More documentation can be found here: https://slicer.readthedocs.io/en/latest/user_guide/getting_started.html
 
   To run container outside of this environment: ml slicer/{{ context.version }}
+
+  Citation:
+  ```
+  Fedorov A, Beichel R, Kalpathy-Cramer J, et al. 3D Slicer as an image computing platform for the Quantitative Imaging Network. Magn Reson Imaging. 2012;30(9):1323-1341. doi:10.1016/j.mri.2012.05.001
+  ```
+
   ----------------------------------

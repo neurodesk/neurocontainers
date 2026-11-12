@@ -101,3 +101,8 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 
 readme: |
     civet/{{ context.version }}
+
+    Citation:
+    ```
+    Ad-Dab'bagh Y, Einarson D, Lyttelton O, et al. The CIVET image-processing environment: a fully automated comprehensive pipeline for anatomical neuroimaging research. Proceedings of the 12th Annual Meeting of the Organization for Human Brain Mapping. 2006. https://forum.bic.mni.mcgill.ca/t/civet-2-1-0-references/1060
+    ```

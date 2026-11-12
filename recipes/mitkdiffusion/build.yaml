@@ -82,6 +82,12 @@ readme: |
   More documentation can be found here: https://www.mitk.org/wiki/DiffusionImaging
 
   To run container outside of this environment: ml mitkdiffusion/{{ context.version }}
+
+  Citation:
+  ```
+  Neher PF, Reicht I, van Bruggen T, et al. MITK Diffusion Imaging. Methods of Information in Medicine. 2012;51(5):441-448. doi:10.3414/ME11-02-0031
+  ```
+
   ----------------------------------
 
 files:

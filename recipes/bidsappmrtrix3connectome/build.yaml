@@ -53,6 +53,13 @@ readme: |-
 
   To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml bidsappmrtrix3connectome/{{ context.version }}
 
+  Citation:
+  ```
+  Smith RE, Connelly A. MRtrix3_connectome: A BIDS Application for quantitative structural connectome construction. OHBM. 2019;W610. https://github.com/bids-apps/MRtrix3_connectome
+
+  Tournier JD, Smith R, Raffelt D, et al. MRtrix3: A fast, flexible and open software framework for medical image processing and visualisation. NeuroImage. 2019;202:116137. doi:10.1016/j.neuroimage.2019.116137
+  ```
+
   ----------------------------------
 
 domains:

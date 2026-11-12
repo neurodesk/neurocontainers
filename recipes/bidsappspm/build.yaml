@@ -51,4 +51,10 @@ readme: |
   More documentation can be found here: https://github.com/bids-apps/SPM
 
   To run container outside of this environment: ml bidsappspm/{{ context.version }}
+
+  Citation:
+  ```
+  Friston KJ, Ashburner J, Kiebel SJ, Nichols TE, Penny WD, eds. Statistical Parametric Mapping: The Analysis of Functional Brain Images. Academic Press. 2007. doi:10.1016/B978-0-12-372560-8.X5000-1
+  ```
+
   ----------------------------------

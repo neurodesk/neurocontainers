@@ -566,3 +566,8 @@ readme: |-
   `brats` command always selects singularity for you.
 
   More documentation can be found here: https://github.com/BrainLesion/BraTS
+
+  Citation:
+  ```
+  Kofler F, Rosier M, Astaraki M, et al. BraTS orchestrator: Democratizing and Disseminating state-of-the-art brain tumor image analysis. arXiv. 2025. doi:10.48550/arXiv.2506.13807
+  ```

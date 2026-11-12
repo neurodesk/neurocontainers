@@ -73,6 +73,11 @@ readme: |-
 
   To run container outside of this environment: ml conn/{{ context.version }}
 
+  Citation:
+  ```
+  Whitfield-Gabrieli S, Nieto-Castanon A. Conn: a functional connectivity toolbox for correlated and anticorrelated brain networks. Brain Connect. 2012;2(3):125-141. doi:10.1089/brain.2012.0073
+  ```
+
   ----------------------------------
 
 domains:

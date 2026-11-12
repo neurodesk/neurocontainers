@@ -13,7 +13,8 @@ structured_readme:
   example: |
     bidsme
   documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
-  citation: ''
+  citation: |-
+    Beliy N, Guillemin C, Pommier E, Hammad G, Phillips C. Bidsme: expandable BIDS-ifier of brain imagery datasets. Journal of Open Source Software. 2023;8(92):5575. doi:10.21105/joss.05575
 auto_update:
   container_version: "bidsme"
   method: sources
@@ -75,7 +76,7 @@ readme: |-
 
   Citation:
   ```
-
+  Beliy N, Guillemin C, Pommier E, Hammad G, Phillips C. Bidsme: expandable BIDS-ifier of brain imagery datasets. Journal of Open Source Software. 2023;8(92):5575. doi:10.21105/joss.05575
   ```
 
   To run container outside of this environment: ml bidsme/{{ context.version }}

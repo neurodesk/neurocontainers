@@ -86,6 +86,11 @@ readme: |
 
   To run container outside of this environment: ml mgltools/{{ context.version }}
 
+  Citation:
+  ```
+  Sanner MF. Python: a programming language for software integration and development. J Mol Graph Model. 1999;17(1):57-61. https://pubmed.ncbi.nlm.nih.gov/10660911/
+  ```
+
   ----------------------------------
 
 files:

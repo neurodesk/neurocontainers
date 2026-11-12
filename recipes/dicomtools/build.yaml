@@ -108,6 +108,11 @@ readme: |-
 
   To run container outside of this environment: ml dicomtools/{{ context.version }}
 
+  Citation:
+  ```
+  Li X, Morgan PS, Ashburner J, Smith J, Rorden C. The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 2016;264:47-56. doi:10.1016/j.jneumeth.2016.03.001
+  ```
+
   ----------------------------------
 
 domains:

@@ -74,6 +74,13 @@ readme: |-
 
   To run container outside of this environment: ml bart/{{ context.version }}
 
+  Citation:
+  ```
+  Uecker M, Ong F, Tamir JI, et al. Berkeley Advanced Reconstruction Toolbox. Proc Intl Soc Mag Reson Med. 2015;23:2486. https://archive.ismrm.org/2015/2486.html
+
+  Blumenthal M, Schaten P, Mackner D, et al. mrirecon/bart (Zenodo concept DOI). 2026. doi:10.5281/zenodo.592960
+  ```
+
   License: 3-clause BSD license, https://github.com/mrirecon/bart?tab=BSD-3-Clause-1-ov-file#readme
 
   ----------------------------------
