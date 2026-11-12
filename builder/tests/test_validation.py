@@ -45,7 +45,11 @@ VALID_SVG_ICON = (
         {"license": "other-closed", "url": ""},
         {"license": "LicenseRef-Example"},
         {"license": "LicenseRef-Example", "url": "https://example.com/LICENSE"},
-        {"license": "LicenseRef-Example", "name": "Example", "url": "https://example.com/LICENSE"},
+        {
+            "license": "LicenseRef-Example",
+            "name": "Example",
+            "url": "https://example.com/LICENSE",
+        },
         {"license": "NOASSERTION"},
         {"license": "NONE"},
         {"name": "Custom license"},
@@ -132,7 +136,9 @@ def test_copyright_templates_apps_json_can_render_are_accepted(url, variables):
 
 
 def test_templated_license_must_resolve_to_a_publishable_id():
-    recipe = _recipe_with_copyright("https://example.com/LICENSE", {"license_id": "MIT"})
+    recipe = _recipe_with_copyright(
+        "https://example.com/LICENSE", {"license_id": "MIT"}
+    )
     recipe["copyright"] = [{"license": "{{ context.license_id }}"}]
     validate_recipe_dict(recipe)
 
