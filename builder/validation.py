@@ -425,6 +425,16 @@ def validate_copyright_templates(recipe_dict: Dict[str, Any]) -> None:
                         else ""
                     )
                 )
+        license_value = entry.get("license")
+        if isinstance(license_value, str) and "{{" in license_value:
+            context = dict(variables) if isinstance(variables, dict) else {}
+            context.update(
+                name=recipe_dict.get("name"), version=recipe_dict.get("version")
+            )
+            rendered = _COPYRIGHT_TEMPLATE.sub(
+                lambda match: str(context[match.group(1)]), license_value
+            )
+            parse_copyright_from_dict({**entry, "license": rendered})
 
 
 def validate_recipe_template_syntax(recipe_dict: Dict[str, Any]):
@@ -474,12 +484,22 @@ def validate_license(instance, attribute, value: Any) -> None:
     if "{{" in value or "{%" in value:
         _jinja_env.parse(value)
         return
+    if "licenseref-" in value.lower():
+        raise ValueError(
+            "LicenseRef identifiers cannot be published to Zenodo; "
+            "use a custom license with 'name' and 'url'"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", value):
+        raise ValueError(
+            "license must be a single Zenodo/SPDX license ID; "
+            "for a custom license, use 'name' and 'url'"
+        )
     try:
         canonicalize_license_expression(value)
     except InvalidLicenseExpression as error:
         raise ValueError(
-            f"Invalid SPDX license expression '{value}'. For a custom license, "
-            "use 'name' with a URL."
+            f"Invalid Zenodo/SPDX license ID '{value}'. For a custom license, "
+            "use 'name' and 'url'."
         ) from error
 
 
@@ -507,9 +527,10 @@ class SPDXCopyrightInfo:
     )
 
     def __attrs_post_init__(self) -> None:
-        if self.license in {"other-open", "other-closed", "NOASSERTION", "NONE"} or (
-            "licenseref-" in self.license.lower()
-        ):
+        if self.license in {"other-open", "other-closed"}:
+            validate_non_empty_string(self, attrs.fields(type(self)).name, self.name)
+            validate_license_url(self, attrs.fields(type(self)).url, self.url)
+        elif self.license in {"NOASSERTION", "NONE"}:
             validate_license_url(self, attrs.fields(type(self)).url, self.url)
 
 

@@ -71,7 +71,7 @@ name: toolname
 version: 1.0.0
 
 copyright:
-  - license: MIT                    # SPDX identifier required
+  - license: MIT                    # Single Zenodo/SPDX license ID
     url: https://example.com/license
 
 architectures:
@@ -223,9 +223,15 @@ pin_container: true
 Recipe validation (`builder/validation.py`) enforces:
 - **Architectures**: Must be `x86_64` or `aarch64`
 - **Categories**: Must match the 27-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
-- **Licenses**: Should use SPDX identifiers. `NOASSERTION`/`NONE` (with a `url` to the
-  upstream source) mean that no license is known; apps.json publishes such images'
-  DOIs without a license, so use them only when upstream truly has none
+- **Licenses**: Use a single Zenodo/SPDX license ID. SPDX expressions and
+  `LicenseRef-` identifiers are rejected. Custom licenses require `name` and
+  `url`; `other-open`/`other-closed` also require both. `NOASSERTION`/`NONE`
+  require a `url` to the upstream source and mean that no license is known;
+  apps.json publishes such images' DOIs without a license, so use them only
+  when upstream truly has none. When suggesting a license ID, check the
+  [Zenodo license list](https://apps-json.scigetorg.workers.dev/licenses/zenodo.json)
+  and confirm its terms match the upstream license. If none matches, use the
+  upstream license's `name` and `url` instead of inventing an ID
 - **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `domains`, `icon`
 - **Optional**: `deploy` — omitting it is valid, though most recipes want it
 

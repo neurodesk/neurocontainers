@@ -113,12 +113,15 @@ Recipes are split into a few sections...
 
 This is `name`, `version`, `architectures`, and `readme`.
 
-The optional `copyright` list records upstream license information. The `license`
-field accepts an [SPDX identifier or expression](https://spdx.org/licenses/).
-Custom `LicenseRef-` identifiers require a `url`. SPDX values `NOASSERTION` (no
-license could be determined) and `NONE` (no license granted) also require a URL,
-pointing at the upstream source. Use them only when upstream really declares no
-license. Do not use them to skip finding one.
+The optional `copyright` list records upstream license information. Use a single
+[SPDX license identifier](https://spdx.org/licenses/) in `license` when Zenodo can
+publish that identifier. SPDX expressions and `LicenseRef-` identifiers are not
+Zenodo license IDs, so recipe validation rejects them. Use `name` and `url` for
+a custom license. The Zenodo categories `other-open` and `other-closed` also
+require `name` and `url` to identify the actual terms. `NOASSERTION` (no license
+could be determined) and `NONE` (no license granted) require a URL pointing at
+the upstream source. Use them only when upstream really declares no license.
+Do not use them to skip finding one.
 
 The Zenodo DOI workflow in [Neurodesk/apps.json](https://github.com/Neurodesk/apps.json)
 still mints a DOI for these images, but the record has no license (no `rights`), so
@@ -133,16 +136,17 @@ copyright:
     url: https://github.com/example/tool
 ```
 
-Copyright values may pin the license to the packaged version with
+Copyright fields may pin the license to the packaged version with
 `{{ context.<key> }}`, where the key is `version`, `name` or a scalar top-level
 variable, e.g. `url: https://github.com/MASILab/PreQual/blob/v{{ context.version }}/LICENSE.md`.
 apps.json reads recipes from git without the builder and renders only these
 substitutions for the catalog and Zenodo, so validation rejects filters,
-expressions, `{% %}` blocks and arch-dependent (mapping) variables there.
+expressions, `{% %}` blocks and arch-dependent (mapping) variables there. A
+templated `license` must render to a single valid license ID.
 
 For a custom license, `name` and `url` preserve its title and terms. This is
 sufficient for recipes with custom or multiple licenses; no separate
-`zenodo_license` field is needed:
+`zenodo_license` field or `LicenseRef-` identifier is needed:
 
 ```yaml
 copyright:
@@ -150,11 +154,15 @@ copyright:
     url: https://example.org/LICENSE
 ```
 
-Zenodo uses a controlled license vocabulary. The publisher validates its license
-ID before it creates a draft and includes the original title and URL in the
-record description. A `LicenseRef-` identifier or SPDX expression can be valid
-recipe metadata without being a supported Zenodo ID. Suggested IDs in an error
-message are candidates for review, not replacements for the upstream terms.
+Zenodo uses a controlled license vocabulary. Recipe validation checks that
+`license` is one SPDX identifier or a supported Zenodo category; the publisher
+checks the exact Zenodo license ID before it creates a draft. The original
+custom title and URL are included in the record description. Suggested IDs in
+an error message are candidates for review, not replacements for upstream terms.
+When choosing or suggesting an ID, consult the
+[Zenodo license list](https://apps-json.scigetorg.workers.dev/licenses/zenodo.json)
+and compare the candidate's terms with the upstream license. If there is no
+match, record the custom license with `name` and `url` instead of inventing an ID.
 
 ```yaml
 name: qsmxt

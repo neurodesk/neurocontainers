@@ -37,10 +37,19 @@ VALID_SVG_ICON = (
         {"license": "custom"},
         {"license": "Not-A-Real-License"},
         {"license": "MIT OR"},
+        {"license": "MIT OR Apache-2.0"},
+        {"license": "MIT WITH LLVM-exception"},
         {"license": 42},
         {"license": "other-open"},
+        {"license": "other-open", "url": "https://example.com/LICENSE"},
         {"license": "other-closed", "url": ""},
         {"license": "LicenseRef-Example"},
+        {"license": "LicenseRef-Example", "url": "https://example.com/LICENSE"},
+        {
+            "license": "LicenseRef-Example",
+            "name": "Example",
+            "url": "https://example.com/LICENSE",
+        },
         {"license": "NOASSERTION"},
         {"license": "NONE"},
         {"name": "Custom license"},
@@ -55,9 +64,7 @@ def test_invalid_copyright_metadata_is_rejected(entry):
     "entry",
     [
         {"license": "MIT"},
-        {"license": "MIT OR Apache-2.0"},
         {"license": "{{ context.license_id }}"},
-        {"license": "LicenseRef-Example", "url": "https://example.com/LICENSE"},
         {"license": "NOASSERTION", "url": "https://example.com"},
         {"license": "NONE", "url": "https://example.com"},
         # No-license forms apps.json publishes as a DOI without rights.
@@ -73,7 +80,11 @@ def test_invalid_copyright_metadata_is_rejected(entry):
             "name": "Custom research license",
             "url": "https://example.com/LICENSE",
         },
-        {"license": "other-open", "url": "https://example.com/LICENSE"},
+        {
+            "license": "other-open",
+            "name": "Custom open license",
+            "url": "https://example.com/LICENSE",
+        },
     ],
 )
 def test_valid_copyright_metadata_is_preserved(entry):
@@ -122,6 +133,22 @@ def _recipe_with_copyright(url, variables=None):
 )
 def test_copyright_templates_apps_json_can_render_are_accepted(url, variables):
     validate_recipe_dict(_recipe_with_copyright(url, variables))
+
+
+def test_templated_license_must_resolve_to_a_publishable_id():
+    recipe = _recipe_with_copyright(
+        "https://example.com/LICENSE", {"license_id": "MIT"}
+    )
+    recipe["copyright"] = [{"license": "{{ context.license_id }}"}]
+    validate_recipe_dict(recipe)
+
+    recipe["variables"]["license_id"] = "LicenseRef-Example"
+    with pytest.raises(ValueError, match="LicenseRef identifiers cannot be published"):
+        validate_recipe_dict(recipe)
+
+    recipe["variables"]["license_id"] = "other-open"
+    with pytest.raises(ValueError, match="name cannot be empty"):
+        validate_recipe_dict(recipe)
 
 
 @pytest.mark.parametrize(

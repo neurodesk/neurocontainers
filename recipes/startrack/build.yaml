@@ -2,7 +2,7 @@ name: startrack
 version: "20250920"
 
 copyright:
-  - license: LicenseRef-StarTrack
+  - name: StarTrack terms (all rights reserved)
     url: https://nbl-research.github.io/startrack.html
 
 architectures:
