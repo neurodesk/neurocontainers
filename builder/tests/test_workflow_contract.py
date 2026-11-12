@@ -623,6 +623,7 @@ def test_update_apps_json_syncs_neurocommand_icons() -> None:
     workflow = Path(".github/workflows/update-apps-json.yml").read_text()
 
     assert "python -m pip install cairosvg" in workflow
+    assert "-r requirements.txt" in workflow
     assert "python .github/workflows/scripts/sync_neurocontainer_icons.py" in workflow
     assert "--neurocontainers-path .." in workflow
     assert "git diff --quiet neurodesk/apps.json neurodesk/icons" in workflow

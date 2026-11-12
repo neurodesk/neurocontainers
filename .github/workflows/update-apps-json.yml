@@ -38,7 +38,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install builder and icon conversion dependencies
-        run: python -m pip install -r requirements.txt cairosvg
+        run: python -m pip install cairosvg -r requirements.txt
 
       - name: Generate apps.json
         run: |
