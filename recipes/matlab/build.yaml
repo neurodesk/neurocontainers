@@ -206,3 +206,7 @@ files:
           end
       end
       clear sharedSupportPackageRoot registeredSupportPackageRoot ssiSearchFoldersFile resList k
+
+structured_readme:
+  citation: |-
+    The MathWorks Inc. MATLAB. Natick, Massachusetts: The MathWorks Inc. https://www.mathworks.com

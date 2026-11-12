@@ -106,3 +106,7 @@ readme: |
   Default passthrough. Requires a custom FIRE/ICE acquisition-response adapter.
   See packaged README.md and fire-integration-contract.json for input assumptions.
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABcElEQVR4nOWZy1HEMBBE212EwGZigmDz4EY43MiDJKxMSILDVi0uIw22NCPc4t3WLc+opSmvPtPj/AxlCHEIcQhxCHEIcQhxCHEIcQhxCHEIcR7qXpvfX0tSenlrUXGQ6dBizsjtS9rtZK+BTdc3CbyGfDazVBpYB/0Z0VD3e05Hwh4zcA+UjbJTbY+Qyh4Y3fu7mi2k1KD+MgO3d0rWK1T3gNYMRCS7PSmNZapVMwaChirIA7M9KNGiBmVhtpH95TqVyj7FE1dIhDjsPPzuk0CIQ4xhYO5YP75VRIhDiEOMuif+XD62j5arFclWq19cvtXL0/U/zcBlZTfiK+QVlhCHGMNAitkuGXj9dRLiEMMYSB2ryHHpRYjD9Y8+k+C78qXRzu7BSVR2O1MIysJSi4hCitg20b2XJTVo0zcZx+tep9O+p9yj3Q9Mg9/QjHBHNsgt5SD3xCeEEIcQhxCHEIcQhxCHEIcQhxCHf92BVr4AeeWUCY1l0doAAAAASUVORK5CYII=
+
+structured_readme:
+  citation: |-
+    Huber L, Stirnberg R, Morgan AT, et al. Short-term gradient imperfections in high-resolution EPI lead to Fuzzy Ripple artifacts. Magn Reson Med. 2025;94(2):571-587. doi:10.1002/mrm.30489

@@ -143,3 +143,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBI
 gui_apps:
   - name: "cat12GUI"
     exec: "bash run_spm.sh {{ context.matlab_mcr_root }}/"
+
+structured_readme:
+  citation: |-
+    Gaser C, Dahnke R, Thompson PM, Kurth F, Luders E, Alzheimer's Disease Neuroimaging Initiative. CAT: a computational anatomy toolbox for the analysis of structural MRI data. GigaScience. 2024;13:giae049. doi:10.1093/gigascience/giae049

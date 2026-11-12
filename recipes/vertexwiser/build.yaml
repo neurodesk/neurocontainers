@@ -100,3 +100,7 @@ readme: |-
   To run the container outside of this environment: ml vertexwiser/{{ context.version }}
 
   ----------------------------------
+
+structured_readme:
+  citation: |-
+    Billaud CHA, Yu J. VertexWiseR: A package for simplified vertex-wise analyses of whole-brain and hippocampal surfaces in R. Imaging Neuroscience. 2024;2:1-14. doi:10.1162/imag_a_00372

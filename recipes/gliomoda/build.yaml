@@ -495,3 +495,9 @@ readme: |-
   `gliomoda --version` reports both the package and the bundled weights version.
 
   More documentation can be found here: https://github.com/BrainLesion/GlioMODA
+
+structured_readme:
+  citation: |-
+    Canisius J, Buchner J, Rosier M, et al. GlioMODA: Robust Glioma Segmentation in Clinical Routine. medRxiv. 2025. doi:10.1101/2025.11.12.25339968
+
+    Kofler F, Rosier M, Astaraki M, et al. BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis. arXiv. 2025. doi:10.48550/arXiv.2507.09036

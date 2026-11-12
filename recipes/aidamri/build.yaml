@@ -242,3 +242,7 @@ files:
 - name: fsl_tar
   condition: arch == "x86_64"
   url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-{{ context.fsl_version }}-centos6_64.tar.gz
+
+structured_readme:
+  citation: |-
+    Pallast N, Diedenhofen M, Blaschke S, et al. Processing Pipeline for Atlas-Based Imaging Data Analysis of Structural and Functional Mouse Brain MRI (AIDAmri). Front Neuroinform. 2019;13:42. doi:10.3389/fninf.2019.00042

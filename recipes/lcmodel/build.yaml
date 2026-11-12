@@ -270,3 +270,7 @@ domains:
 categories:
   - spectroscopy
   - image reconstruction
+
+structured_readme:
+  citation: |-
+    Provencher SW. Estimation of metabolite concentrations from localized in vivo proton NMR spectra. Magn Reson Med. 1993;30(6):672-679. doi:10.1002/mrm.1910300604
