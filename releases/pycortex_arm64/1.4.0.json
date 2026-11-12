@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "pycortex_arm64 1.4.0": {
+      "version": "20261112",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "functional imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "pycortex"
+}
