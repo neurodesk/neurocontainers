@@ -1,5 +1,5 @@
 variables:
-  vscode_version: "1.145.3"
+  vscode_version: "1.146.0"
   julia_version: "1.13.3"
   go_version: "1.27.4"
   singularity_version: "4.6.0"
