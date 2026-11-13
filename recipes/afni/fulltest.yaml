@@ -26,6 +26,14 @@ tests:
   command: afni -ver 2>&1 | head -5
   timeout: 900
   expected_output_contains: "Version AFNI_${afni_version} "
+- name: nipype python2 call on a host wrapper path
+  description: nipype runs `python2 <which align_epi_anat.py>`, which on Neurodesk is a bash wrapper; the python2 shim must run the AFNI script instead
+  command: d=$(mktemp -d) && printf '#!/usr/bin/env bash\nexit 1\n' > "$d/align_epi_anat.py" && python2 "$d/align_epi_anat.py" -help 2>&1 | head -5; rm -rf "$d"
+  expected_output_contains: align_epi_anat version
+- name: nipype python2 call on a missing path
+  description: The host wrapper path may not be mounted inside the container
+  command: python2 /cvmfs/neurodesk.ardc.edu.au/containers/missing/1d_tool.py -ver 2>&1
+  expected_output_contains: 1d_tool.py
 - name: 3dinfo version check
   description: Verify 3dinfo is available
   command: 3dinfo -help 2>&1 | head -20

@@ -154,14 +154,17 @@ build:
     - copy: test.tgz /opt/test.tgz
     - copy: license.txt /opt/freesurfer-7.4.1/license.txt
     - copy: afni_wrapper.sh /usr/local/sbin/afni
+    - copy: python2_shim.sh /usr/local/sbin/python2
 
     - run:
-        - chmod +x /usr/local/sbin/afni
+        - chmod +x /usr/local/sbin/afni /usr/local/sbin/python2
         - Rscript /opt/dependencies.R
 
     - workdir: /opt
 
 deploy:
+  bins:
+    - python2
   path:
     - /usr/local/abin/
 
