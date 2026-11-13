@@ -28,7 +28,7 @@ from .ir import (
     Workdir,
 )
 from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
-from .template import RenderContext, TemplateRenderer
+from .template import RenderContext, TemplateError, TemplateRenderer
 from .template_backend import expand_builtin_template
 from .fragments import load_fragment, resolve_macro
 from .validation import NESTED_TEST_DIRECTIVE_ERROR, validate_recipe_dict
@@ -100,6 +100,19 @@ def _render_release_recipe(
         if key in rendered_recipe:
             rendered_recipe[key] = renderer.render_value(rendered_recipe[key], context)
     return rendered_recipe
+
+
+def _render_citation(
+    recipe: dict[str, Any],
+    renderer: TemplateRenderer,
+    context: RenderContext,
+) -> str:
+    citation = str((recipe.get("structured_readme") or {}).get("citation") or "")
+    try:
+        return renderer.render_string(citation, context)
+    except TemplateError:
+        # BibTeX titles such as {{nilearn}} are literal braces, not templates.
+        return citation
 
 
 def _render_structured_readme(
@@ -696,5 +709,6 @@ def compile_recipe(
                 },
             },
             context,
-        ),
+        )
+        | {"citation": _render_citation(recipe, renderer, context)},
     )
