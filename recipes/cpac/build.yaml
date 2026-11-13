@@ -99,3 +99,8 @@ readme: |
   License: GNU Lesser General Public License v3.0
 
   License details: https://github.com/FCP-INDI/C-PAC/blob/main/COPYING.LESSER
+structured_readme:
+  citation: |-
+    Craddock, R. C., Sikka, S., Cheung, B., Khanuja, R., Ghosh, S. S., Yan, C., ... & Milham, M. P. (2013). Towards automated analysis of connectomes: The configurable pipeline for the analysis of connectomes (C-PAC). Frontiers in Neuroinformatics, 7, 42. doi:10.3389/fninf.2013.00042.
+
+    Please also cite the Zenodo DOI for the version you're referencing.
