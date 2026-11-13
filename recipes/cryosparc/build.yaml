@@ -124,9 +124,10 @@ readme: |
     (520.61.05 or newer for v4.4 to v4.7, 570.26 or newer for v5).
   - Project directories must be on a file system that supports symbolic links.
   - The launcher never edits your shell startup files.
-  - On a cluster, run CryoSPARC on a GPU compute node (for example inside an
-    `salloc` job), not on a login node: a standalone instance runs its jobs on
-    the machine it was started on.
+  - On a cluster, run CryoSPARC on a GPU compute node, not on a login node: a
+    standalone instance runs its jobs on the machine it was started on. Inside a
+    GPU allocation, open a shell on the compute node with `srun --pty bash`
+    before you start CryoSPARC.
 
   ### Without a CryoSPARC licence
   The Neurodesk Cryo-EM web app (https://microscopyapps.sciget.org/cryo-em/)
