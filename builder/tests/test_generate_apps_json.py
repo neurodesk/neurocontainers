@@ -203,7 +203,7 @@ def test_catalog_carries_structured_readme_over_readme(
 structured_readme:
   example: demo --help
   description: "Demo {{ context.version }}\\u2028 converts data."
-  citation: "Doe J. Demo. 2020.\\nRoe R.\\u2028 Demo again. 2021."
+  citation: "Doe J. Demo v{{ context.version }}. 2020.\\nRoe R.\\u2028 Demo again. 2021."
 readme: |
   ## demo/{{ context.version }} ##
   Readme description.
@@ -219,8 +219,26 @@ readme: |
 
     entry = catalog_entry(tmp_path, container)
 
-    assert entry["citation"] == "Doe J. Demo. 2020.\nRoe R. Demo again. 2021."
+    assert entry["citation"] == "Doe J. Demo v1.0.0. 2020.\nRoe R. Demo again. 2021."
     assert entry["description"] == "Demo 1.0.0 converts data."
+
+
+def test_catalog_keeps_bibtex_braces_that_are_not_templates(tmp_path) -> None:
+    write_catalog_source(
+        tmp_path,
+        """\
+structured_readme:
+  citation: "@software{Demo, title = {{demo}}}"
+readme: |
+  ## demo/{{ context.version }} ##
+  Demo converts data.
+""",
+    )
+
+    entry = catalog_entry(tmp_path)
+
+    assert entry["citation"] == "@software{Demo, title = {{demo}}}"
+    assert entry["description"] == "Demo converts data."
 
 
 CITATION = "Avants BB, et al. Neuroimage. 2011.\ndoi: 10.1016/j.neuroimage.2010.09.025."
@@ -231,6 +249,7 @@ CITATION = "Avants BB, et al. Neuroimage. 2011.\ndoi: 10.1016/j.neuroimage.2010.
     [
         "  Citation:\n  ```\n  Avants BB, et al. Neuroimage. 2011.\n"
         "  doi: 10.1016/j.neuroimage.2010.09.025.\n  ```\n\n"
+        "  IMPORTANT: agree to the license before use.\n\n"
         "  License: Apache 2 License\n",
         "  Citations:\n  Avants BB, et al. Neuroimage. 2011.\n"
         "  doi: 10.1016/j.neuroimage.2010.09.025.\n\n  To run: ml demo\n",

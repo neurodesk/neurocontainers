@@ -190,7 +190,7 @@ def compile_for_release(
         return None
 
 
-def recipe_text_fields(compiled: CompiledRecipe, recipe: dict) -> dict[str, str]:
+def recipe_text_fields(compiled: CompiledRecipe) -> dict[str, str]:
     """Return the non-empty citation and description for a catalog entry.
 
     Each prefers structured_readme and falls back to the readme: README.md
@@ -202,8 +202,7 @@ def recipe_text_fields(compiled: CompiledRecipe, recipe: dict) -> dict[str, str]
         if readme_path.is_file()
         else compiled.readme
     )
-    structured = recipe.get("structured_readme")
-    citation = structured.get("citation") if isinstance(structured, dict) else None
+    citation = compiled.metadata["citation"]
     description = compiled.metadata["structured_readme"].get("description")
     fields = {
         "citation": citation
@@ -259,8 +258,9 @@ def find_citation_header(lines: list[str]) -> tuple[int, str] | None:
 def parse_readme_citation(readme_text: str) -> str | None:
     """Extract the Citation section from a neurocontainers readme.
 
-    The citation is the text after the header, usually wrapped in a code
-    fence, up to the next section (License:, ---, a heading, ...).
+    The citation is the text after the header up to the next section
+    (License:, ---, a heading, ...). When it opens with a code fence, the
+    closing fence ends it.
     """
     lines = readme_text.splitlines()
     header = find_citation_header(lines)
@@ -269,10 +269,14 @@ def parse_readme_citation(readme_text: str) -> str | None:
     start, inline = header
 
     collected = [inline]
+    opens_with_fence = False
     in_fence = False
     for line in lines[start:]:
         stripped = line.strip()
         if FENCE.match(stripped):
+            if in_fence and opens_with_fence:
+                break
+            opens_with_fence = opens_with_fence or not "".join(collected).strip()
             in_fence = not in_fence
             continue
         if not in_fence and CITATION_STOP.match(stripped):
@@ -355,7 +359,7 @@ def generate_apps_json(
                 container_data["categories"] = sorted(set(categories))
             compiled = compile_for_release(container_name, recipe_dir, release)
             if compiled is not None:
-                container_data.update(recipe_text_fields(compiled, recipe))
+                container_data.update(recipe_text_fields(compiled))
         for app_name in container_data["apps"]:
             existing_owner = app_owners.get(app_name)
             if existing_owner is not None:
