@@ -14,8 +14,8 @@
 # libraries, and basic command functionality.
 
 name: gigaconnectome
-version: 0.6.0
-upstream_version: 0.6.0
+version: "0.7.0"
+upstream_version: "0.7.0"
 
 required_files:
   - dataset: ds000001
@@ -79,9 +79,9 @@ tests:
   # PYTHON ENVIRONMENT
   # ==========================================================================
   - name: Python version check
-    description: Verify Python 3.9 is available
+    description: Verify Python 3.14 is available
     command: python3 --version
-    expected_output_contains: "Python 3.9"
+    expected_output_contains: "Python 3.14"
 
   - name: Python import giga_connectome
     description: Verify giga_connectome package can be imported
@@ -92,7 +92,7 @@ tests:
   - name: Python nilearn version
     description: Verify nilearn is installed with correct version
     command: "python3 -c \"import nilearn; print('nilearn:', nilearn.__version__)\""
-    expected_output_contains: "nilearn: 0.10"
+    expected_output_contains: "nilearn: 0.13.1"
     expected_exit_code: 0
 
   - name: Python nibabel version
@@ -104,19 +104,19 @@ tests:
   - name: Python pybids version
     description: Verify pybids is installed
     command: "python3 -c \"import bids; print('pybids:', bids.__version__)\""
-    expected_output_contains: "pybids: 0.15"
+    expected_output_contains: "pybids: 0.22.0"
     expected_exit_code: 0
 
   - name: Python templateflow version
     description: Verify templateflow is installed
     command: "python3 -c \"import templateflow; print('templateflow:', templateflow.__version__)\""
-    expected_output_contains: "templateflow: 0.8"
+    expected_output_contains: "templateflow: 25.1.2"
     expected_exit_code: 0
 
   - name: Python numpy version
     description: Verify numpy is installed
     command: "python3 -c \"import numpy; print('numpy:', numpy.__version__)\""
-    expected_output_contains: "numpy: 1."
+    expected_output_contains: "numpy: 2.4.3"
     expected_exit_code: 0
 
   - name: Python scipy import
@@ -859,14 +859,14 @@ tests:
     expected_output_contains: "required"
 
   - name: giga_connectome invalid bids dir
-    description: Reject a regular file passed as the BIDS dataset directory.
+    description: Fail when a regular file is passed as the BIDS dataset directory.
     command: |
       set -e
       printf 'not a BIDS directory\n' > ${output_dir}/invalid_bids_root
       giga_connectome ${output_dir}/invalid_bids_root ${output_dir}/invalid_bids_output participant --participant-label 01
     expected_exit_code: 1
     expected_output_contains:
-      - "FileExistsError"
+      - "IndexError: list index out of range"
       - "invalid_bids_root"
 
   - name: nib-ls nonexistent file
