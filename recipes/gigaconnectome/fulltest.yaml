@@ -14,8 +14,8 @@
 # libraries, and basic command functionality.
 
 name: gigaconnectome
-version: 0.6.0
-upstream_version: 0.6.0
+version: "0.7.0"
+upstream_version: "0.7.0"
 
 required_files:
   - dataset: ds000001

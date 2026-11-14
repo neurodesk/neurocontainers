@@ -1,5 +1,5 @@
 name: gigaconnectome
-version: 0.6.0
+version: "0.7.0"
 architectures:
   - x86_64
   - aarch64
@@ -59,11 +59,11 @@ structured_readme:
         doi = {https://doi.org/10.5281/zenodo.8397156}
     }
 variables:
-  upstream_version: 0.6.0
-  source_url: https://codeload.github.com/bids-apps/giga_connectome/tar.gz/refs/tags/0.6.0
-  source_sha256: 769dce189a1734839f9f0ff716bb55eaea351472503bdef03ef571aada469c49
+  upstream_version: "0.7.0"
+  source_url: "https://codeload.github.com/bids-apps/giga_connectome/tar.gz/refs/tags/0.7.0"
+  source_sha256: "4fa8415c4b461bb5ed3538aed68bd7814c811f3cc835bf412b982a3726814862"
   mist2templateflow_commit: 61ac290bbbcde5a2bf2a7304c74ad69915710950
-  pip_version: "24.0"
+  pip_version: "24.3.1"
   python_base_digest: sha256:a02e9c5406c416c504d6c9a1a306ff4080c3173f1008d192f953bd20382a2d5c
 
 auto_update:
