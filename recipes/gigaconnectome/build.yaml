@@ -18,7 +18,7 @@ structured_readme:
     networks, DiFuMo, Harvard-Oxford). Users can customise their own strategies
     and atlases using the configuration json files.
   example: |-
-    ml gigaconnectome/0.6.0
+    ml gigaconnectome/{{ context.version }}
 
     giga_connectome [-h] [-v]
                            [--participant-label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
@@ -62,9 +62,9 @@ variables:
   upstream_version: "0.7.0"
   source_url: "https://codeload.github.com/bids-apps/giga_connectome/tar.gz/refs/tags/0.7.0"
   source_sha256: "4fa8415c4b461bb5ed3538aed68bd7814c811f3cc835bf412b982a3726814862"
-  mist2templateflow_commit: 61ac290bbbcde5a2bf2a7304c74ad69915710950
+  mist2templateflow_commit: ceb79afff57cf67c49ce157bce27fd049b213b1d
   pip_version: "24.3.1"
-  python_base_digest: sha256:a02e9c5406c416c504d6c9a1a306ff4080c3173f1008d192f953bd20382a2d5c
+  python_base_digest: sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
 
 auto_update:
   method: sources
@@ -83,15 +83,15 @@ auto_update:
     - id: mist2templateflow
       method: github_commit
       repo: SIMEXP/mist2templateflow
-      # Match the 0.6.0 upstream submodule; its compatibility branch was removed and main diverged.
-      ref: 61ac290bbbcde5a2bf2a7304c74ad69915710950
+      # Match the submodule pinned by upstream 0.7.0.
+      ref: ceb79afff57cf67c49ce157bce27fd049b213b1d
       dependency: true
       target:
         variable: mist2templateflow_commit
     - id: python_base
       method: oci_digest
       image: python
-      tag: 3.9-slim-bookworm
+      tag: 3.14.10-slim-trixie
       dependency: true
       target:
         variable: python_base_digest
@@ -105,7 +105,7 @@ auto_update:
 
 build:
   kind: neurodocker
-  base-image: "{% if arch == 'x86_64' %}bids/giga_connectome:{{ context.upstream_version }}{% else %}python:3.9-slim-bookworm@{{ context.python_base_digest }}{% endif %}"
+  base-image: "{% if arch == 'x86_64' %}bids/giga_connectome:{{ context.upstream_version }}{% else %}python:3.14.10-slim-trixie@{{ context.python_base_digest }}{% endif %}"
   pkg-manager: apt
   # The upstream x86 image needs no extra packages; its Bullseye security pool returns 404s.
   add-default-template: false
@@ -160,7 +160,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAdzklE
 readme: >-
   ----------------------------------
 
-  ## gigaconnectome/0.6.0 ##
+  ## gigaconnectome/{{ context.version }} ##
 
 
   Functional connectivity is a common approach in analysing resting state fMRI
@@ -180,7 +180,7 @@ readme: >-
 
   ```
 
-  ml gigaconnectome/0.6.0
+  ml gigaconnectome/{{ context.version }}
 
 
   giga_connectome [-h] [-v]
@@ -241,7 +241,7 @@ readme: >-
   processing conflicts with BibTeX syntax.
 
 
-  To run container outside of this environment: ml gigaconnectome/0.6.0
+  To run container outside of this environment: ml gigaconnectome/{{ context.version }}
 
 
   ----------------------------------
