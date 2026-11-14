@@ -11,8 +11,8 @@
 #   SparseArrays, DelimitedFiles, Printf, Serialization, InteractiveUtils
 
 name: julia
-version: 1.13.3
-julia_version: "1.13.3"
+version: "1.13.4"
+julia_version: "1.13.4"
 
 test_data:
   output_dir: test_output
