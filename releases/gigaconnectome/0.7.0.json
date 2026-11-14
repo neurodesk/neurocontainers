@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "gigaconnectome 0.7.0": {
+      "version": "20261114",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "bids apps"
+  ]
+}
