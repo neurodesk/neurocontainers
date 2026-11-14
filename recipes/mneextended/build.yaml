@@ -7,7 +7,7 @@ variables:
   mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
   pyedflib_version: "0.1.42"
-  vscode_version: "1.145.2"
+  vscode_version: "1.146.0"
   vscode_platform:
     try:
       - value: linux-deb-x64
@@ -16,7 +16,7 @@ variables:
         condition: arch == "aarch64"
   flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
   openneuro_version: "2026.9.1"
-  pipeline_commit: "4eff7cd21896c976143b430c7f12af4de9531632"
+  pipeline_commit: "9ead34bfe43d532859bda0aa8a2b1f1a9e4e275a"
 
 name: mneextended
 version: "1.2.0"
