@@ -1,8 +1,8 @@
 name: qsmxt
-version: "11.0.0"
-upstream_version: "11.0.0"
-qsmxt_source_sha256: "6fe9b38bb9f12ac4c674f9b32ad9902ee310d68bedbf157ddd6695baa2d7af61"
-rust_version: "1.99.1"
+version: "12.0.0"
+upstream_version: "12.0.0"
+qsmxt_source_sha256: "e742e14b44cc3a604ce38b237eff6d4ca9dde07ba483b714fe89aa7950002a14"
+rust_version: "1.100.0"
 native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
 qsm_core_commit: "8a655f4c31b9b0f657c35fe812e7f0bf8867d368"
 niimath_version: "1.0.20261016"
