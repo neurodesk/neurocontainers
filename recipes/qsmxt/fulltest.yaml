@@ -4,7 +4,7 @@ upstream_version: "12.0.0"
 qsmxt_source_sha256: "e742e14b44cc3a604ce38b237eff6d4ca9dde07ba483b714fe89aa7950002a14"
 rust_version: "1.100.0"
 native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
-qsm_core_commit: "8a655f4c31b9b0f657c35fe812e7f0bf8867d368"
+qsm_core_commit: "1c38ad9a79ed6f1229df8b10b310547974c5e746"
 niimath_version: "1.0.20261016"
 
 test_data:
