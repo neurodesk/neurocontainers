@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "mriqc 26.1.1": {
+      "version": "20261115",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "functional imaging",
+    "quality control",
+    "workflows"
+  ]
+}
