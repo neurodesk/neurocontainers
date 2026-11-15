@@ -1,5 +1,5 @@
 name: rstudio
-version: 2026.10.1
+version: "2026.11.0"
 
 copyright:
   - license: AGPL-3.0-only
@@ -9,13 +9,13 @@ architectures:
   - x86_64
 
 variables:
-  upstream_tag: "v2026.10.1+239"
+  upstream_tag: "v2026.11.0+203"
   # R from CRAN's jammy-cran40 apt repository, pinned to one exact build.
   r_version: "4.6.2-1.2204.0"
   # Posit Package Manager CRAN snapshot that every CRAN package comes from.
   # It advances together with R and RStudio, so packages always match the R
   # they were tested with.
-  cran_snapshot: "2026-10-31"
+  cran_snapshot: "2026-11-14"
   mricrotome_commit: "27aa2cd1025a063fdb07cec7f555f498428400da"
   rminc_commit: "01866cb94ff08679a47cae83a808352f6a25dc77"
 
