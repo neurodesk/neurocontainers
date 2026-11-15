@@ -58,7 +58,7 @@ readme: |-
 files:
   - name: noddi_source
     url: "https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip"
-    sha256: 93c6ad0b27bebfe2ec03655a98f4a13f322f0a76fbef549d4888ea3e84702cc0
+    sha256: "0ae64adbda7aaf6844823f2c07c1c4bb4ddefe51e466955992b49aeba4ab95dd"
   - name: noddi_wrapper
     contents: |
       #!/usr/bin/env bash
