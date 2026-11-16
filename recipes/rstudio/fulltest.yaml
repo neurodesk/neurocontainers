@@ -7,7 +7,7 @@
 
 name: rstudio
 version: "2026.11.0"
-r_version: "4.6.2-1.2204.0"
+r_version: "4.6.2-2.2204.0"
 
 test_data:
   output_dir: test_output
