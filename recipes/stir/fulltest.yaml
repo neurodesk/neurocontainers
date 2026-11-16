@@ -1,5 +1,5 @@
 name: stir
-version: 6.4.0
+version: "6.5.0"
 tests:
   - name: Installed source version
     command: cat /opt/stir/VERSION.txt

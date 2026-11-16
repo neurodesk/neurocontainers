@@ -1,5 +1,5 @@
 name: stir
-version: 6.4.0
+version: "6.5.0"
 copyright:
   - license: Apache-2.0
     url: https://github.com/UCL/STIR/blob/rel_{{ context.upstream_version }}/LICENSE.txt
@@ -14,10 +14,10 @@ copyright:
 architectures:
   - x86_64
 variables:
-  upstream_version: 6.4.0
+  upstream_version: "6.5.0"
   # Release gitlinks; check STIR compatibility when dependency observers advance these pins.
-  fmt_commit: e424e3f2e607da02742f73db84873b8084fc714c
-  cuvec_commit: f27ececc00088db944a30ea8080016b9bdaa8e39
+  fmt_commit: "57f1b5930dc2906875534a15c209e1c39eda59ad"
+  cuvec_commit: "8f3584ccd8a90dd042b68a5859cd5ce9d9fc5f90"
 auto_update:
   method: sources
   container_version: stir
@@ -81,8 +81,8 @@ deploy:
     - /opt/stir/bin
 files:
   - name: source
-    url: https://codeload.github.com/UCL/STIR/tar.gz/refs/tags/rel_6.4.0
-    sha256: ba8c14734272656edd240f4f49722942909f51cc0e8a11a02fca95691f0f4f34
+    url: "https://codeload.github.com/UCL/STIR/tar.gz/refs/tags/rel_6.5.0"
+    sha256: "04d47f1f3f088f5f9f7ae93fb595abab5cb0bf44366d7c21582f8552801ae481"
   - name: fmt
     url: https://github.com/fmtlib/fmt/archive/{{ context.fmt_commit }}.tar.gz
   - name: cuvec
