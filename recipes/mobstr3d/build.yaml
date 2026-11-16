@@ -35,6 +35,8 @@ files:
     filename: mobstr3d_slice.py
   - name: verify_runtime.py
     filename: verify_runtime.py
+  - name: dicom2mrd_ismrmrd15.patch
+    filename: dicom2mrd_ismrmrd15.patch
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
@@ -133,6 +135,9 @@ build:
     - install: bzip2 ca-certificates git build-essential unzip python3-pip python3-dev python-is-python3 libgl1 libglib2.0-0 libxrender1 libxext6 libx11-6
     - include: macros/openrecon/neurodocker.yaml
     - include: macros/openrecon_i2i/helpers.yaml
+    # ISMRMRD 1.15 requires mandatory XML fields at construction.
+    - run:
+        - git -C /opt/code/python-ismrmrd-server apply {{ get_file("dicom2mrd_ismrmrd15.patch") }}
 
     # mobstr3D at the pinned commit, with the modelESv2 nnU-Net weights it ships.
     # PyTorch goes in first (CPU build), as the mobstr3D README requires before nnU-Net.

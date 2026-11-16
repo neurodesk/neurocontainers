@@ -1,0 +1,120 @@
+--- a/dicom2mrd.py
++++ b/dicom2mrd.py
+@@ -30,65 +30,60 @@
+
+ def CreateMrdHeader(dset):
+     """Create MRD XML header from a DICOM file"""
+-
+-    mrdHead = ismrmrd.xsd.ismrmrdHeader()
+-
+-    mrdHead.measurementInformation                             = ismrmrd.xsd.measurementInformationType()
+-    mrdHead.measurementInformation.measurementID               = dset.SeriesInstanceUID
+-    mrdHead.measurementInformation.patientPosition             = dset.PatientPosition
+-    mrdHead.measurementInformation.protocolName                = dset.SeriesDescription
+-    mrdHead.measurementInformation.frameOfReferenceUID         = dset.FrameOfReferenceUID
+-
+-    mrdHead.acquisitionSystemInformation                       = ismrmrd.xsd.acquisitionSystemInformationType()
+-    mrdHead.acquisitionSystemInformation.systemVendor          = dset.Manufacturer
+-    mrdHead.acquisitionSystemInformation.systemModel           = dset.ManufacturerModelName
+-    mrdHead.acquisitionSystemInformation.systemFieldStrength_T = float(dset.MagneticFieldStrength)
+-    try:
+-        mrdHead.acquisitionSystemInformation.institutionName       = dset.InstitutionName
+-    except:
+-        mrdHead.acquisitionSystemInformation.institutionName       = 'Virtual'
+-    try:
+-        mrdHead.acquisitionSystemInformation.stationName       = dset.StationName
+-    except:
+-        pass
+-
+-    mrdHead.experimentalConditions                             = ismrmrd.xsd.experimentalConditionsType()
+-    mrdHead.experimentalConditions.H1resonanceFrequency_Hz     = int(dset.MagneticFieldStrength*4258e4)
+-
+-    enc = ismrmrd.xsd.encodingType()
+-    enc.trajectory                                              = ismrmrd.xsd.trajectoryType('cartesian')
+-    encSpace                                                    = ismrmrd.xsd.encodingSpaceType()
+-    encSpace.matrixSize                                         = ismrmrd.xsd.matrixSizeType()
+-    encSpace.matrixSize.x                                       = dset.Columns
+-    encSpace.matrixSize.y                                       = dset.Rows
+-    encSpace.matrixSize.z                                       = 1
+-    encSpace.fieldOfView_mm                                     = ismrmrd.xsd.fieldOfViewMm()
++    xsd = ismrmrd.xsd
+     if dset.SOPClassUID.name == 'Enhanced MR Image Storage':
+-        encSpace.fieldOfView_mm.x                               =       dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[0]*dset.Rows
+-        encSpace.fieldOfView_mm.y                               =       dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[1]*dset.Columns
+-        encSpace.fieldOfView_mm.z                               = float(dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
++        measures = dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0]
++        spacing = measures.PixelSpacing
++        thickness = float(measures.SliceThickness)
++        modifiers = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0]
++        acceleration = xsd.accelerationFactorType(
++            kspace_encoding_step_1=modifiers.ParallelReductionFactorInPlane,
++            kspace_encoding_step_2=modifiers.ParallelReductionFactorOutOfPlane,
++        )
+     else:
+-        encSpace.fieldOfView_mm.x                               =       dset.PixelSpacing[0]*dset.Rows
+-        encSpace.fieldOfView_mm.y                               =       dset.PixelSpacing[1]*dset.Columns
+-        encSpace.fieldOfView_mm.z                               = float(dset.SliceThickness)
+-    enc.encodedSpace                                            = encSpace
+-    enc.reconSpace                                              = encSpace
+-    enc.encodingLimits                                          = ismrmrd.xsd.encodingLimitsType()
+-    enc.parallelImaging                                         = ismrmrd.xsd.parallelImagingType()
+-
+-    enc.parallelImaging.accelerationFactor                      = ismrmrd.xsd.accelerationFactorType()
+-    if dset.SOPClassUID.name == 'Enhanced MR Image Storage':
+-        enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0].ParallelReductionFactorInPlane
+-        enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0].ParallelReductionFactorOutOfPlane
+-    else:
+-        enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = 1
+-        enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = 1
+-
+-    mrdHead.encoding.append(enc)
+-
+-    mrdHead.sequenceParameters                                  = ismrmrd.xsd.sequenceParametersType()
+-
+-    return mrdHead
++        spacing = dset.PixelSpacing
++        thickness = float(dset.SliceThickness)
++        acceleration = xsd.accelerationFactorType(
++            kspace_encoding_step_1=1, kspace_encoding_step_2=1,
++        )
++
++    space = xsd.encodingSpaceType(
++        matrixSize=xsd.matrixSizeType(x=dset.Columns, y=dset.Rows, z=1),
++        fieldOfView_mm=xsd.fieldOfViewMm(
++            x=spacing[0] * dset.Rows,
++            y=spacing[1] * dset.Columns,
++            z=thickness,
++        ),
++    )
++    measurement = xsd.measurementInformationType(
++        patientPosition=xsd.patientPositionType(dset.PatientPosition),
++        measurementID=dset.SeriesInstanceUID,
++        protocolName=dset.SeriesDescription,
++        frameOfReferenceUID=dset.FrameOfReferenceUID,
++    )
++    acquisition = xsd.acquisitionSystemInformationType(
++        systemVendor=dset.Manufacturer,
++        systemModel=dset.ManufacturerModelName,
++        systemFieldStrength_T=float(dset.MagneticFieldStrength),
++        institutionName=getattr(dset, 'InstitutionName', 'Virtual'),
++        stationName=getattr(dset, 'StationName', None),
++    )
++    return xsd.ismrmrdHeader(
++        measurementInformation=measurement,
++        acquisitionSystemInformation=acquisition,
++        experimentalConditions=xsd.experimentalConditionsType(
++            H1resonanceFrequency_Hz=int(dset.MagneticFieldStrength * 4258e4),
++        ),
++        encoding=[xsd.encodingType(
++            encodedSpace=space,
++            reconSpace=space,
++            encodingLimits=xsd.encodingLimitsType(),
++            trajectory=xsd.trajectoryType('cartesian'),
++            parallelImaging=xsd.parallelImagingType(accelerationFactor=acceleration),
++        )],
++        sequenceParameters=xsd.sequenceParametersType(),
++    )
++
+
+ def GetDicomFiles(directory):
+     """Get path to all DICOMs in a directory and its sub-directories"""
