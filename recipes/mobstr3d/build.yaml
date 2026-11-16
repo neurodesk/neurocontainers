@@ -13,11 +13,11 @@ architectures:
 readme_url: https://raw.githubusercontent.com/UOA-Heart-Mechanics-Research/mobstr3D/{{ context.upstream_commit }}/README.md
 
 variables:
-  upstream_commit: e8cf9b20291acd14ef5ff67d40432531823fa46f
+  upstream_commit: "f2c416e9593fb829824f92311d0ec331ba9101ca"
   upstream_version: 1.0.5
-  base_image_digest: sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+  base_image_digest: "sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8"
   openrecon_ubuntu_version: '24.04'
-  openrecon_ismrmrd_version: 1.14.2
+  openrecon_ismrmrd_version: "1.15.0"
   openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
   openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
   openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
@@ -28,13 +28,15 @@ variables:
 files:
   - name: mobstr3d_source
     url: https://github.com/UOA-Heart-Mechanics-Research/mobstr3D/archive/{{ context.upstream_commit }}.tar.gz
-    sha256: 28db66eb74292ab74bc5bf91ca458d91de9e39c877f4dfe67ba41e2ac5c2afff
+    sha256: "5842ae0e440141d27309e676c183540268ce162206f90d5dfb7730861a41e1b5"
   - name: mobstr3d.py
     filename: mobstr3d.py
   - name: mobstr3d_slice.py
     filename: mobstr3d_slice.py
   - name: verify_runtime.py
     filename: verify_runtime.py
+  - name: dicom2mrd_ismrmrd15.patch
+    filename: dicom2mrd_ismrmrd15.patch
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
@@ -133,6 +135,9 @@ build:
     - install: bzip2 ca-certificates git build-essential unzip python3-pip python3-dev python-is-python3 libgl1 libglib2.0-0 libxrender1 libxext6 libx11-6
     - include: macros/openrecon/neurodocker.yaml
     - include: macros/openrecon_i2i/helpers.yaml
+    # ISMRMRD 1.15 requires mandatory XML fields at construction.
+    - run:
+        - git -C /opt/code/python-ismrmrd-server apply {{ get_file("dicom2mrd_ismrmrd15.patch") }}
 
     # mobstr3D at the pinned commit, with the modelESv2 nnU-Net weights it ships.
     # PyTorch goes in first (CPU build), as the mobstr3D README requires before nnU-Net.
