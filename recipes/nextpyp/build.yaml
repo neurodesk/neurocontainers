@@ -1,0 +1,179 @@
+name: nextpyp
+version: 0.7.3
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/nextpyp/next/blob/{{ context.nextpyp_version }}/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  nextpyp_version: "0.7.3"
+  apptainer_version: "1.5.3"
+  base_image_digest: "sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8"
+  download_base: https://nextpyp.app/files/pyp/{{ context.nextpyp_version }}
+
+auto_update:
+  # The web server image, host processor and start script are published per
+  # release under nextpyp.app/files/pyp/<version>/, with the same version as
+  # the nextpyp/next tag. The launcher downloads pyp.sif for that version.
+  method: sources
+  container_version: nextpyp
+  local: []
+  sources:
+    - id: nextpyp
+      method: github_tags
+      repo: nextpyp/next
+      target:
+        variable: nextpyp_version
+        value: version
+    - id: apptainer
+      dependency: true
+      method: github_release
+      repo: apptainer/apptainer
+      target:
+        variable: apptainer_version
+        value: version
+    - id: base_image
+      dependency: true
+      method: oci_digest
+      image: ubuntu
+      tag: '24.04'
+      target:
+        variable: base_image_digest
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - bash
+        - ca-certificates
+        - curl
+        - procps
+        - util-linux
+        - fuse3
+        - libglib2.0-0
+        - libseccomp2
+        - squashfs-tools
+        - uidmap
+    - run:
+        - apt-get update
+        - apt-get install -y {{ get_file("apptainer.deb") }}
+        - rm -rf /var/lib/apt/lists/*
+        - apptainer --version
+    - run:
+        - install -d /opt/nextpyp-dist/bin /opt/nextpyp-dist/workflows
+        - install -m 644 {{ get_file("nextPYP.sif") }} /opt/nextpyp-dist/nextPYP.sif
+        - install -m 755 {{ get_file("host-processor") }} /opt/nextpyp-dist/host-processor
+        - install -m 644 {{ get_file("nextpyp-upstream") }} /opt/nextpyp-dist/nextpyp
+        - install -m 644 {{ get_file("spr_tutorial.toml") }} /opt/nextpyp-dist/workflows/spr_tutorial.toml
+        - install -m 644 {{ get_file("tomo_tutorial.toml") }} /opt/nextpyp-dist/workflows/tomo_tutorial.toml
+        - install -m 644 {{ get_file("class_tutorial.toml") }} /opt/nextpyp-dist/workflows/class_tutorial.toml
+        - sed 's/@NEXTPYP_VERSION@/{{ context.nextpyp_version }}/' {{ get_file("nextpyp.sh") }} > /opt/nextpyp-dist/bin/nextpyp
+        - chmod 755 /opt/nextpyp-dist/bin/nextpyp
+        - apptainer sif list /opt/nextpyp-dist/nextPYP.sif
+    - environment:
+        PATH: /opt/nextpyp-dist/bin:$PATH
+
+files:
+  - name: nextpyp.sh
+    filename: nextpyp.sh
+  - name: apptainer.deb
+    url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer_{{ context.apptainer_version }}_amd64.deb
+  - name: nextPYP.sif
+    url: "{{ context.download_base }}/nextPYP.sif"
+  - name: host-processor
+    url: "{{ context.download_base }}/host-processor"
+  - name: nextpyp-upstream
+    url: "{{ context.download_base }}/nextpyp"
+  - name: spr_tutorial.toml
+    url: "{{ context.download_base }}/workflows/spr_tutorial.toml"
+  - name: tomo_tutorial.toml
+    url: "{{ context.download_base }}/workflows/tomo_tutorial.toml"
+  - name: class_tutorial.toml
+    url: "{{ context.download_base }}/workflows/class_tutorial.toml"
+
+deploy:
+  bins:
+    - nextpyp
+
+domains:
+  - neuroimaging
+categories:
+  - cryo EM
+
+readme: |
+  ## nextpyp/{{ context.version }}
+
+  nextPYP (Bartesaghi lab, Duke University) is a web application for
+  single-particle cryo-EM and cryo-electron tomography: pre-processing,
+  particle picking, sub-tomogram averaging, constrained refinement and
+  classification, run as projects in a browser. https://nextpyp.app
+
+  nextPYP runs as two Apptainer images. This container includes the web server
+  image (`nextPYP.sif`) and the `nextpyp` launcher. The processing image
+  (`pyp.sif`, about 43 GB) is too large to include, so `nextpyp install`
+  downloads it once into a directory you choose. The web server then runs from
+  that directory in a nested Apptainer container.
+
+  ### Install once
+  Pick a writable directory with at least 50 GB free plus room for your
+  projects (raw movies and tilt series need several TB). Every parent directory
+  must be group- and world-executable (`chmod go+x`), which nextPYP enforces,
+  so use project or scratch storage rather than a private home directory.
+  ```
+  nextpyp install --dir /path/to/nextpyp --bind /path/to/your/data
+  ```
+  This creates upstream's folder layout and `config.toml`, copies the tutorial
+  workflows and downloads `pyp.sif` for nextPYP {{ context.version }}. Run the
+  same command again to resume an interrupted download. If you already have
+  `pyp.sif` for this version, link it instead of downloading:
+  `nextpyp install --dir /path/to/nextpyp --pyp-sif /path/to/pyp.sif`.
+  Options: `--port N` (default 8080), `--scratch PATH` for fast local scratch
+  space, and `--bind PATH` (repeatable) for each folder with data. Run
+  `nextpyp help` for all options.
+
+  ### Run
+  ```
+  export NEXTPYP_DIR=/path/to/nextpyp
+  nextpyp start       # keeps running; open http://localhost:8080 in a browser
+  nextpyp status      # from another terminal
+  nextpyp stop        # or press Ctrl-C where nextpyp start runs
+  ```
+  `nextpyp start` waits until the web server answers, then stays in the
+  foreground until you stop nextPYP: keep its terminal open, or run it in
+  `tmux` or a batch job. The server listens on localhost only; from another
+  computer, use an SSH tunnel (`ssh -L 8080:localhost:8080 node`). Run the
+  container with GPU access (`apptainer exec --nv`, or a GPU desktop in
+  Neurodesk) for GPU jobs.
+
+  ### Configuration
+  Settings live in `/path/to/nextpyp/config.toml`; restart nextPYP after
+  editing it. To change the port, edit `port` under `[web]`. To make more data
+  folders visible, add them to `binds` under `[pyp]`. nextPYP refuses binds
+  under system folders such as `/opt`, `/usr` or `/var`. Logs are in
+  `/path/to/nextpyp/local/logs`. Configuration reference:
+  https://nextpyp.app/files/pyp/latest/docs/reference/config.html
+
+  ### Notes
+  - Jobs run on the machine where nextPYP was started, using its CPUs and
+    GPUs. On a cluster, start it on a compute node, not on a login node.
+  - A newer `nextpyp` container upgrades an existing installation: run
+    `nextpyp install --dir /path/to/nextpyp` with it to fetch the matching
+    `pyp.sif`.
+  - The host needs unprivileged user namespaces for nested Apptainer, as on
+    most current Linux systems.
+
+  Documentation: https://nextpyp.app/files/pyp/latest/docs/
+
+  Citation: Liu, H.-F., Zhou, Y., Huang, Q., Piland, J., Jin, W., Mandel, J.,
+  Du, X., Martin, J., Bartesaghi, A. nextPYP: a comprehensive and scalable
+  platform for characterizing protein variability in situ using single-particle
+  cryo-electron tomography. Nat Methods 20, 1909-1919 (2023).
+  https://doi.org/10.1038/s41592-023-02045-0
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACYAAAAoCAYAAACSN4jeAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAAhGVYSWZNTQAqAAAACAAFARIAAwAAAAEAAQAAARoABQAAAAEAAABKARsABQAAAAEAAABSASgAAwAAAAEAAgAAh2kABAAAAAEAAABaAAAAAAAAAJAAAAABAAAAkAAAAAEAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAJqADAAQAAAABAAAAKAAAAAAp+n+vAAAACXBIWXMAABYlAAAWJQFJUiTwAAACaGlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNi4wLjAiPgogICA8cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyIKICAgICAgICAgICAgeG1sbnM6ZXhpZj0iaHR0cDovL25zLmFkb2JlLmNvbS9leGlmLzEuMC8iPgogICAgICAgICA8dGlmZjpPcmllbnRhdGlvbj4xPC90aWZmOk9yaWVudGF0aW9uPgogICAgICAgICA8dGlmZjpSZXNvbHV0aW9uVW5pdD4yPC90aWZmOlJlc29sdXRpb25Vbml0PgogICAgICAgICA8ZXhpZjpQaXhlbFlEaW1lbnNpb24+NDI4PC9leGlmOlBpeGVsWURpbWVuc2lvbj4KICAgICAgICAgPGV4aWY6UGl4ZWxYRGltZW5zaW9uPjQwMjwvZXhpZjpQaXhlbFhEaW1lbnNpb24+CiAgICAgICAgIDxleGlmOkNvbG9yU3BhY2U+MTwvZXhpZjpDb2xvclNwYWNlPgogICAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KVOFEYgAAC4lJREFUWAm1WAlcVVUa/5/7Ft9jlUUBASWVTFHRsElHM6zUHMOygrLSnPqV/jRTGxsny3y2N+aS0giUpqKloOYMprgkFBYuuGCgGZgar5BVhdje471vvnOfFzDRdGQOv8e99yzf+Z9v/47AdbaUFNLFHYeARTRqS4jIIzUbvU4Xo09RJUIbnQizO+BGTpBBD6WdDuXe7igI8sWx4YORG+4pyrS1iCa9JRqwtKDXNMYvouXH1d6jEslwaJKwy3EG027xlxhbUIyJv1RhWLURxhqmUl0PVNYAJY2oDdShsdQBe5AOJrMe7v5ugD/P6WhCXrAvkuOisbpPgCiR9GItZEyZB7sQguS31q4JjEEoQp0hnJI7r6zD9OOlmFNiglt5OWDQIcNLjx1uJnzbrzPylowVFzTCBXyAzP1oX3EB/pkF6HCuDpGV9Rjup8d9Ye4wdvfF+jvDMe/RgaJArnHtJZza+qsCe565lHSJSwvTaMI3BUj6xYR2jvM4HOqNBf+eio18SlWsVUR+H6bgrqILGMbiDGcxtuMNij3dcHLQrch+5A6xW9tw0XdknvsV7o4yI6aHD3r2CETarNFisRy3MCMswgWuVWCSvakWYeNT6KeswJZjjRjdeAGHBwXjuSXjxWFJZE0GDfi2AOOsVXi80YROdhalTmCvUYetDCjLYEJhvQkXUuNgj0qE/lCx1E84WHv4pzVSpibj0f6hCOvdGasHdhUlvCef93KxqrMlKPlyvIyC4pZSReT7RA8to0dkHy/y+tsaem3sh5TfZxFRZDzRPR/QyccTaPK2ApJcunbjTWPZiJg1+mj+aZMXpZPvzuMULr8lMK2/6SnFJz++OknBYxaTY+A/KV8bnLWWFo9eRDV4iwgLiP6ymL5/czPdo42/s406LP+a+n/HomLyotUNtMktntqesqvVNZYM1wmsVeT36FIGtYA2yckJu2k4c6jCRwL6B9GAd4nmbKCZlwgpzybR7KeTaP+L62hjUhbdJ/tla3UT19AV/y0WUni+0uqA1jkxkc6MWEyp8nvOZ/TWkA8Z0Gz+vUo0aiFVbc2l3kxEPy6eEkYvIxr3EZ2bnuwStUqjNVFoxG/4+bxLhDPX0JphC2mHXP/SGloXwiJjUHV4TQV1/lwd3TJ7PT0u9e7+BKJpq+llba/Xv6B7t+VSiPy+EW5p6694Jl7Sq2XbaeRjy1069VIyfRwgQb3COsWgBr5HtoPnqPeUFfSBD3OJRVt8spyCJbEnE+j1KavoyNwv6IVfidiVtg2wJguYuoq+9vTG0+2diFl5Fkt/LEU9G7gxwgfKy4MxMqcQQ+IvYG6sDodSXxAD3t9GIXtOIifUA8Uj+uPBuAHiZw1Uq+YuB2+gqQr33haawPFm05DuMKcXMagSONkfwbs9lPs74ZXzVfCIL8XcMU6UpUzFoNkpNGT7GRSFeeHgJ8+J/hLUqKUud9EWoCR+FVi9A92fGYUNG77B+kwONf4GNNiMMA024uDkB5C6IgfJETwzpj+eTP4WQTuLkeXvQH7isyJGErGkkHH7i6JBvrdVUz7eQ1FdA5GZvgejsmvQF07Yyp0wd2E3O3YA/v52CmblcWzsZ8bO56LFro+ykM4ZBEb1wTQJYhpzyhInbG0FSKOjdA2A7u4InDlSjNmF1YCX5CGDCtNzWFHg3FuCycEcWiPDsHBKMo3bb0DPWxT88MzdyJZEzgWiKQ3SiLbFU7k3QhzYkoXI0zbcxls4mRkKOAHp4Iay3d9jZiG/hzhRGhWOUzlWzAbzhmPiT6xLHB1JpMQyj/8PTY1XP1VgRJ7r3A4bwQC2hJwyPOQgF0izGcezT6DfKTsiZRhuNF9fHnczeFVgVXWIcjInWHSqXJgjOGNTDcMJHRSbEx32n8aLFQxYcpM93C3sRA3MNft8qKHksiTvZgBpa5UyIs/KOnSSnDAKqPkGv8IgQHrB4Bygg78hIq0cQ41Oxs2DZfXokZCJHpJI5nz1ABq9NnsqRUXwZGqeUlM4b2lyuMwcVxbIYNkKicedPKrnn62Q+05YoaZCmb82r2kzVExIMRtgNOnYDhlYDUlBuZxbE0LZwUBkN+sfPAR0lWy9HBkmS24jSdgtrWUGct1NNIVFVlvbiDrWJUS4u8TCGDnHd4H8Pe1aBsZ99ox6BC74HG/IcUscc7KNm9ItADVcZlVLSHcEoIzFKW1R/skEt4mDagbJmzu5x6xA31AF+saKGZ9k0P1IFTbOSE1tiY2rIFHjaYRVAvM2Iz3IADG8Pc7wr5y5JjzZCCQYO9eKas7Nu9dxv7sezn3ngc1HsGnLYeqVaRH1YQyuTVIe3oPhsN6YkQ9OWNxN+DrcjNrfHPjuVl+kgZPkaoK9MyPq5QFhYyPQwHEJqTMpsG+rgNvyDGQlZVC/MwyOyz1Fy4Yl7f+1qcBCfbGvFwM7W42iEC9sa3SgZ58wrAtnubKDUBgA3RuKctYuLp2awXHU5mII9h2V8F25DwfnpNBEWQVZhrFBc/LJKbPexcFWCow/QKwCG9QTmZ357WQFuvQLQYKbDpGPDcOhvmbksg/R/1gH0WBHwfhQHJEW2k7I2ODytRyXDG4CjfuqoF9/Cp8+8S9KS9pLEaq1cvl/KQ3i0o1rCpkpX/rJ6l5eO1wNH7sB6bmFc+Jyyj16HnlH54gn4+LpoqcHYvp2gNvKH7A9l/OzPl6gKYMwY/UBzNtXC393J+x8NWBg85AGIhicg62bLQO62/Wgnr5Ye1swVk2MQXaoEHVXA3C1fqFV3G9voieyi7Bs6wzhN2M1WX7+DX03TxUPP51AGauLES23fyoI28bcgXfn7UDWCd5KT2jgkxkZjxox+Piy1GpscDBgd6AbK2SIgkIfEw74uSOP3VCRXkGdhxE6rtbPdwtE3qShopiXMRmVRBNO6Tib2vRVdMBai6Wbpoi1nGrnZ1birr0z4XxqCaxf/gr3Hh2BCd3x146+2P/5ARzbU8v+qx5ORUEjhzM9A1NqOGTFBPLFigeOZlrRzWpCQB3rqiwGPBmZwgeU8uPsBSPaY+f748RICUDqorwniU2BIjMW1TFKzy3vDAaFY9ypUoTJgjI8AB8F+CDOR4iE5bvokTon0vfw2fYIfDqrK25bOwvesxOw+dgFjMy1wVgvhaVDg1kH3T621OEGGCbdiZcZdMlPxeheVo3ehVXw49sfQxcPVPm54RBfrGxlSLpoC89NklFY2PlKwSG51cQxDRz3cZOVNJBVCP+h4ajkaQ6uuh/+z4/YdJDvcx7uhJJPpqGHrxAX39xC9+WcxYxf6jA6R+qYBChDPQNkN2Pv7Y3PI4Ox8p1YZDFLmGfXbokZ5B8RpKpI80QJLj8VIjWu+eJDZfEkFhnHxCXbacyX+di46yIMTwSh4NUJGBrhIc5JCkvT6U/fWzHeehExpXZ0KeHzWyVQ9iccKdCpFjZfI3I9DMhjWzzr1w61W8pRMcwLbsFe8GY9NPt4oK6zH05FdsVXTRxrhud6k4DmM6u0ayE2dyP4BihlH0VtysH6DdXo/oAJ1umjMWL4reKEtp7XtYvfhQHWMgwq5xqiqh4hNTZ0anDCv6oRJg8duxcudvhurdRkQJG3Cac7uuOorycOhQUhf2z/5js2jeYfPiMkOG68udvM1bTs9oVEUXyXMT+VHmxefKVv4vnS0XrIgvgckTu/a6G3edmlNx5jZt24Q0bL25nP9tKQp+Ipd2Qi0QOLac3zOc0b8jw3TJO15rU24UPEkpGvpoy/d7ZXFeUVR2nRoV4Ux0nDceWS8Wk0dv/PeJNF5W0w4q2NG7ACma4xFwdYb1l3W5BALLuES1GhZXfT+2WTm3qv80UGa8sw1czZhoFlaRRdUInx7CKcAe2xmy+CMyYMFqXXSe6yaTcFTKOUyCKcNEAFqLqDzfvJj2+w+wXxvYePP/b+OZRDktSd1q4wNSK/e/4XVL0QwsWTn1sAAAAASUVORK5CYII=

@@ -1,0 +1,142 @@
+name: nextpyp
+version: 0.7.3
+
+# The 43 GB processing image (pyp.sif) is not downloaded here. Stand-in SIF
+# files cover its download and linking; the web server image shipped in the
+# container is started, served and stopped for real under nested Apptainer.
+tests:
+  - name: launcher reports the nextPYP version
+    command: nextpyp version
+    expected_output_contains: "nextPYP ${version}"
+
+  - name: launcher help documents install, start and stop
+    command: nextpyp help
+    expected_output_contains:
+      - "nextpyp install --dir PATH [--pyp-sif FILE]"
+      - "nextpyp start|stop|status [--dir PATH]"
+
+  - name: embedded web server image runs nextPYP of the container version
+    timeout: 300
+    command: |-
+      set -eu
+      unset APPTAINER_BIND APPTAINER_BINDPATH SINGULARITY_BIND SINGULARITY_BINDPATH
+      apptainer sif list /opt/nextpyp-dist/nextPYP.sif | grep -q 'FS (Squashfs'
+      apptainer exec --no-home /opt/nextpyp-dist/nextPYP.sif \
+        sh -c 'tr ":" "\n" < /opt/micromon/bin/classpath.txt | grep -o "micromon-[0-9.]*jar"; command -v mongod java apptainer'
+    expected_output_contains:
+      - "micromon-${version}.jar"
+      - "/usr/bin/mongod"
+
+  - name: start without an installation explains what to do
+    command: env -u NEXTPYP_DIR nextpyp start
+    expected_exit_code: 1
+    expected_output_contains: "no installation directory given"
+
+  - name: install refuses a directory nextPYP cannot start from
+    command: |-
+      dir=$(mktemp -d)
+      chmod 700 "$dir"
+      nextpyp install --dir "$dir/nextpyp" --pyp-sif /opt/nextpyp-dist/nextPYP.sif
+      status=$?
+      test ! -e "$dir/nextpyp/config.toml" || echo "unexpected files left behind"
+      rm -rf "$dir"
+      exit $status
+    expected_exit_code: 1
+    expected_output_contains: "group- and world-executable"
+
+  - name: install rejects a pyp.sif that is not a SIF image
+    command: |-
+      dir=$(mktemp -d)
+      chmod 755 "$dir"
+      echo not-an-image > "$dir/pyp.sif"
+      nextpyp install --dir "$dir/nextpyp" --pyp-sif "$dir/pyp.sif"
+      status=$?
+      rm -rf "$dir"
+      exit $status
+    expected_exit_code: 1
+    expected_output_contains: "is not an Apptainer SIF image"
+
+  - name: install downloads pyp.sif for this version from a stand-in server
+    timeout: 120
+    script: |
+      set -eu
+      root=$(mktemp -d)
+      trap 'rm -rf "$root"' EXIT
+      chmod 755 "$root"
+      mkdir -p "$root/server"
+      apptainer sif new "$root/server/pyp.sif" >/dev/null
+      NEXTPYP_DOWNLOAD_BASE="file://$root/server" nextpyp install --dir "$root/nextpyp" --port 18765
+
+      target="$root/nextpyp/sharedExec/containers/pyp.sif"
+      [ -f "$target" ] && [ ! -L "$target" ] || { echo "pyp.sif was not downloaded"; exit 1; }
+      cmp "$root/server/pyp.sif" "$target"
+      [ ! -e "$target.part" ] || { echo "partial download left behind"; exit 1; }
+      grep -qx "port = 18765" "$root/nextpyp/config.toml"
+      ls "$root/nextpyp/workflows" | grep -q tomo_tutorial.toml
+
+      # A second run keeps the downloaded image and the configuration.
+      rm "$root/server/pyp.sif"
+      nextpyp install --dir "$root/nextpyp" --port 9999 2>"$root/again"
+      grep -q "already installed" "$root/again"
+      grep -qx "port = 18765" "$root/nextpyp/config.toml"
+      echo download-contract-ok
+    expected_output_contains: download-contract-ok
+
+  - name: web server starts, serves the nextPYP page, restarts and stops
+    timeout: 600
+    script: |
+      set -eu
+      root=$(mktemp -d)
+      chmod 755 "$root"
+      export NEXTPYP_DIR="$root/nextpyp"
+      cleanup() { nextpyp stop >/dev/null 2>&1 || true; rm -rf "$root"; }
+      trap cleanup EXIT
+
+      port=$(( 20000 + RANDOM % 20000 ))
+      while (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; do port=$(( port + 1 )); done
+
+      mkdir -p "$root/data"
+      apptainer sif new "$root/pyp.sif" >/dev/null
+      nextpyp install --pyp-sif "$root/pyp.sif" --port "$port" --bind "$root/data"
+      [ "$(readlink "$NEXTPYP_DIR/sharedExec/containers/pyp.sif")" = "$root/pyp.sif" ] || { echo "pyp.sif was not linked"; exit 1; }
+      grep -qx "binds = \['$root/data'\]" "$NEXTPYP_DIR/config.toml"
+
+      # `nextpyp start` stays in the foreground until nextPYP is stopped.
+      start_server() {
+        nextpyp start >"$root/start.log" 2>&1 &
+        launcher=$!
+        for _ in $(seq 300); do
+          grep -q "nextPYP is running at" "$root/start.log" && return 0
+          kill -0 "$launcher" 2>/dev/null || break
+          sleep 1
+        done
+        cat "$root/start.log"; return 1
+      }
+      running() { pgrep -u "$(id -u)" -f "$NEXTPYP_DIR/|micromon.MainKt" >/dev/null; }
+      stopped() {
+        for _ in $(seq 60); do running || return 0; sleep 1; done
+        echo "processes left after stop:"; pgrep -a -u "$(id -u)" -f "$NEXTPYP_DIR/|micromon.MainKt"; return 1
+      }
+
+      start_server
+      curl -fsS "http://127.0.0.1:$port/" | grep -q '<title>nextPYP</title>'
+      nextpyp status | grep -q "nextPYP ${version} is running at http://127.0.0.1:$port"
+      nextpyp start 2>&1 | grep -q "already running"
+
+      # Stopping from another command ends the foreground launcher.
+      nextpyp stop
+      wait "$launcher"
+      grep -q "nextPYP has stopped" "$root/start.log"
+      stopped
+      if nextpyp status; then echo "status reports running after stop"; exit 1; fi
+
+      # Terminating the launcher stops nextPYP cleanly, and it starts again.
+      # (Background jobs of a script ignore SIGINT, so send SIGTERM.)
+      start_server
+      curl -fsS "http://127.0.0.1:$port/" | grep -q '<title>nextPYP</title>'
+      kill -TERM "$launcher"
+      wait "$launcher"
+      stopped
+      nextpyp stop 2>&1 | grep -q "not running"
+      echo web-round-trip-ok
+    expected_output_contains: web-round-trip-ok
