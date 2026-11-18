@@ -1,0 +1,284 @@
+name: smartscope
+version: 0.10.0
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/smartscope-org/SmartScope/blob/{{ context.upstream_tag }}/LICENSE
+  - license: GPL-2.0-only
+    url: https://bio3d.colorado.edu/imod/
+  - name: Janelia Research Campus Software License 1.2 (CTFFIND)
+    url: https://www.janelia.org/open-science/software-licensing
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_tag: "0.10"
+  base_image_digest: "sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8"
+  serialem_commit: 63e037da8befdfb5d8e04efd1549b7948832704d
+  connector_commit: 081da40b2a7276b13379d4f35bd7e3ba58b413a8
+  nextpyp_client_commit: 1fc2d2e815333dfc48c6e6d7a4a7e72bc41a773a
+  # SmartScope pins no Python lock file. Resolve its dependencies as PyPI
+  # served them when the release was published; move this with the tag.
+  pypi_cutoff: "2026-07-29T00:00:00Z"
+  imod_version: 5.1.13
+  ctffind_version: 5.0.2
+  uv_version: 0.13.2
+
+auto_update:
+  method: sources
+  container_version: smartscope
+  sources:
+    - id: smartscope
+      method: github_release
+      repo: smartscope-org/SmartScope
+      version_regex: '(?P<version>\d+\.\d+(?:\.\d+)*)'
+      target:
+        variable: upstream_tag
+        value: tag
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: '24.04'
+      dependency: true
+      target:
+        variable: base_image_digest
+    - id: serialem
+      method: github_commit
+      repo: JoQCcoz/serialem-pythonmodule
+      ref: main
+      dependency: true
+      target:
+        variable: serialem_commit
+    - id: smartscope_connector
+      method: github_commit
+      repo: JoQCcoz/SmartScope-connector
+      ref: main
+      dependency: true
+      target:
+        variable: connector_commit
+    - id: nextpyp_client
+      method: github_commit
+      repo: nextpyp/nextpyp-client
+      ref: main
+      dependency: true
+      target:
+        variable: nextpyp_client_commit
+    - id: imod
+      method: artifact_listing
+      url: https://bio3d.colorado.edu/imod/download.html
+      download_base: https://bio3d.colorado.edu/imod/
+      version_regex: AMD64-RHEL5/imod_(?P<version>\d+\.\d+\.\d+)_RHEL8-64_CUDA12\.0\.sh
+      dependency: true
+      target:
+        file: imod_installer
+        variables:
+          imod_version: version
+    - id: ctffind
+      method: artifact_listing
+      url: https://grigoriefflab.umassmed.edu/ctf_estimation_ctffind_ctftilt
+      download_base: https://grigoriefflab.umassmed.edu/system/
+      version_regex: https://grigoriefflab\.umassmed\.edu/system/tdf/ctffind-(?P<version>5\.\d+\.\d+)\.tar\.gz\?file=1&type=page&id=26
+      dependency: true
+      target:
+        file: ctffind_archive
+        variables:
+          ctffind_version: version
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - ca-certificates
+        - curl
+        - python3
+        - libmariadb3
+        - mariadb-server
+        - mariadb-client
+        - redis-server
+        - nginx
+        - libgl1
+        - libglib2.0-0t64
+        - libsm6
+        - libxext6
+        - libgomp1
+        - procps
+        - openssh-client
+        - tzdata
+    - workdir: /tmp
+    - run:
+        - mkdir /tmp/imod-install
+        - cd /tmp/imod-install
+        - sh {{ get_file("imod_installer") }} -yes -skip -dir /opt -name IMOD
+        - cd /tmp
+        - rm -rf /tmp/imod-install
+        - test -x /opt/IMOD/bin/alignframes
+        - "! ldd /opt/IMOD/bin/alignframes | grep 'not found'"
+    - run:
+        - mkdir -p /opt/ctffind-{{ context.ctffind_version }}
+        - tar -xzf {{ get_file("ctffind_archive") }} -C /opt/ctffind-{{ context.ctffind_version }} --strip-components=1
+        - "! ldd /opt/ctffind-{{ context.ctffind_version }}/bin/ctffind | grep 'not found'"
+    - run:
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev git
+        - mkdir /tmp/uv
+        - tar -xzf {{ get_file("uv_archive") }} -C /tmp/uv --strip-components=1
+        - git clone --depth 1 --branch {{ context.upstream_tag }} https://github.com/smartscope-org/SmartScope.git /opt/smartscope
+        - rm -rf /opt/smartscope/.git
+        # Let the settings take the instance's MariaDB socket instead of /run/mysqld.
+        - >-
+          sed -i "s|'unix_socket': '/run/mysqld/mysqld.sock'|'unix_socket': os.getenv('MYSQL_SOCKET', '/run/mysqld/mysqld.sock')|"
+          /opt/smartscope/Smartscope/core/settings/server_docker.py
+        - grep -q "os.getenv('MYSQL_SOCKET'" /opt/smartscope/Smartscope/core/settings/server_docker.py
+        # Upstream prints the Redis URLs, password included, on every import.
+        - sed -i '/^print(result_backend, broker_url)$/d' /opt/smartscope/Smartscope/tasks/settings.py
+        - "! grep -q '^print(' /opt/smartscope/Smartscope/tasks/settings.py"
+        - UV_PYTHON_DOWNLOADS=never /tmp/uv/uv venv --python /usr/bin/python3 /opt/smartscope/.venv
+        - >-
+          UV_PYTHON_DOWNLOADS=never /tmp/uv/uv pip install --no-cache --compile-bytecode
+          --python /opt/smartscope/.venv/bin/python --no-sources --exclude-newer {{ context.pypi_cutoff }}
+          -e /opt/smartscope
+          "serialem @ git+https://github.com/JoQCcoz/serialem-pythonmodule.git@{{ context.serialem_commit }}"
+          "smartscope-connector @ git+https://github.com/JoQCcoz/SmartScope-connector.git@{{ context.connector_commit }}"
+          "nextpyp-client @ git+https://github.com/nextpyp/nextpyp-client.git@{{ context.nextpyp_client_commit }}"
+        - /opt/smartscope/.venv/bin/python -m compileall -q /opt/smartscope/Smartscope
+        - >-
+          cd /opt/smartscope && AUTOSCREENDIR=/tmp SCRATCH_DIR=/tmp SECRET_KEY=build
+          /opt/smartscope/.venv/bin/manage.py collectstatic --noinput
+        - test -f /opt/shared/static/base.css
+        - cd /tmp
+        - rm -rf /tmp/uv /root/.cache
+        - apt-get purge -y -q --auto-remove build-essential pkg-config python3-dev libmariadb-dev git
+        - rm -rf /var/lib/apt/lists/*
+        - /opt/smartscope/.venv/bin/python -c "import MySQLdb, cv2, django, celery, serialem, smartscope_connector, nextpyp"
+    - run:
+        - install -d /opt/smartscope-neurodesk/bin
+        - install -m 755 {{ get_file("smartscope.sh") }} /opt/smartscope-neurodesk/bin/smartscope
+        - ln -s smartscope /opt/smartscope-neurodesk/bin/smartscope.py
+        - ln -s smartscope /opt/smartscope-neurodesk/bin/manage.py
+    - environment:
+        PATH: /opt/smartscope-neurodesk/bin:/opt/smartscope/.venv/bin:$PATH:/opt/IMOD/bin:/opt/ctffind-{{ context.ctffind_version }}/bin
+        IMOD_DIR: /opt/IMOD
+        CTFFIND: /opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
+        APP: /opt/smartscope/
+        DJANGO_SETTINGS_MODULE: Smartscope.core.settings.server_docker
+
+files:
+  - name: smartscope.sh
+    filename: smartscope.sh
+  - name: uv_archive
+    url: https://github.com/astral-sh/uv/releases/download/{{ context.uv_version }}/uv-x86_64-unknown-linux-gnu.tar.gz
+    sha256: e14d48c117ec33601d6f860dda47aa5ea490d77a5a9ef770529c448fa6747d9f
+  - name: imod_installer
+    url: https://bio3d.colorado.edu/imod/AMD64-RHEL5/imod_5.1.13_RHEL8-64_CUDA12.0.sh
+    sha256: 07c4858993dc5c1d6f5e94688065358684d555048f335899cfebd3c40bca77a1
+  - name: ctffind_archive
+    url: https://grigoriefflab.umassmed.edu/system/tdf/ctffind-5.0.2.tar.gz?file=1&type=page&id=26
+    sha256: c7b65646d666b46aee35fd49d283005e64dccd8d1f1dfe61405f4da10d22efa2
+
+deploy:
+  bins:
+    - smartscope
+    - smartscope.py
+    - manage.py
+
+categories:
+  - cryo EM
+domains:
+  - neuroimaging
+
+readme: |
+  ## smartscope/{{ context.version }}
+
+  SmartScope (NIEHS and Duke University) screens cryo-EM grids
+  automatically. It drives the microscope through SerialEM: it acquires an
+  atlas, finds and ranks squares and holes, collects high-magnification
+  images and reports CTF and ice-thickness estimates in a web interface.
+  https://smartscope.org
+
+  Upstream ships SmartScope as several docker-compose services. This
+  container runs them all from one image: MariaDB, Redis, the SmartScope web
+  application (gunicorn behind nginx) and its Celery worker. It also includes
+  IMOD {{ context.imod_version }} (`alignframes`) and CTFFIND
+  {{ context.ctffind_version }}, which SmartScope uses to process
+  high-magnification movies.
+
+  ### Create an instance once
+  An instance directory holds the database, settings, logs and screening
+  data. Choose a writable directory that keeps the same path in later
+  sessions. The container image itself is read-only.
+  ```
+  export SMARTSCOPE_DIR=/path/to/smartscope
+  smartscope init                 # add --port N to change the default port 48000
+  ```
+  `init` prints where the password of the `admin` account is stored
+  (`$SMARTSCOPE_DIR/auth/admin_password`). Set `SMARTSCOPE_ADMIN_PASSWORD`
+  before `init` to choose it yourself. Keep the instance directory on a file
+  system that supports file locks: MariaDB cannot run on file systems without
+  them, such as some Lustre mounts.
+
+  ### Run
+  ```
+  export SMARTSCOPE_DIR=/path/to/smartscope
+  smartscope run        # open http://localhost:48000 and log in as admin
+  ```
+  `smartscope run` stays in the foreground and stops every service when you
+  press Ctrl-C. `smartscope start` starts the services in the background, and
+  `smartscope stop` and `smartscope status` control them. Background services
+  need a container that stays alive: a plain `apptainer exec` unmounts the
+  image when its command returns. Use an instance, for example
+  `apptainer instance start <image> smartscope` followed by
+  `apptainer exec instance://smartscope smartscope start`.
+
+  The web interface listens on 127.0.0.1 port 48000 and Redis on port 48001.
+  To serve other computers, edit `$SMARTSCOPE_DIR/smartscope.env`: set
+  `SMARTSCOPE_LISTEN=0.0.0.0` and add this computer's name to `ALLOWED_HOSTS`.
+  The same file sets the time zone, the data location (`AUTOSCREENDIR`) and
+  any other upstream SmartScope variable.
+
+  ### Command-line interface
+  ```
+  smartscope.py COMMAND ...   # e.g. smartscope.py list_protocols
+  manage.py COMMAND ...       # Django management, e.g. manage.py createsuperuser
+  ```
+  Both use the instance in `$SMARTSCOPE_DIR`.
+
+  ### Connect a microscope
+  SmartScope controls the microscope through SerialEM's external Python
+  interface. On the SerialEM computer, add `EnableExternalPython 1` (and the
+  `SocketServerIP` lines described in the upstream guide) to
+  `SerialEMproperties.txt` and restart SerialEM. Test the connection with
+  `smartscope.py test_serialem_connection <SerialEM-PC-IP> 48888`.
+  SmartScope must also read the files SerialEM writes: bind that shared
+  directory into the container (`apptainer exec -B /mnt/scope-share:/mnt/scope ...`)
+  and enter its container path when you register the microscope and detector
+  in the admin panel (http://localhost:48000/admin).
+  Guide: https://docs.smartscope.org/getting_started/post-install/external_python/
+
+  To try SmartScope without a microscope, download upstream's image bank
+  (5.6 GB) and use the preconfigured `fake_scope` microscope, which init
+  points at `$SMARTSCOPE_DIR/fake_scope`:
+  ```
+  curl -L https://docs.smartscope.org/downloads/smartscope_testfiles.tar.gz |
+    tar -xz --strip-components=1 -C "$SMARTSCOPE_DIR/testfiles"
+  ```
+
+  ### Not included: SmartScopeAI
+  The AI square and hole finders run in a separate SmartScopeAI worker, whose
+  trained models are not published (upstream: "Downloading the AI models:
+  Coming soon"). Without it, the AI finders in the default protocols wait two
+  minutes and find no targets. Use protocols with the non-AI finders
+  (Binary Finder, Regular pattern, Manual finder), or connect an upstream
+  `ghcr.io/smartscope-org/smartscopeai` worker to this instance's Redis.
+
+  Documentation: https://docs.smartscope.org
+
+  Citation: Bouvette J, Huang Q, Riccio AA, Copeland WC, Bartesaghi A,
+  Borgnia MJ. Automated systematic evaluation of cryo-EM specimens with
+  SmartScope. eLife 11, e80047 (2022). https://doi.org/10.7554/eLife.80047
+
+icon: data:image/png;base64,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
