@@ -20,6 +20,7 @@ variables:
   fsl_arm_version: 6.0.7.22
   dsi_x86_version: 2026.7.25
   dsi_arm_version: 2026.7.25
+  mrtrix_version: "3.0.3-1"
   upstream_version: "3.1"
 auto_update:
   container_version: aidamri
@@ -85,6 +86,7 @@ build:
     - libxrandr2
     - libxrender1
     - libxt6
+    - mrtrix3={{ context.mrtrix_version }}
     - nano
     - python3
     - sudo
@@ -103,6 +105,7 @@ build:
     - mv AIDAmri-{{ context.upstream_version }} aidamri-{{ context.upstream_version }}
     - find /opt/aidamri-{{ context.upstream_version }} -name '.DS_Store' -delete
     - find /opt/aidamri-{{ context.upstream_version }} -name '.~lock.*' -delete
+    - chmod a+x /opt/aidamri-{{ context.upstream_version }}/bin/common/bet4animal
   - condition: arch == "x86_64"
     run:
     - mkdir -p /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
@@ -154,22 +157,12 @@ build:
     - tar -xzf {{ get_file("fsl_tar") }} -C /opt/fsl-{{ context.fsl_version }} --strip-components 1 --exclude='data'
     - bash /opt/fsl-{{ context.fsl_version }}/etc/fslconf/fslpython_install.sh -f /opt/fsl-{{ context.fsl_version }}
     - rm -f /opt/fsl-{{ context.fsl_version }}/bin/fslpython
-  - condition: arch == "x86_64"
-    template:
-      name: miniconda
-      version: 4.7.12.1
-      arch: x86_64
-      install_path: /opt/miniconda-4.7.12.1
-      conda_install: python=3.6
-      pip_install: nipype==1.1.2 lmfit==0.9.11 progressbar2==3.38.0 nibabel
-  - condition: arch == "aarch64"
-    template:
+  - template:
       name: miniconda
       version: py39_24.7.1-0
-      arch: aarch64
       install_path: /opt/miniconda-4.7.12.1
       conda_install: python=3.10
-      pip_install: nipype==1.7.0 traits==6.4.3 lmfit==1.0.3 progressbar33==2.4 nibabel
+      pip_install: nipype==1.7.0 traits==6.4.3 lmfit==1.0.3 progressbar33==2.4 nibabel==5.4.2 tqdm==4.68.3
   - environment:
       FSLDIR: /opt/fsl-{{ context.fsl_version }}
       FSLMULTIFILEQUIT: 'TRUE'
