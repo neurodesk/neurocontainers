@@ -1,0 +1,73 @@
+name: smartscope
+version: 0.10.0
+
+# The round trip runs the whole single-container stack (MariaDB, Redis,
+# gunicorn, Celery and nginx) from a fresh instance directory, as a user does.
+tests:
+  - name: launcher reports the SmartScope version
+    command: smartscope --version
+    expected_output_contains: "SmartScope ${version}"
+
+  - name: launcher help documents the instance workflow
+    command: smartscope help
+    expected_output_contains:
+      - "smartscope init [--dir PATH] [--port N]"
+      - "smartscope run [--dir PATH]"
+
+  - name: frame alignment and CTF estimation tools are installed
+    command: |-
+      alignframes 2>&1 | head -n 1
+      test -x "$CTFFIND" && "$CTFFIND" --help 2>&1 | head -n 1
+    expected_output_contains:
+      - "alignframes Version"
+      - "Usage: ctffind"
+
+  - name: CLI explains a missing instance
+    command: env -u SMARTSCOPE_DIR smartscope.py list_protocols
+    expected_exit_code: 1
+    expected_output_contains: "no instance directory given"
+
+  - name: init, start, serve, use the CLI and stop
+    timeout: 600
+    script: |
+      set -eu
+      root=$(mktemp -d)
+      trap 'smartscope stop --dir "$root/instance" >/dev/null 2>&1 || true; rm -rf "$root"' EXIT
+      port=48000
+      while (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null ||
+          (exec 3<>"/dev/tcp/127.0.0.1/$((port + 1))") 2>/dev/null; do
+        port=$((port + 2))
+      done
+      export SMARTSCOPE_DIR="$root/instance"
+      SMARTSCOPE_ADMIN_PASSWORD=fulltest-pass smartscope init --port "$port"
+
+      smartscope start
+      smartscope status
+      base="http://127.0.0.1:$port"
+      curl -fsS "$base/login/" | grep -q '<title>Login | Smartscope</title>'
+      curl -fsS -o /dev/null "$base/static/base.css"
+      curl -fsS -o /dev/null "$base/static/images/icon512px.png"
+
+      jar="$root/cookies"
+      curl -fsS -c "$jar" -b "$jar" -o /dev/null "$base/login/"
+      token=$(awk '$6 == "csrftoken" {print $7}' "$jar")
+      curl -fsS -c "$jar" -b "$jar" -o /dev/null -H "Referer: $base/login/" \
+        --data-urlencode "csrfmiddlewaretoken=$token" --data-urlencode username=admin \
+        --data-urlencode password=fulltest-pass "$base/login/"
+      curl -fsS -b "$jar" "$base/api/microscopes/" | grep -q '"name":"fake_scope"'
+      curl -fsS -b "$jar" "$base/api/microscopes/" | grep -q "\"scope_path\":\"$SMARTSCOPE_DIR/fake_scope\""
+
+      manage.py check 2>&1 | grep -q 'System check identified no issues'
+      protocols=$(smartscope.py list_protocols 2>&1)
+      echo "$protocols" | grep -q 'SPA MM Finder'
+      if echo "$protocols" | grep -qF "$(cat "$SMARTSCOPE_DIR/auth/redis_password")"; then
+        echo "the CLI printed the Redis password"; exit 1
+      fi
+
+      smartscope stop
+      if smartscope status; then echo "status reports running after stop"; exit 1; fi
+      if pgrep -f "$SMARTSCOPE_DIR" >/dev/null; then
+        echo "processes left after stop:"; pgrep -af "$SMARTSCOPE_DIR"; exit 1
+      fi
+      echo smartscope-roundtrip-ok
+    expected_output_contains: smartscope-roundtrip-ok
