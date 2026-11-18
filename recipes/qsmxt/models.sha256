@@ -1,8 +1,8 @@
-# QSMxT v9.22.0 / QSM.rs v0.38.0 model registry
-# https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/models/registry.rs
+# QSMxT v12.1.0 / QSM.rs model registry
+# https://github.com/astewartau/QSM.rs/blob/df6e736c1a4c6ac9bc6b2f050073abc2afa8fe3e/src/models/registry.rs
 6f693f0a02c94550179c4b5188ce652fc4bd8198ff57aaddd102fba67fe873d7  bfrnet.onnx
 81854ec2ca85bba25c2f9aae05efdcac299d0efffb03fe6a0e6797019e46b487  xqsm.onnx
-8fd1d79b7a9258a262a2faab9e8469757ae7735f3da6212e431acfb207c21b54  qsmnet.onnx
+f1b625e3c04e679077cb8ac9b2617b14e4bbe452f9ae516a806a1acd36e2b159  qsmnet.onnx
 0ed31f9a1b66f75fee4a96022b6bc3838b91bc5b819714dade5ca87cd331683d  qsmnet-plus.onnx
 238573a6fa8a563004fc28e63a30694289d1a1a204f3c406daba486b1122d604  qsmgan.onnx
 831f2a161f6ab8ee7bf64cc2dd8bca532fc971d0083cf5729d6302d3ed31625d  lpcnn.onnx
@@ -19,3 +19,4 @@ d0f0b0391153f8e5e07ef85d46fbe492afc8394fab008350540a6868d0b4a3ba  nextqsm-bf.onn
 44cb5e67d1c68dae87a5f532e501dc0d4bf627d91f9c8ba35a56df5ac7ec3cd0  r2primenet.onnx
 f15200f9a0697cf53b151e316a0c4fe2cacfdbe2220deb36cb56184be4a227f9  hd-bet.onnx
 c2821a74e8a03d4073896b5c2e359b3ef86f9776bacd78e00da1c757aa97bbcc  synthseg.onnx
+c0a09b745d50527fceb36f2a6876991a8e41a11b3daa6eb1aa368c69a96d76d1  synthseg-2.0.onnx

@@ -4,7 +4,7 @@ upstream_version: "12.1.0"
 qsmxt_source_sha256: "305cad3748701ec7df99d1b3e3f0a947448f68e29f16c8292d33f58dd104dec4"
 rust_version: "1.100.0"
 native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
-qsm_core_commit: "1c38ad9a79ed6f1229df8b10b310547974c5e746"
+qsm_core_commit: "df6e736c1a4c6ac9bc6b2f050073abc2afa8fe3e"
 niimath_version: "1.0.20261016"
 
 test_data:
@@ -941,8 +941,13 @@ tests:
 
   - name: offline SynthSeg anatomy and ventricular labels
     description: Run packaged SynthSeg v1 with a 128-voxel crop on MNI anatomy, independently of custom segmentation reference tests
-    command: python /opt/qsmxt/verify_v10_runtime.py --segmentation
-    expected_output_contains: Packaged offline SynthSeg v1 produced all 32 labels including ventricles on MNI anatomy
+    command: python /opt/qsmxt/verify_v10_runtime.py --segmentation v1
+    expected_output_contains: Packaged offline SynthSeg v1 delineated ventricles on MNI anatomy
+
+  - name: offline SynthSeg 2.0 anatomy and label table
+    description: Run packaged SynthSeg 2.0 without network access and verify its distinct label table.
+    command: python /opt/qsmxt/verify_v10_runtime.py --segmentation v2
+    expected_output_contains: Packaged offline SynthSeg v2 delineated ventricles on MNI anatomy
 
   - name: All outputs follow effective echo count
     description: Run the real MRD adapter and native engine for one, two, and three echoes and verify returned maps
