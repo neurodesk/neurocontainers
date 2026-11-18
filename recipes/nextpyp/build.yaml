@@ -71,6 +71,13 @@ build:
         - install -m 644 {{ get_file("nextPYP.sif") }} /opt/nextpyp-dist/nextPYP.sif
         - install -m 755 {{ get_file("host-processor") }} /opt/nextpyp-dist/host-processor
         - install -m 644 {{ get_file("nextpyp-upstream") }} /opt/nextpyp-dist/nextpyp
+        # Upstream runs the web server as an Apptainer instance. An instance
+        # needs a PID namespace and so a fresh /proc mount, which Kubernetes
+        # pods forbid. Run the image's start script with a plain exec in its
+        # own session instead; the launcher supervises and stops that process.
+        - sed -i -e 's|apptainer instance start \(.*\) nextPYP$|exec setsid apptainer exec \1 /.singularity.d/startscript|' -e '/apptainer instance stop nextPYP$/d' /opt/nextpyp-dist/nextpyp
+        - grep -q 'exec setsid apptainer exec .* /.singularity.d/startscript$' /opt/nextpyp-dist/nextpyp
+        - '! grep -q "apptainer instance" /opt/nextpyp-dist/nextpyp'
         - install -m 644 {{ get_file("spr_tutorial.toml") }} /opt/nextpyp-dist/workflows/spr_tutorial.toml
         - install -m 644 {{ get_file("tomo_tutorial.toml") }} /opt/nextpyp-dist/workflows/tomo_tutorial.toml
         - install -m 644 {{ get_file("class_tutorial.toml") }} /opt/nextpyp-dist/workflows/class_tutorial.toml

@@ -6,7 +6,11 @@
 # ~43 GB processing image (pyp.sif) is too large to bake in, so `nextpyp
 # install` fetches it once into a directory the user chooses and lays that
 # directory out like upstream's single-user installation. `nextpyp start` and
-# `nextpyp stop` then run upstream's own script from that directory.
+# `nextpyp stop` then run upstream's own script from that directory. The
+# container build changes that script to run the web server image with a plain
+# `apptainer exec` in its own session instead of as an Apptainer instance,
+# which Kubernetes pods cannot start. This launcher records that process in a
+# PID file, and uses the file to check and stop it.
 set -euo pipefail
 
 NEXTPYP_VERSION=@NEXTPYP_VERSION@
@@ -14,6 +18,8 @@ DIST=/opt/nextpyp-dist
 DOWNLOAD_BASE=${NEXTPYP_DOWNLOAD_BASE:-https://nextpyp.app/files/pyp/$NEXTPYP_VERSION}
 DEFAULT_PORT=8080
 MARKER=.neurodesk-nextpyp
+PIDFILE=local/nextpyp.pid
+STOP_TIMEOUT=90
 
 die() {
   printf 'nextpyp: error: %s\n' "$*" >&2
@@ -268,15 +274,30 @@ prepare_runtime() { #(dir)
   unset APPTAINER_BIND APPTAINER_BINDPATH SINGULARITY_BIND SINGULARITY_BINDPATH
 }
 
-instance_running() {
-  apptainer instance list nextPYP 2>/dev/null | grep -qw nextPYP
+# Prints the kernel start time of a live process. A recorded PID that now
+# belongs to another process has another start time.
+process_start() { #(pid)
+  local stat
+  stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+  stat=${stat##*) }
+  [[ "$stat" != Z* ]] || return 1
+  cut -d ' ' -f 20 <<<"$stat"
+}
+
+# Prints the PID of the web server process that `start` recorded, if it is
+# still running.
+service_pid() { #(dir)
+  local pid recorded started
+  read -r pid recorded 2>/dev/null <"$1/$PIDFILE" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] && started=$(process_start "$pid") && [[ "$started" == "$recorded" ]] || return 1
+  printf '%s\n' "$pid"
 }
 
 wait_for_web() { #(dir, url)
   local dir=$1 url=$2 deadline=$(( SECONDS + ${NEXTPYP_START_TIMEOUT:-300} ))
   note "waiting for the web server at $url"
   until curl -fs -o /dev/null --max-time 5 "$url"; do
-    if ! instance_running; then
+    if ! service_pid "$dir" >/dev/null; then
       note "error: nextPYP stopped while starting; see the logs in $dir/local/logs"
       return 1
     fi
@@ -288,28 +309,51 @@ wait_for_web() { #(dir, url)
   done
 }
 
+# Stops the web server, then has upstream's script stop the user and host
+# processors. supervisord runs the database and the web server inside the
+# image and stops both cleanly on SIGTERM. Before supervisord runs, the signal
+# goes to the session, or to upstream's script if no session exists yet.
 stop_services() { #(dir)
-  (cd "$1" && ./nextpyp stop) >/dev/null 2>&1 || true
+  local dir=$1 pid supervisor deadline
+  if pid=$(service_pid "$dir"); then
+    if supervisor=$(pgrep -s "$pid" -x supervisord); then
+      kill -TERM $supervisor 2>/dev/null || true
+    else
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    fi
+    deadline=$(( SECONDS + STOP_TIMEOUT ))
+    while service_pid "$dir" >/dev/null; do
+      if (( SECONDS >= deadline )); then
+        note "nextPYP did not stop within $STOP_TIMEOUT seconds; killing it"
+        kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        break
+      fi
+      sleep 1
+    done
+  fi
+  rm -f "$dir/$PIDFILE"
+  (cd "$dir" && ./nextpyp stop) >/dev/null 2>&1 || true
 }
 
-# The services run in the background of this container. When the container is
-# a SIF file mounted with squashfuse, its file system disappears for them once
-# the command that started them exits, so `start` stays in the foreground and
-# stops nextPYP when it is interrupted.
+# The services are children of this command. When the container is a SIF file
+# mounted with squashfuse, its file system disappears for them once the
+# command that started them exits, so `start` stays in the foreground and
+# stops nextPYP when it is interrupted. The services run in their own session,
+# so Ctrl-C reaches only this command, which then stops them in order.
 run_foreground() { #(dir, url)
-  local dir=$1 url=$2
+  local dir=$1 url=$2 log="$1/local/logs/start" pid
   trap 'trap "" INT TERM HUP; note "stopping nextPYP"; stop_services "$dir"; exit 0' INT TERM HUP
-  (cd "$dir" && ./nextpyp start)
+  (cd "$dir" && exec ./nextpyp start) >"$log" 2>&1 &
+  pid=$!
+  printf '%s %s\n' "$pid" "$(process_start "$pid")" >"$dir/$PIDFILE"
   if ! wait_for_web "$dir" "$url"; then
+    cat "$log" >&2
     stop_services "$dir"
     exit 1
   fi
   note "nextPYP is running at $url"
   note "keep this command running; press Ctrl-C or run 'nextpyp stop' elsewhere to stop nextPYP"
-  while instance_running; do
-    sleep 5 &
-    wait $!
-  done
+  wait "$pid" || true
   # Reaps a host processor left behind if the web server exited by itself.
   stop_services "$dir"
   note "nextPYP has stopped"
@@ -338,27 +382,28 @@ cmd_service() {
         die "$dir holds nextPYP $installed but this container runs $NEXTPYP_VERSION; run 'nextpyp install --dir $dir' to upgrade it"
       [[ -e "$dir/sharedExec/containers/pyp.sif" ]] ||
         die "$dir/sharedExec/containers/pyp.sif is missing; run 'nextpyp install --dir $dir'"
-      if instance_running; then
+      if service_pid "$dir" >/dev/null; then
         note "nextPYP is already running at $url"
         return 0
       fi
       run_foreground "$dir" "$url"
       ;;
     stop)
-      if ! instance_running && ! compgen -G "$dir/local/sock/*-processor-*" >/dev/null; then
+      if ! service_pid "$dir" >/dev/null && ! compgen -G "$dir/local/sock/*-processor-*" >/dev/null; then
         note "nextPYP is not running"
         return 0
       fi
-      (cd "$dir" && ./nextpyp stop)
+      note "stopping nextPYP"
+      stop_services "$dir"
       ;;
     status)
-      if instance_running && curl -fsS -o /dev/null --max-time 5 "$url"; then
-        printf 'nextPYP %s is running at %s\n' "$(installed_version "$dir")" "$url"
-      elif instance_running; then
-        printf 'nextPYP is starting or not responding at %s\n' "$url"
-      else
+      if ! service_pid "$dir" >/dev/null; then
         printf 'nextPYP is not running (installation: %s)\n' "$dir"
         return 3
+      elif curl -fsS -o /dev/null --max-time 5 "$url"; then
+        printf 'nextPYP %s is running at %s\n' "$(installed_version "$dir")" "$url"
+      else
+        printf 'nextPYP is starting or not responding at %s\n' "$url"
       fi
       ;;
   esac

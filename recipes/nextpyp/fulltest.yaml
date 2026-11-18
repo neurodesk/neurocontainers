@@ -117,9 +117,14 @@ tests:
         for _ in $(seq 60); do running || return 0; sleep 1; done
         echo "processes left after stop:"; pgrep -a -u "$(id -u)" -f "$NEXTPYP_DIR/|micromon.MainKt"; return 1
       }
+      # mongod empties its lock file only when it shuts down cleanly.
+      database_closed() {
+        [ ! -s "$NEXTPYP_DIR/local/db/mongod.lock" ] || { echo "the database was not shut down cleanly"; return 1; }
+      }
 
       start_server
       curl -fsS "http://127.0.0.1:$port/" | grep -q '<title>nextPYP</title>'
+      [ -s "$NEXTPYP_DIR/local/db/mongod.lock" ] || { echo "the database holds no lock while running"; exit 1; }
       nextpyp status | grep -q "nextPYP ${version} is running at http://127.0.0.1:$port"
       nextpyp start 2>&1 | grep -q "already running"
 
@@ -128,6 +133,7 @@ tests:
       wait "$launcher"
       grep -q "nextPYP has stopped" "$root/start.log"
       stopped
+      database_closed
       if nextpyp status; then echo "status reports running after stop"; exit 1; fi
 
       # Terminating the launcher stops nextPYP cleanly, and it starts again.
@@ -137,6 +143,7 @@ tests:
       kill -TERM "$launcher"
       wait "$launcher"
       stopped
+      database_closed
       nextpyp stop 2>&1 | grep -q "not running"
       echo web-round-trip-ok
     expected_output_contains: web-round-trip-ok
