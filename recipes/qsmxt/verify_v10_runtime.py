@@ -82,7 +82,7 @@ def verify(binary, root):
     reconstruct(binary, bids, root / "ilsqr", "--qsm-algorithm", "ilsqr")
     primary(root / "ilsqr")
     print("iLSQR produced a finite nonzero susceptibility map")
-    reconstruct(binary, bids, root / "two-pass", "--two-pass")
+    reconstruct(binary, bids, root / "two-pass", "--two-pass-mode", "original")
     result, _ = primary(root / "two-pass")
     single = list((root / "two-pass").rglob("*_desc-singlepass_Chimap.nii*"))
     reliable = list((root / "two-pass").rglob("*_desc-reliable_mask.nii*"))
@@ -146,21 +146,28 @@ def verify(binary, root):
     assert "no voxels" in log, log
 
 
-def verify_segmentation(binary, template, root):
+def verify_segmentation(binary, template, root, version):
     deny_internet_sockets()
     output = root / "synthseg.nii.gz"
     lookup = root / "synthseg.tsv"
     run(binary, ["segment", template, "--output", output, "--lookup", lookup,
-                 "--synthseg-crop", "128", "--no-synthseg-flip-averaging"])
+                 "--synthseg-version", version, "--synthseg-crop", "128",
+                 "--no-synthseg-flip-averaging"])
     labels = nib.load(output).get_fdata()
     expected = {0, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 26, 28, 41, 42, 43, 44, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60}
-    assert set(np.unique(labels)) == expected
+    observed = set(np.unique(labels))
+    if version == "v1":
+        assert observed == expected, observed
+    else:
+        assert observed <= expected | {24}, observed
     assert labels.shape == nib.load(template).shape
     np.testing.assert_allclose(nib.load(output).affine, nib.load(template).affine)
     table = lookup.read_text()
     assert "left lateral ventricle" in table and "right lateral ventricle" in table, table
     assert np.isin(labels, [4, 5, 14, 15, 43, 44]).sum() > 50
-    print("Packaged offline SynthSeg v1 produced all 32 labels including ventricles on MNI anatomy")
+    if version == "v2":
+        assert "24\tcsf" in table.lower().splitlines(), table
+    print(f"Packaged offline SynthSeg {version} delineated ventricles on MNI anatomy")
 
 
 def deny_internet_sockets():
@@ -198,11 +205,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", default="/opt/qsmxt/qsmxt")
     parser.add_argument("--template", default="/opt/qsmxt/test-data/MNI152_T1_2mm.nii.gz")
-    parser.add_argument("--segmentation", action="store_true")
+    parser.add_argument("--segmentation", choices=("v1", "v2"))
     arguments = parser.parse_args()
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         if arguments.segmentation:
-            verify_segmentation(arguments.binary, arguments.template, root)
+            verify_segmentation(arguments.binary, arguments.template, root, arguments.segmentation)
         else:
             verify(arguments.binary, root)
