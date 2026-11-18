@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "nextpyp 0.7.3": {
+      "version": "20261118",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}

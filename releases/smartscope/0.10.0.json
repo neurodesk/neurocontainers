@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "smartscope 0.10.0": {
+      "version": "20261118",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}
