@@ -1,5 +1,5 @@
 name: qsmxt
-version: "12.0.0"
+version: "12.1.0"
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -20,15 +20,15 @@ variables:
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.15.0"
-  upstream_version: "12.0.0"
-  qsmxt_source_sha256: "e742e14b44cc3a604ce38b237eff6d4ca9dde07ba483b714fe89aa7950002a14"
+  upstream_version: "12.1.0"
+  qsmxt_source_sha256: "305cad3748701ec7df99d1b3e3f0a947448f68e29f16c8292d33f58dd104dec4"
   qsm_core_commit: "1c38ad9a79ed6f1229df8b10b310547974c5e746"
   native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
   rust_version: "1.100.0"
   rust_x86_64_sha256: "98ee6bec240e1cfe944f17e7092412dc5ef6e008484bb668c6936d35a7d15acd"
-  qsmxt_x86_64_sha256: "23d7e9a2d668086892359b448db0ac834f8643937f8b332167d739087282f6f6"
-  qsmxt_aarch64_url: "https://github.com/QSMxT/QSMxT/releases/download/v12.0.0/qsmxt-v12.0.0-aarch64-unknown-linux-gnu.tar.gz"
-  qsmxt_aarch64_sha256: "e657bb96fee2d2fb3cc054eb78fe929b79b9720f9ec5adab4f66776e8db5a89f"
+  qsmxt_x86_64_sha256: "673452aa3f3774827ff604e92b2e718a2ca44d970aa5c1d35a2c6249827d511e"
+  qsmxt_aarch64_url: "https://github.com/QSMxT/QSMxT/releases/download/v12.1.0/qsmxt-v12.1.0-aarch64-unknown-linux-gnu.tar.gz"
+  qsmxt_aarch64_sha256: "c30c17d2756d880282387222cd5b8d2b1c0463b62bda61d6c9603bf3b554ad0c"
   mni_template_revision: "1ce9602a5cde67af4dbb8566180b3ce906c5a376"
   mni_template_sha256: 0585cd056bf5ccfb8bf97a5f6a66082d4e7caad525718fc11e40d80a827fcb92
   model_revision: 31b08225f3adf2d732dafad4e3c5a94c350ef51b
