@@ -1,6 +1,6 @@
 name: aidamri
-version: "3.0.0"
-upstream_version: "3.0"
+version: "3.1.0"
+upstream_version: "3.1"
 
 test_data:
   output_dir: test_output/aidamri
@@ -31,6 +31,11 @@ tests:
     command: >-
       /opt/miniconda-4.7.12.1/bin/python /opt/aidamri-${upstream_version}/bin/batchProc.py --help
     expected_output_contains: "Batch processing of all data"
+
+  - name: MRtrix3 denoiser starts
+    description: Verify the executable required by the MRtrix3 DWI denoising mode.
+    command: dwidenoise -version
+    expected_output_contains: "MRtrix"
 
   - name: NiftyReg tools available
     description: Verify compiled NiftyReg binaries are installed in the current AIDAmri tree
