@@ -189,7 +189,7 @@ deploy:
 categories:
   - cryo EM
 domains:
-  - neuroimaging
+  - microscopy
 
 readme: |
   ## smartscope/{{ context.version }}

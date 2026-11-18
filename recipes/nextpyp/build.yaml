@@ -103,7 +103,7 @@ deploy:
     - nextpyp
 
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
 
