@@ -10,7 +10,7 @@
 # pretrained models on CPU alongside CLI and help checks.
 
 name: topaz
-version: 0.3.20
+version: 0.3.21
 
 tests:
   - name: Pretrained detector CPU inference
