@@ -1,5 +1,5 @@
 name: aidamri
-version: 3.0.0
+version: "3.1.0"
 copyright:
 - license: GPL-3.0-only
   url: https://github.com/Aswendt-Lab/AIDAmri/blob/v2.0/LICENSE
@@ -13,14 +13,14 @@ architectures:
 variables:
   niftyreg_version: 1.4.0
   niftyreg_revision: 83d8d1182ed4c227ce4764f1fdab3b1797eecd8d
-  niftyreg_arm_version: 2.0.0
+  niftyreg_arm_version: "2.1.1"
   niftyreg_arm_revision: v{{ context.niftyreg_arm_version }}
   niftyreg_arm_source_dir: niftyreg-{{ context.niftyreg_arm_version }}
   fsl_version: 5.0.11
   fsl_arm_version: 6.0.7.22
   dsi_x86_version: 2026.7.25
   dsi_arm_version: 2026.7.25
-  upstream_version: '3.0'
+  upstream_version: "3.1"
 auto_update:
   container_version: aidamri
   method: sources
@@ -227,12 +227,12 @@ files:
   url: https://github.com/Aswendt-Lab/AIDAmri/archive/v{{ context.upstream_version }}.tar.gz
 - name: dsi_studio_x86_zip
   condition: arch == "x86_64"
-  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_x86_version }}/dsi_studio_ubuntu2204_cpu.zip
-  sha256: 184a5d7999937850f8a1267a3c3df496de8d2d0c04c3d981f8565a5054a37160
+  url: "https://github.com/frankyeh/DSI-Studio/releases/download/2026.7.25/dsi_studio_ubuntu2204_cpu.zip"
+  sha256: "c941ef2ef21d1996a11e9604422846ab467b61568dfa9b49664c53f876112206"
 - name: dsi_studio_arm_zip
   condition: arch == "aarch64"
-  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_arm_version }}/dsi_studio_ubuntu2204_cpu_arm64.zip
-  sha256: 20e8d403ea28ec9fd545fac974225b3d3099259aa2eac2a066688076c7dc1deb
+  url: "https://github.com/frankyeh/DSI-Studio/releases/download/2026.7.25/dsi_studio_ubuntu2204_cpu_arm64.zip"
+  sha256: "a62a6a433a9b38543b024536e858231b0f2d2824a1960649ecdf126efd46d93b"
 - name: niftyreg_tar
   condition: arch == "x86_64"
   url: https://github.com/KCL-BMEIS/niftyreg/archive/{{ context.niftyreg_revision }}.tar.gz
