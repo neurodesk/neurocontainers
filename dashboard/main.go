@@ -97,18 +97,20 @@ func (ds *DataSources) normalize() error {
 	if ds.CatalogRoot == "" {
 		ds.CatalogRoot = firstExisting(
 			"apps-catalog",
+			filepath.Join("..", "apps-catalog"),
+			filepath.Join("..", "..", "apps-catalog"),
 			filepath.Join("data", "apps.json"),
 			filepath.Join("..", "apps.json"),
 			filepath.Join("..", "..", "apps.json"),
 		)
 		if ds.CatalogRoot == "" {
-			return fmt.Errorf("apps.json catalog repository not found; set --catalog-root")
+			return fmt.Errorf("apps-catalog repository not found; set --catalog-root")
 		}
 	} else if !dirExists(ds.CatalogRoot) {
-		return fmt.Errorf("apps.json catalog directory %q not found", ds.CatalogRoot)
+		return fmt.Errorf("apps-catalog directory %q not found", ds.CatalogRoot)
 	}
 	if !fileExists(filepath.Join(ds.CatalogRoot, "domains.json")) {
-		return fmt.Errorf("apps.json catalog %q has no domains.json", ds.CatalogRoot)
+		return fmt.Errorf("apps-catalog %q has no domains.json", ds.CatalogRoot)
 	}
 
 	return nil
@@ -624,7 +626,7 @@ func main() {
 	skipGitHub := fs.Bool("skip-github", false, "skip fetching the latest GitHub test run report")
 	releasesDir := fs.String("releases-dir", "", "path to container release metadata (defaults to releases/)")
 	recipesDir := fs.String("recipes-dir", "", "path to container recipes (defaults to recipes/)")
-	catalogRoot := fs.String("catalog-root", "", "path to the apps.json repository with domain catalogs")
+	catalogRoot := fs.String("catalog-root", "", "path to the apps-catalog repository with domain catalogs")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		slog.Error("parse flags", "error", err)

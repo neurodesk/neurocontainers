@@ -123,7 +123,7 @@ could be determined) and `NONE` (no license granted) require a URL pointing at
 the upstream source. Use them only when upstream really declares no license.
 Do not use them to skip finding one.
 
-The Zenodo DOI workflow in [Neurodesk/apps.json](https://github.com/Neurodesk/apps.json)
+The Zenodo DOI workflow in [scigetorg/apps-catalog](https://github.com/scigetorg/apps-catalog)
 still mints a DOI for these images, but the record has no license (no `rights`), so
 Zenodo does not show its `cc-by-4.0` default. A custom `name` such as `Unknown` or
 "No license published" is handled the same way. When one of these entries sits
@@ -139,7 +139,7 @@ copyright:
 Copyright fields may pin the license to the packaged version with
 `{{ context.<key> }}`, where the key is `version`, `name` or a scalar top-level
 variable, e.g. `url: https://github.com/MASILab/PreQual/blob/v{{ context.version }}/LICENSE.md`.
-apps.json reads recipes from git without the builder and renders only these
+apps-catalog reads recipes from git without the builder and renders only these
 substitutions for the catalog and Zenodo, so validation rejects filters,
 expressions, `{% %}` blocks and arch-dependent (mapping) variables there. A
 templated `license` must render to a single valid license ID.
@@ -160,7 +160,7 @@ checks the exact Zenodo license ID before it creates a draft. The original
 custom title and URL are included in the record description. Suggested IDs in
 an error message are candidates for review, not replacements for upstream terms.
 When choosing or suggesting an ID, consult the
-[Zenodo license list](https://apps-json.scigetorg.workers.dev/licenses/zenodo.json)
+[Zenodo license list](https://apps-catalog.scigetorg.workers.dev/licenses/zenodo.json)
 and compare the candidate's terms with the upstream license. If there is no
 match, record the custom license with `name` and `url` instead of inventing an ID.
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-catalog_root="${APPS_CATALOG_ROOT:-$script_dir/../../apps.json}"
+catalog_root="${APPS_CATALOG_ROOT:-$script_dir/../../apps-catalog}"
 cd "$script_dir"
 
 go run . \

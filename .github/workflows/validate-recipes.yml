@@ -50,11 +50,10 @@ jobs:
 
       - name: Validate catalog domains
         env:
-          APPS_CATALOG_REGISTRY: ${{ vars.APPS_CATALOG_REGISTRY || 'https://raw.githubusercontent.com/scigetorg/apps.json/main/domains.json' }}
+          APPS_CATALOG_REGISTRY: ${{ vars.APPS_CATALOG_REGISTRY || 'https://apps-catalog.scigetorg.workers.dev/domains.json' }}
         run: >-
           python tools/validate_domains.py
           --repository NeuroDesk/neurocontainers
-          --registry "$APPS_CATALOG_REGISTRY"
 
       - name: Validate changed recipes
         env:

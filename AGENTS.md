@@ -5,7 +5,7 @@
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 - make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
-- Declare `domains:` in every recipe. The apps.json catalog repository's `domains.json` is the allowed list; a domain-only change updates catalog routing without a container build.
+- Declare `domains:` in every recipe. The [apps-catalog](https://github.com/scigetorg/apps-catalog) `domains.json` (https://apps-catalog.scigetorg.workers.dev/domains.json) is the allowed list; a domain-only change updates catalog routing without a container build.
 - these are the available categories: functional imaging, arterial spin labelling, fetal imaging, image reconstruction, spectroscopy, rodent imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
 
 ## Environment Setup
@@ -227,9 +227,9 @@ Recipe validation (`builder/validation.py`) enforces:
   `LicenseRef-` identifiers are rejected. Custom licenses require `name` and
   `url`; `other-open`/`other-closed` also require both. `NOASSERTION`/`NONE`
   require a `url` to the upstream source and mean that no license is known;
-  apps.json publishes such images' DOIs without a license, so use them only
+  apps-catalog publishes such images' DOIs without a license, so use them only
   when upstream truly has none. When suggesting a license ID, check the
-  [Zenodo license list](https://apps-json.scigetorg.workers.dev/licenses/zenodo.json)
+  [Zenodo license list](https://apps-catalog.scigetorg.workers.dev/licenses/zenodo.json)
   and confirm its terms match the upstream license. If none matches, use the
   upstream license's `name` and `url` instead of inventing an ID
 - **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `domains`, `icon`

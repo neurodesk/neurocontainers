@@ -45,7 +45,7 @@ jobs:
       - name: Check out published domain catalogs
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+          repository: ${{ vars.APPS_CATALOG_REPOSITORY }}
           path: apps-catalog
           persist-credentials: false
       - uses: actions/setup-python@v6
