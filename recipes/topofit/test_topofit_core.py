@@ -122,8 +122,8 @@ class TopoFitCoreTests(unittest.TestCase):
                     int(len(sphere)).to_bytes(4, "little") + labels.tobytes()
                 )
 
-            # V1 is the upper half of the sphere; V2v the lower half.
-            wang = np.where(sphere[:, 2] > 0, np.where(sphere[:, 0] > 0, 1, 2), 3)
+            # V1 is the upper half of the sphere; V2v and unlabelled share the lower half.
+            wang = np.where(sphere[:, 2] > 0, np.where(sphere[:, 0] > 0, 1, 2), np.where(sphere[:, 0] > 0, 3, 0))
             write_regions(wang)
             options = TopoFitOptions(
                 find_flat_patches=True, patch_search_region="wang2015:V1",
@@ -132,13 +132,14 @@ class TopoFitCoreTests(unittest.TestCase):
             detections = topofit_core.find_flat_patches(surfaces, options, atlas_dir=atlas, mock=True)
             self.assertEqual({d.patch.surface for d in detections.values()}, {"lh.mid", "rh.mid"})
             for detection in detections.values():
-                self.assertTrue(np.all(wang[detection.vertex_indices] < 3))
+                self.assertTrue(np.all(np.isin(wang[detection.vertex_indices], [1, 2])))
             for hemisphere in ("lh", "rh"):
                 annotation, ctab, names = nib.freesurfer.read_annot(
                     str(root / "surf" / f"{hemisphere}.wang2015.annot")
                 )
                 self.assertEqual([name.decode() for name in names], ["Unknown", "V1v", "V1d", "V2v"])
-                np.testing.assert_array_equal(annotation, wang)
+                # Unlabelled vertices are written as annotation 0, which reads back as -1.
+                np.testing.assert_array_equal(annotation, np.where(wang == 0, -1, wang))
                 np.testing.assert_array_equal(ctab[1, :3], [230, 25, 75])
 
             # A region with no cortex, or too little for three faces, has no patch.

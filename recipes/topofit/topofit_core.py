@@ -785,7 +785,7 @@ def find_flat_patches(
             nib.freesurfer.write_annot(
                 str(surfaces[f"{hemisphere}.pial"].parent / f"{hemisphere}.{region.atlas}.annot"),
                 # -1 writes annotation 0, which Freeview leaves uncoloured, for unlabelled vertices.
-                np.where(parcellation == 0, -1, parcellation).astype(np.int32),
+                np.where(parcellation == 0, -1, parcellation.astype(np.int32)),
                 np.asarray([[*entry["rgb"], 0] for entry in table], dtype=np.int32),
                 [entry["name"] for entry in table],
             )
