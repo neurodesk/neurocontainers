@@ -51,7 +51,7 @@ jobs:
     - name: Check out published domain catalogs
       uses: actions/checkout@v5
       with:
-        repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+        repository: ${{ vars.APPS_CATALOG_REPOSITORY }}
         path: upload-${{ github.run_id }}-${{ github.run_attempt }}/apps-catalog
         fetch-depth: 0
         persist-credentials: false
@@ -89,7 +89,7 @@ jobs:
     - name: Check out published domain catalogs
       uses: actions/checkout@v5
       with:
-        repository: ${{ vars.APPS_CATALOG_REPOSITORY || 'scigetorg/apps.json' }}
+        repository: ${{ vars.APPS_CATALOG_REPOSITORY }}
         path: apps-catalog
         fetch-depth: 0
         persist-credentials: false

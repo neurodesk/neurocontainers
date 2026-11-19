@@ -296,8 +296,8 @@ NEUROCOMMAND_LOCAL_REPO="$HOME/neurocommand"
 # The cvmfs/*.py helpers import transparent-singularity from this checkout.
 export NEUROCOMMAND_DIR="$NEUROCOMMAND_LOCAL_REPO"
 CATALOG_LOCAL_REPO="${APPS_CATALOG_LOCAL_REPO:-$HOME/scigetorg-apps-json}"
-CATALOG_URL="${APPS_CATALOG_GIT_URL:-https://github.com/scigetorg/apps.json.git}"
-CATALOG_BASE_URL="${APPS_CATALOG_BASE_URL:-https://apps-json.scigetorg.workers.dev}"
+CATALOG_URL="${APPS_CATALOG_GIT_URL:-https://github.com/scigetorg/apps-catalog.git}"
+CATALOG_BASE_URL="${APPS_CATALOG_BASE_URL:-https://apps-catalog.scigetorg.workers.dev}"
 CATALOG_DOMAINS="${APPS_CATALOG_DOMAINS:-neuroimaging}"
 
 cd "$NEUROCOMMAND_LOCAL_REPO" || exit
@@ -312,7 +312,7 @@ if ! sync_checkout_to_origin "$NEUROCOMMAND_LOCAL_REPO"; then
     CLEANUP_ALLOWED=0
     echo "[WARNING] Continuing with the current checkout because fetching origin failed."
 fi
-# Clone or fetch the scigetorg/apps.json domain catalog for retirement protection.
+# Clone or fetch the scigetorg/apps-catalog domain catalog for retirement protection.
 if [[ -d "$CATALOG_LOCAL_REPO/.git" ]]; then
     GIT_TERMINAL_PROMPT=0 git -C "$CATALOG_LOCAL_REPO" fetch --prune origin \
         || echo "[WARNING] Could not fetch catalog; using existing checkout."

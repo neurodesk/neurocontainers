@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read retirement protection from the committed scigetorg/apps.json catalog."""
+"""Read retirement protection from the committed scigetorg/apps-catalog catalog."""
 
 import argparse
 import json

@@ -387,7 +387,7 @@ def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str
             )
 
 
-# Neurodesk/apps.json reads `copyright` from recipe git history without the
+# scigetorg/apps-catalog reads `copyright` from recipe git history without the
 # builder and renders only these substitutions (scripts/license_terms.py
 # render_copyright) before writing the catalog and minting Zenodo DOIs.
 _COPYRIGHT_TEMPLATE = re.compile(r"\{\{\s*(?:context\.)?([A-Za-z_]\w*)\s*\}\}")
@@ -418,7 +418,7 @@ def validate_copyright_templates(recipe_dict: Dict[str, Any]) -> None:
                 raise ValueError(
                     f"copyright[{number - 1}].{field} {value!r}: copyright templates may "
                     "only be {{ context.<key> }} where key is version, name or a scalar "
-                    "top-level variable (rendered by apps.json for DOI publication)"
+                    "top-level variable (rendered by apps-catalog for DOI publication)"
                     + (
                         f"; unknown or non-scalar: {', '.join(unknown)}"
                         if unknown

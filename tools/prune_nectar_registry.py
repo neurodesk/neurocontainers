@@ -6,7 +6,7 @@ builds listed in the domain catalog, so every other artifact only consumes the
 project's storage quota. Artifacts pushed within ``--min-age-days`` are kept so
 an in-flight build or promotion staging tag is never removed.
 
-Pass ``--catalog-root`` pointing to a checkout of the scigetorg/apps.json
+Pass ``--catalog-root`` pointing to a checkout of the scigetorg/apps-catalog
 catalog (preferred). The legacy ``--apps-json`` flag still accepts a path or
 URL to a single flat apps.json for backward compatibility.
 

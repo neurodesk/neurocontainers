@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import urllib.request
 from pathlib import Path
@@ -11,15 +12,16 @@ from pathlib import Path
 import yaml
 
 
-DEFAULT_REGISTRY = (
-    "https://raw.githubusercontent.com/scigetorg/apps.json/main/domains.json"
-)
 DOMAIN_ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*\Z")
 
 
 def load_registry(location: str) -> dict:
     if location.startswith("https://"):
-        with urllib.request.urlopen(location, timeout=30) as response:
+        # Cloudflare rejects the default Python-urllib user agent (error 1010).
+        request = urllib.request.Request(
+            location, headers={"User-Agent": "neurocontainers-validate-domains"}
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
             document = json.load(response)
     else:
         document = json.loads(Path(location).read_text(encoding="utf-8"))
@@ -79,8 +81,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--repository", required=True)
-    parser.add_argument("--registry", default=DEFAULT_REGISTRY)
+    parser.add_argument(
+        "--registry",
+        default=os.environ.get("APPS_CATALOG_REGISTRY"),
+        help="URL or path of domains.json (default: $APPS_CATALOG_REGISTRY)",
+    )
     args = parser.parse_args()
+    if not args.registry:
+        parser.error("pass --registry or set APPS_CATALOG_REGISTRY")
     count = validate(args.repo_root, args.repository, load_registry(args.registry))
     print(f"Validated domains for {count} recipes and retirements")
     return 0
