@@ -1,5 +1,5 @@
 name: topofit
-version: "0.6.0"
+version: "0.7.0"
 
 copyright:
   - license: GPL-3.0-only
@@ -8,6 +8,8 @@ copyright:
     url: https://github.com/simnibs/brainsynth/blob/v{{ context.brainsynth_version }}/LICENSE
   - license: GPL-3.0-only
     url: https://github.com/simnibs/cortech/blob/v{{ context.cortech_version }}/LICENSE
+  - license: CC-BY-4.0
+    url: https://osf.io/bw9ec/
   - license: other-open
     name: FreeSurfer Software License Agreement
     url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
@@ -114,10 +116,14 @@ build:
         - echo 'fddcf0eeecc6e0f62142164f7c0ac24fda1f0be8cb653d3f037970184c5ba98f  /opt/topofit-atlas/lh.sphere.reg' | sha256sum -c -
         - echo 'e08216c1a840f0c192ac63c212fbbe12efc7e9731faa64a45083a098746b928a  /opt/topofit-atlas/lh.cortex.label' | sha256sum -c -
         - echo '432e9ce95e095c066dae2ed2fb3e6c0c67af6e77d8f52ba2d3b560b4fc50b87f  /opt/topofit-atlas/rh.cortex.label' | sha256sum -c -
+        - install -m 0644 {{ get_file("fsaverage_regions") }} /opt/topofit-atlas/fsaverage-regions.bin
+        - install -m 0644 {{ get_file("cortex-regions.manifest.json") }} /opt/topofit-atlas/cortex-regions.manifest.json
+        - echo '16cd2abfefc14d0705966e2ec0e1b8e457dafa6ae1a95e702cac81d969fadd54  /opt/topofit-atlas/fsaverage-regions.bin' | sha256sum -c -
 
     - run:
         - install -m 0644 {{ get_file("topofit_core.py") }} /opt/code/python-ismrmrd-server/topofit_core.py
         - install -m 0644 {{ get_file("topofit_geometry.py") }} /opt/code/python-ismrmrd-server/topofit_geometry.py
+        - install -m 0644 {{ get_file("topofit_regions.py") }} /opt/code/python-ismrmrd-server/topofit_regions.py
         - install -m 0755 {{ get_file("topofit.py") }} /opt/code/python-ismrmrd-server/topofit.py
         - install -m 0755 {{ get_file("topofit-openrecon") }} /usr/local/bin/topofit-openrecon
         - install -m 0644 {{ get_file("test_topofit_core.py") }} /opt/code/python-ismrmrd-server/test_topofit_core.py
@@ -149,6 +155,10 @@ files:
     url: https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/label/lh.cortex.label
   - name: rh_cortex
     url: https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/label/rh.cortex.label
+  - name: fsaverage_regions
+    url: https://huggingface.co/datasets/neurodeskorg/webapps/resolve/7ec5394736769ea0e9d6a11b22ab67fa4ac3f0df/topofit/0.5.1/cortex-regions-20261119/fsaverage-regions.bin
+  - name: cortex-regions.manifest.json
+    filename: cortex-regions.manifest.json
   - name: brainnet_wheel
     url: "{{ context.brainnet_wheel_url }}"
   - name: brainsynth_wheel
@@ -159,6 +169,8 @@ files:
     filename: topofit_core.py
   - name: topofit_geometry.py
     filename: topofit_geometry.py
+  - name: topofit_regions.py
+    filename: topofit_regions.py
   - name: topofit.py
     filename: topofit.py
   - name: topofit-openrecon
@@ -197,6 +209,12 @@ readme: |-
   draw its patch and outward normal in `topofit_patch_qc.nii.gz`, and record the
   geometry in the manifest and paired ribbon coordinates/local normals in an NPZ.
   The selector excludes the mapped fsaverage medial wall and collapsed ribbon.
+  Use `--patch-region wang2015:V1` (or another Wang 2015 visual area,
+  Desikan-Killiany lobe such as `aparc:lobe-occipital`, or Desikan-Killiany
+  region such as `aparc:pericalcarine`) to search only a named fsaverage atlas
+  region mapped through the registration sphere; `surf/lh.wang2015.annot` or
+  `surf/lh.aparc.annot` records the mapped parcellation. The Wang 2015 maps
+  (https://osf.io/bw9ec/) are CC BY 4.0.
   Use `--patch-roi roi.nii.gz` to restrict selection to a native-grid ROI;
   automatic candidates are not lesion labels or matched contralateral controls.
   `--patch-count`, `--patch-radius`, `--patch-max-rms`, `--patch-min-area`, and

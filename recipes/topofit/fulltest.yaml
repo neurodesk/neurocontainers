@@ -5,7 +5,7 @@
 # on CPU and can take several minutes on a CPU-only release runner.
 
 name: topofit
-version: "0.6.0"
+version: "0.7.0"
 
 required_files:
   - dataset: ds000001
@@ -215,3 +215,35 @@ tests:
       print('real TopoFit surfaces and QC geometry valid')
       "
     expected_output_contains: "real TopoFit surfaces and QC geometry valid"
+
+  - name: Real TopoFit V1 patch search
+    description: Search only the Wang 2015 V1 estimate and prove every patch lies in mapped V1 at the posterior, medial occipital pole.
+    command: |
+      topofit-openrecon "${t1w}" "${output_dir}/v1" --device cpu --find-flat-patches --patch-region wang2015:V1
+      PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "
+      import json
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+      manifest = json.load(open('${output_dir}/v1/topofit_manifest.json'))
+      definition = manifest['flat_patch_definition']
+      assert definition['region'] == 'wang2015:V1' and definition['region_atlas'] == 'wang2015', definition
+      assert manifest['patch_counts']['lh'] + manifest['patch_counts']['rh'] >= 1, manifest['patch_counts']
+      geometry = np.load('${output_dir}/v1/topofit_patch_geometry.npz')
+      root = Path('${output_dir}/v1/surf')
+      for hemisphere in ('lh', 'rh'):
+          white, _ = nib.freesurfer.read_geometry(str(root / (hemisphere + '.white')))
+          labels, _, names = nib.freesurfer.read_annot(str(root / (hemisphere + '.wang2015.annot')))
+          v1 = np.isin(labels, [names.index(b'V1v'), names.index(b'V1d')])
+          assert 1000 < v1.sum() < 0.2 * len(labels), v1.sum()
+          for patch_id, patch in manifest['flat_patches'].items():
+              if patch['surface'] != hemisphere + '.mid':
+                  continue
+              assert v1[geometry[patch_id + '_vertex_indices']].all(), patch_id
+              center = np.asarray(patch['center_ras_mm'])
+              assert center[1] < white[:, 1].mean() - 30, (patch_id, center)
+              # Medial: nearer the other hemisphere than this hemisphere's centroid is.
+              assert (center[0] - white[:, 0].mean()) * (1 if hemisphere == 'lh' else -1) > 0, (patch_id, center)
+      print('V1 patches lie in mapped V1', manifest['patch_counts'])
+      "
+    expected_output_contains: "V1 patches lie in mapped V1"

@@ -97,6 +97,30 @@ upload or register a mask; it must be supplied through a container volume mount.
 A unilateral mask returns only that hemisphere. An empty cortical ROI fails
 without falling back to whole-brain selection.
 
+**Patch search region** can instead name a cortical area, as in the TopoFit web
+app: Wang et al. 2015 visual areas (`wang2015:visual`, the union of every Wang
+area except FEF; `wang2015:V1`, V2 and V3 merging their ventral and dorsal
+halves; hV4 to SPL1 and FEF; or a half such as `wang2015:V1v`), the
+Desikan-Killiany lobes (`aparc:lobe-occipital`, FreeSurfer's `--lobesStrict`
+plus the insula), or the 34 Desikan-Killiany regions (`aparc:pericalcarine`).
+Each reconstructed vertex takes the label of its nearest fsaverage vertex on the
+registration sphere, the same lookup that maps the cortex mask. The region
+removes every vertex outside it after the cortex mask, medial-wall erosion and
+ribbon check, so every patch vertex lies in the region; the region itself is not
+eroded. A named region requires **Find cortical patches** and cannot be combined
+with an ROI. A region with no acceptable patch reports `NO_PATCH_MEETS_CRITERIA`
+instead of failing; try a smaller radius. The manifest records `region` and
+`region_atlas` in `flat_patch_definition`, and each searched hemisphere gets the
+mapped parcellation as `surf/lh.wang2015.annot` or `surf/lh.aparc.annot`. These
+are atlas estimates, not an individual's retinotopy or parcellation.
+
+The Wang 2015 maps are the fsaverage maximum-probability maps from the HCP 7T
+retinotopy dataset (Wang L, Mruczek REB, Arcaro MJ, Kastner S. Cerebral Cortex
+2015;25(10):3911-3931; Benson NC et al. Journal of Vision 2018;18(13):23;
+https://osf.io/bw9ec/, CC BY 4.0; NaN set to 0 and stored as uint8). The
+Desikan-Killiany labels are FreeSurfer's fsaverage `aparc` annotation (Desikan RS
+et al. NeuroImage 2006;31(3):968-980) under the FreeSurfer software license.
+
 McNab et al. (2013), *Surface based analysis of diffusion orientation for
 identifying architectonic domains in the in vivo human cortex*, Tian et al.'s
 OHBM 2017 poster *In Vivo Identification of Granular Cortices using Whole-brain
@@ -132,7 +156,7 @@ hemispheres; 3 marks overlap. The mask keeps the source shape and affine.
 | Maximum patches per hemisphere | `tfpatchcount` | `3` | Return up to 1–100 accepted patches per selected hemisphere. |
 | Cortical patch radius | `tfpatchradius` | `10 mm` | Mesh-edge radius, 2–20 mm. |
 | Patch hemisphere | `tfpatchhemisphere` | `both` | Both, `lh`, or `rh`. Reconstruction remains bilateral. |
-| Patch search region | `tfpatchregion` | `cortex` | Whole eligible cortex or `roi`. |
+| Patch search region | `tfpatchregion` | `cortex` | Whole eligible cortex, `roi`, or a named Wang 2015 visual area, Desikan-Killiany lobe or region, such as `wang2015:V1`. |
 | Native-space ROI path | `tfpatchroi` | empty | Container-visible NIfTI mask path, used only in ROI mode. |
 | Configuration-only maximum plane-fit error | `tfpatchmaxrms` | `0.5 mm` | Advanced acceptance cutoff, 0.01–2 mm RMS. |
 | Configuration-only minimum area fraction | `tfpatchminarea` | `0.25` | Advanced area cutoff as a fraction of `pi * radius^2`, 0.1–1. |
@@ -171,6 +195,7 @@ topofit-openrecon mprage.nii.gz transport-test --device cpu --mock
 topofit-openrecon mprage.nii.gz flat-patches --find-flat-patches --overlay-thickness 0
 topofit-openrecon mprage.nii.gz multiple-patches --find-flat-patches --patch-count 3 --patch-radius 10 --patch-max-rms 0.5 --patch-min-area 0.25
 topofit-openrecon mprage.nii.gz roi-patch --find-flat-patches --patch-roi roi.nii.gz
+topofit-openrecon mprage.nii.gz v1-patches --find-flat-patches --patch-region wang2015:V1
 topofit-openrecon mprage.nii.gz sulci --find-sulcal-middepth --sulcal-curvature-threshold 0.1
 ```
 

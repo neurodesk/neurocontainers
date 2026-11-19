@@ -222,6 +222,16 @@ class TopoFitOpenReconTests(unittest.TestCase):
         self.assertEqual(options.patch_roi, "/data/roi.nii.gz")
         parameters["tfpatchregion"] = "cortex"
         self.assertIsNone(topofit._options_from_config({"parameters": parameters}).patch_roi)
+        parameters["tfpatchregion"] = "wang2015:V1"
+        options = topofit._options_from_config({"parameters": parameters})
+        self.assertEqual(options.patch_search_region, "wang2015:V1")
+        self.assertIsNone(options.patch_roi)
+
+    def test_scanner_region_choices_are_the_named_regions(self):
+        from topofit_regions import REGIONS
+        label = json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())
+        region = next(p for p in label["parameters"] if p["id"] == "tfpatchregion")
+        self.assertEqual([value["id"] for value in region["values"]], ["cortex", "roi", *REGIONS])
 
     def test_openrecon_config_cannot_enable_mock_surfaces(self):
         options = topofit._options_from_config(

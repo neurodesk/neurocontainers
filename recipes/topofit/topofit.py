@@ -28,6 +28,7 @@ from topofit_core import (
     validate_options,
 )
 from topofit_geometry import SIEMENS_PLANE_ORDERS, siemens_plane_orientation
+from topofit_regions import REGIONS
 
 WORKSPACE = Path(os.environ.get("TOPOFIT_OPENRECON_WORKSPACE", "/tmp/share/topofit"))
 SEND_CHUNK_SIZE = 64
@@ -861,7 +862,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--patch-max-rms", type=float, default=0.5, help="Maximum plane-fit error in mm")
     parser.add_argument("--patch-min-area", type=float, default=0.25, help="Minimum area as a fraction of pi * radius^2")
     parser.add_argument("--patch-hemisphere", choices=("both", "lh", "rh"), default="both")
-    parser.add_argument("--patch-region", choices=("cortex", "roi"), default="cortex")
+    parser.add_argument(
+        "--patch-region", choices=("cortex", "roi", *REGIONS), default="cortex", metavar="REGION",
+        help="cortex (default), roi, or a named atlas region such as wang2015:V1, "
+        "aparc:lobe-occipital or aparc:pericalcarine; see topofit_regions.REGIONS",
+    )
     parser.add_argument(
         "--find-sulcal-middepth",
         action="store_true",
@@ -901,7 +906,7 @@ def main() -> int:
         patch_max_rms_mm=args.patch_max_rms,
         patch_min_area_fraction=args.patch_min_area,
         patch_hemisphere=args.patch_hemisphere,
-        patch_search_region="roi" if args.patch_roi else args.patch_region,
+        patch_search_region="roi" if args.patch_roi and args.patch_region == "cortex" else args.patch_region,
         find_sulcal_middepth=args.find_sulcal_middepth,
         sulcal_curvature_threshold_mm_inv=args.sulcal_curvature_threshold,
         overlay_thickness=args.overlay_thickness,

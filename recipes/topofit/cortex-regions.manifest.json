@@ -1,0 +1,123 @@
+{
+  "filename": "fsaverage-regions.bin",
+  "bytes": 655372,
+  "sha256": "16cd2abfefc14d0705966e2ec0e1b8e457dafa6ae1a95e702cac81d969fadd54",
+  "vertices": 163842,
+  "layout": "uint32 LE vertex count, then one uint8 label per vertex for each atlas in order, left hemisphere before right, in the vertex order of fsaverage-cortex.bin",
+  "sources": {
+    "lh.sphere.reg": [
+      "https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/surf/lh.sphere.reg",
+      "fddcf0eeecc6e0f62142164f7c0ac24fda1f0be8cb653d3f037970184c5ba98f"
+    ],
+    "rh.sphere.reg": [
+      "https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/surf/rh.sphere.reg",
+      "fddcf0eeecc6e0f62142164f7c0ac24fda1f0be8cb653d3f037970184c5ba98f"
+    ],
+    "lh.aparc.annot": [
+      "https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/label/lh.aparc.annot",
+      "39b1acde9a32b4227631eb51cbcd8dff84e2138c57bf9f96d74026f2c17f1480"
+    ],
+    "rh.aparc.annot": [
+      "https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/label/rh.aparc.annot",
+      "6a326aed325d313e6e0d10f67630efcd8d3b8343c50d3e108e005f626614badb"
+    ],
+    "atlasmgz.zip": [
+      "https://osf.io/download/rne5b/",
+      "025e60cd646028f28c79c8606d6b47395509db612232137270bbe65713fd0e91"
+    ],
+    "lh.Wang2015.mgz": [
+      "atlasmgz.zip member",
+      "029d1c3617082abfc1ddc15057cff287eb190e343851e2b7b6cb058708f6f66a"
+    ],
+    "rh.Wang2015.mgz": [
+      "atlasmgz.zip member",
+      "bab9b7497e606218b752dce5c7f300fcc148a7c98770498615c7d641587044da"
+    ],
+    "Wang2015.mgz.ctab": [
+      "atlasmgz.zip member",
+      "a003fdb45a9f4f7dd4f366d1d50439fe3b6e95204045e39bc012bb59af6cbbdc"
+    ]
+  },
+  "atlases": [
+    {
+      "id": "wang2015",
+      "name": "Wang 2015 visual topography",
+      "license": "CC-BY-4.0",
+      "attribution": "Wang L, Mruczek REB, Arcaro MJ, Kastner S. Cerebral Cortex 2015;25(10):3911-3931, doi:10.1093/cercor/bhu277; fsaverage maximum-probability maps from the HCP 7T retinotopy dataset, Benson NC et al. Journal of Vision 2018;18(13):23, doi:10.1167/18.13.23, https://osf.io/bw9ec/",
+      "labels": [
+        { "value": 0, "name": "Unknown", "rgb": [0, 0, 0] },
+        { "value": 1, "name": "V1v", "rgb": [230, 25, 75] },
+        { "value": 2, "name": "V1d", "rgb": [250, 90, 120] },
+        { "value": 3, "name": "V2v", "rgb": [245, 130, 48] },
+        { "value": 4, "name": "V2d", "rgb": [255, 180, 110] },
+        { "value": 5, "name": "V3v", "rgb": [255, 225, 25] },
+        { "value": 6, "name": "V3d", "rgb": [255, 240, 140] },
+        { "value": 7, "name": "hV4", "rgb": [60, 180, 75] },
+        { "value": 8, "name": "VO1", "rgb": [120, 210, 120] },
+        { "value": 9, "name": "VO2", "rgb": [0, 128, 64] },
+        { "value": 10, "name": "PHC1", "rgb": [70, 240, 240] },
+        { "value": 11, "name": "PHC2", "rgb": [0, 150, 160] },
+        { "value": 12, "name": "TO2", "rgb": [0, 130, 200] },
+        { "value": 13, "name": "TO1", "rgb": [100, 170, 255] },
+        { "value": 14, "name": "LO2", "rgb": [145, 30, 180] },
+        { "value": 15, "name": "LO1", "rgb": [200, 120, 230] },
+        { "value": 16, "name": "V3B", "rgb": [240, 50, 230] },
+        { "value": 17, "name": "V3A", "rgb": [250, 170, 240] },
+        { "value": 18, "name": "IPS0", "rgb": [128, 0, 0] },
+        { "value": 19, "name": "IPS1", "rgb": [170, 110, 40] },
+        { "value": 20, "name": "IPS2", "rgb": [128, 128, 0] },
+        { "value": 21, "name": "IPS3", "rgb": [0, 0, 128] },
+        { "value": 22, "name": "IPS4", "rgb": [128, 128, 128] },
+        { "value": 23, "name": "IPS5", "rgb": [210, 245, 60] },
+        { "value": 24, "name": "SPL1", "rgb": [170, 255, 195] },
+        { "value": 25, "name": "FEF", "rgb": [255, 215, 180] }
+      ]
+    },
+    {
+      "id": "aparc",
+      "name": "Desikan-Killiany (FreeSurfer aparc)",
+      "license": "FreeSurfer Software License",
+      "attribution": "Desikan RS et al. NeuroImage 2006;31(3):968-980, doi:10.1016/j.neuroimage.2006.01.021; FreeSurfer fsaverage, https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense",
+      "labels": [
+        { "value": 0, "name": "unknown", "rgb": [25, 5, 25] },
+        { "value": 1, "name": "bankssts", "rgb": [25, 100, 40] },
+        { "value": 2, "name": "caudalanteriorcingulate", "rgb": [125, 100, 160] },
+        { "value": 3, "name": "caudalmiddlefrontal", "rgb": [100, 25, 0] },
+        { "value": 4, "name": "corpuscallosum", "rgb": [120, 70, 50] },
+        { "value": 5, "name": "cuneus", "rgb": [220, 20, 100] },
+        { "value": 6, "name": "entorhinal", "rgb": [220, 20, 10] },
+        { "value": 7, "name": "fusiform", "rgb": [180, 220, 140] },
+        { "value": 8, "name": "inferiorparietal", "rgb": [220, 60, 220] },
+        { "value": 9, "name": "inferiortemporal", "rgb": [180, 40, 120] },
+        { "value": 10, "name": "isthmuscingulate", "rgb": [140, 20, 140] },
+        { "value": 11, "name": "lateraloccipital", "rgb": [20, 30, 140] },
+        { "value": 12, "name": "lateralorbitofrontal", "rgb": [35, 75, 50] },
+        { "value": 13, "name": "lingual", "rgb": [225, 140, 140] },
+        { "value": 14, "name": "medialorbitofrontal", "rgb": [200, 35, 75] },
+        { "value": 15, "name": "middletemporal", "rgb": [160, 100, 50] },
+        { "value": 16, "name": "parahippocampal", "rgb": [20, 220, 60] },
+        { "value": 17, "name": "paracentral", "rgb": [60, 220, 60] },
+        { "value": 18, "name": "parsopercularis", "rgb": [220, 180, 140] },
+        { "value": 19, "name": "parsorbitalis", "rgb": [20, 100, 50] },
+        { "value": 20, "name": "parstriangularis", "rgb": [220, 60, 20] },
+        { "value": 21, "name": "pericalcarine", "rgb": [120, 100, 60] },
+        { "value": 22, "name": "postcentral", "rgb": [220, 20, 20] },
+        { "value": 23, "name": "posteriorcingulate", "rgb": [220, 180, 220] },
+        { "value": 24, "name": "precentral", "rgb": [60, 20, 220] },
+        { "value": 25, "name": "precuneus", "rgb": [160, 140, 180] },
+        { "value": 26, "name": "rostralanteriorcingulate", "rgb": [80, 20, 140] },
+        { "value": 27, "name": "rostralmiddlefrontal", "rgb": [75, 50, 125] },
+        { "value": 28, "name": "superiorfrontal", "rgb": [20, 220, 160] },
+        { "value": 29, "name": "superiorparietal", "rgb": [20, 180, 140] },
+        { "value": 30, "name": "superiortemporal", "rgb": [140, 220, 220] },
+        { "value": 31, "name": "supramarginal", "rgb": [80, 160, 20] },
+        { "value": 32, "name": "frontalpole", "rgb": [100, 0, 100] },
+        { "value": 33, "name": "temporalpole", "rgb": [70, 20, 170] },
+        { "value": 34, "name": "transversetemporal", "rgb": [150, 150, 200] },
+        { "value": 35, "name": "insula", "rgb": [255, 192, 32] }
+      ]
+    }
+  ],
+  "url": "https://huggingface.co/datasets/neurodeskorg/webapps/resolve/7ec5394736769ea0e9d6a11b22ab67fa4ac3f0df/topofit/0.5.1/cortex-regions-20261119/fsaverage-regions.bin",
+  "revision": "7ec5394736769ea0e9d6a11b22ab67fa4ac3f0df"
+}

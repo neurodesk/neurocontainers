@@ -80,6 +80,75 @@ class TopoFitCoreTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_options(replace(defaults, **{field: value}))
 
+    def test_named_region_is_validated(self):
+        from dataclasses import replace
+        region = replace(TopoFitOptions(), find_flat_patches=True, patch_search_region="wang2015:V1")
+        validate_options(region)
+        for change, message in (
+            ({"patch_search_region": "wang2015:V9"}, "named cortical region"),
+            ({"find_flat_patches": False}, "requires flat-patch analysis"),
+            ({"patch_roi": "/data/roi.nii.gz"}, "not both"),
+        ):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, message):
+                validate_options(replace(region, **change))
+
+    def test_named_region_restricts_patches_and_writes_parcellation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = nib.Nifti1Image(np.ones((32, 32, 32), dtype=np.float32), np.eye(4))
+            topofit_core.write_mock_surfaces(image, root / "surf")
+            surfaces = topofit_core.validate_surface_outputs(root / "surf")
+            sphere, faces = nib.freesurfer.read_geometry(str(surfaces["lh.registration"]))
+            atlas = root / "atlas"
+            atlas.mkdir()
+            for hemisphere in ("lh", "rh"):
+                nib.freesurfer.write_geometry(str(atlas / f"{hemisphere}.sphere.reg"), sphere, faces)
+
+            def write_regions(wang):
+                (atlas / "cortex-regions.manifest.json").write_text(json.dumps({"atlases": [
+                    {"id": "wang2015", "name": "Wang", "labels": [
+                        {"value": 0, "name": "Unknown", "rgb": [0, 0, 0]},
+                        {"value": 1, "name": "V1v", "rgb": [230, 25, 75]},
+                        {"value": 2, "name": "V1d", "rgb": [250, 90, 120]},
+                        {"value": 3, "name": "V2v", "rgb": [245, 130, 48]},
+                    ]},
+                    {"id": "aparc", "name": "DK", "labels": [
+                        {"value": 0, "name": "unknown", "rgb": [25, 5, 25]},
+                    ]},
+                ]}))
+                labels = np.zeros((2, 2, len(sphere)), dtype=np.uint8)
+                labels[0] = wang
+                (atlas / "fsaverage-regions.bin").write_bytes(
+                    int(len(sphere)).to_bytes(4, "little") + labels.tobytes()
+                )
+
+            # V1 is the upper half of the sphere; V2v the lower half.
+            wang = np.where(sphere[:, 2] > 0, np.where(sphere[:, 0] > 0, 1, 2), 3)
+            write_regions(wang)
+            options = TopoFitOptions(
+                find_flat_patches=True, patch_search_region="wang2015:V1",
+                patch_radius_mm=5, patch_min_area_fraction=0.1,
+            )
+            detections = topofit_core.find_flat_patches(surfaces, options, atlas_dir=atlas, mock=True)
+            self.assertEqual({d.patch.surface for d in detections.values()}, {"lh.mid", "rh.mid"})
+            for detection in detections.values():
+                self.assertTrue(np.all(wang[detection.vertex_indices] < 3))
+            for hemisphere in ("lh", "rh"):
+                annotation, ctab, names = nib.freesurfer.read_annot(
+                    str(root / "surf" / f"{hemisphere}.wang2015.annot")
+                )
+                self.assertEqual([name.decode() for name in names], ["Unknown", "V1v", "V1d", "V2v"])
+                np.testing.assert_array_equal(annotation, wang)
+                np.testing.assert_array_equal(ctab[1, :3], [230, 25, 75])
+
+            # A region with no cortex, or too little for three faces, has no patch.
+            for selected in (np.zeros(len(sphere), dtype=bool), np.isin(np.arange(len(sphere)), faces[0])):
+                with self.subTest(vertices=int(selected.sum())):
+                    write_regions(np.where(selected, 1, 3))
+                    self.assertEqual(
+                        topofit_core.find_flat_patches(surfaces, options, atlas_dir=atlas, mock=True), {}
+                    )
+
     def test_patch_coordinates_in_patient_lph(self):
         patch = topofit_core.FlatPatch(
             surface="lh.mid", center_ras_mm=(12, -34, 56),
