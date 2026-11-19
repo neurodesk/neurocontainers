@@ -1,5 +1,5 @@
 name: topofit
-version: "0.7.0"
+version: "0.8.0"
 
 copyright:
   - license: GPL-3.0-only
@@ -213,7 +213,9 @@ readme: |-
   Desikan-Killiany lobe such as `aparc:lobe-occipital`, or Desikan-Killiany
   region such as `aparc:pericalcarine`) to search only a named fsaverage atlas
   region mapped through the registration sphere; `surf/lh.wang2015.annot` or
-  `surf/lh.aparc.annot` records the mapped parcellation. The Wang 2015 maps
+  `surf/lh.aparc.annot` records the mapped parcellation, and
+  `topofit_region_qc.nii.gz` draws the searched region at 50% cortical depth on
+  the source grid; OpenRecon returns it as its own series. The Wang 2015 maps
   (https://osf.io/bw9ec/) are CC BY 4.0.
   Use `--patch-roi roi.nii.gz` to restrict selection to a native-grid ROI;
   automatic candidates are not lesion labels or matched contralateral controls.

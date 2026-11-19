@@ -114,6 +114,13 @@ instead of failing; try a smaller radius. The manifest records `region` and
 mapped parcellation as `surf/lh.wang2015.annot` or `surf/lh.aparc.annot`. These
 are atlas estimates, not an individual's retinotopy or parcellation.
 
+With a named region, the scanner also receives a `_topofit_region_qc` series:
+the anatomy with the searched region drawn at 50% cortical depth (intensity
+3000) on the source grid, for each searched hemisphere. It is returned even when
+no patch is accepted, so the region can be checked against the anatomy. The run
+directory keeps it as `topofit_region_qc.nii.gz`, and the manifest records its
+path as `region_qc_image`.
+
 The Wang 2015 maps are the fsaverage maximum-probability maps from the HCP 7T
 retinotopy dataset (Wang L, Mruczek REB, Arcaro MJ, Kastner S. Cerebral Cortex
 2015;25(10):3911-3931; Benson NC et al. Journal of Vision 2018;18(13):23;

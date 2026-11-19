@@ -142,6 +142,15 @@ class TopoFitCoreTests(unittest.TestCase):
                 np.testing.assert_array_equal(annotation, np.where(wang == 0, -1, wang))
                 np.testing.assert_array_equal(ctab[1, :3], [230, 25, 75])
 
+            # The region QC draws the searched region, V1 (upper half), and nothing below it.
+            region_qc = nib.load(str(topofit_core.write_region_qc(
+                image, surfaces, options, root / "region_qc.nii.gz"
+            )))
+            np.testing.assert_allclose(region_qc.affine, image.affine)
+            drawn = np.argwhere(np.asarray(region_qc.dataobj) == topofit_core.PATCH_QC_PATCH_INTENSITY)
+            self.assertTrue(len(drawn))
+            self.assertGreaterEqual(drawn[:, 2].min(), 15)
+
             # A region with no cortex, or too little for three faces, has no patch.
             for selected in (np.zeros(len(sphere), dtype=bool), np.isin(np.arange(len(sphere)), faces[0])):
                 with self.subTest(vertices=int(selected.sum())):
