@@ -143,6 +143,7 @@ class TopoFitResult:
     sulcal_middepth_mask: str | None
     sulci: dict[str, dict[str, float | int | str]]
     elapsed_seconds: float
+    region_qc_image: str | None = None
     warning: str = RESEARCH_WARNING
 
 
@@ -1062,6 +1063,45 @@ def write_patch_qc(
     return output_path
 
 
+def write_region_qc(
+    image: nib.spatialimages.SpatialImage,
+    surfaces: dict[str, Path],
+    options: TopoFitOptions,
+    output_path: Path,
+) -> Path:
+    """Draw the searched named region at mid-cortical depth on the source grid.
+
+    Reads the mapped parcellation that find_flat_patches wrote for each searched
+    hemisphere, so the drawing shows exactly the atlas region that was searched.
+    """
+
+    region = REGIONS[options.patch_search_region]
+    output = _scaled_anatomy(image, PATCH_QC_ANATOMY_MAX)
+    mask = np.zeros(image.shape, dtype=bool)
+    for hemisphere in ("lh", "rh"):
+        if options.patch_hemisphere not in {"both", hemisphere}:
+            continue
+        labels, _, names = nib.freesurfer.read_annot(
+            str(surfaces[f"{hemisphere}.pial"].parent / f"{hemisphere}.{region.atlas}.annot")
+        )
+        inside = np.isin(labels, [names.index(name.encode()) for name in region.label_names])
+        white, faces = nib.freesurfer.read_geometry(str(surfaces[f"{hemisphere}.white"]))
+        pial, _ = nib.freesurfer.read_geometry(str(surfaces[f"{hemisphere}.pial"]))
+        mask |= triangle_voxel_mask(
+            tuple(int(value) for value in image.shape), image.affine,
+            white + MIDDLE_DEPTH_FRACTION * (pial - white), faces[np.all(inside[faces], axis=1)],
+        )
+    output[mask] = PATCH_QC_PATCH_INTENSITY
+    header = image.header.copy()
+    header.set_data_dtype(np.int16)
+    header["descrip"] = b"TopoFit searched cortical region illustration"
+    region_qc = nib.Nifti1Image(output, image.affine, header=header)
+    region_qc.set_qform(image.affine, code=1)
+    region_qc.set_sform(image.affine, code=1)
+    nib.save(region_qc, str(output_path))
+    return output_path
+
+
 def write_patch_geometry(
     surfaces: dict[str, Path],
     detections: dict[str, _DetectedFlatPatch],
@@ -1261,6 +1301,10 @@ def run_topofit_workflow(
         find_flat_patches(surfaces, options, roi=roi, mock=options.mock)
         if options.find_flat_patches else {}
     )
+    region_qc_path = (
+        write_region_qc(image, surfaces, options, run_dir / "topofit_region_qc.nii.gz")
+        if options.patch_search_region in REGIONS else None
+    )
     sulcal_detections, sulcal_masks = (
         _find_sulcal_middepth(
             image, surfaces, options.sulcal_curvature_threshold_mm_inv, mock=options.mock
@@ -1332,6 +1376,7 @@ def run_topofit_workflow(
         ),
         sulci=sulci,
         elapsed_seconds=round(elapsed, 3),
+        region_qc_image=str(region_qc_path.resolve()) if region_qc_path else None,
     )
     manifest = asdict(result)
     for patch_id, patch in flat_patches.items():

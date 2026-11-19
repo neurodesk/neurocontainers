@@ -667,6 +667,26 @@ def _patch_qc_mrd_images(
     )
 
 
+def _region_qc_mrd_images(
+    region_qc_path: Path,
+    source_images,
+    series_index: int,
+    region_id: str,
+    flat_patches,
+) -> list:
+    region = REGIONS[region_id]
+    return _source_grid_mrd_images(
+        region_qc_path,
+        source_images,
+        series_index,
+        "_topofit_region_qc",
+        "REGION_QC",
+        f"TopoFit search region {region.id} ({region.name}) at 50% cortical depth; "
+        f"fsaverage atlas estimate, not individual anatomy; "
+        f"accepted cortical patches: {len(flat_patches)}",
+    )
+
+
 def _send_images(connection, images, label: str) -> None:
     for start in range(0, len(images), SEND_CHUNK_SIZE):
         chunk = images[start : start + SEND_CHUNK_SIZE]
@@ -795,6 +815,16 @@ def process(connection, config, metadata):
                     result.flat_patches,
                 )
                 pending_output.append(("TopoFit patch QC", patch_qc_images))
+                next_series_index += 1
+            if result.region_qc_image:
+                region_qc_images = _region_qc_mrd_images(
+                    Path(result.region_qc_image),
+                    ordered,
+                    next_series_index,
+                    options.patch_search_region,
+                    result.flat_patches,
+                )
+                pending_output.append(("TopoFit region QC", region_qc_images))
                 next_series_index += 1
             if options.find_flat_patches:
                 report_images = _patch_report_mrd_images(

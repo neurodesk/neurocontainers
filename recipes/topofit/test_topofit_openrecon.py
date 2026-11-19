@@ -494,6 +494,32 @@ class TopoFitOpenReconTests(unittest.TestCase):
                     output_meta["ImageComments"],
                 )
 
+    def test_named_region_returns_region_qc_series(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            topofit.WORKSPACE = Path(temporary_directory)
+            connection = RecordingConnection(_mrd_volume(shape=(32, 32, 32)))
+            config = {"parameters": {
+                "sendoriginal": False, "tfdevice": "cpu", "tfflatpatches": True,
+                "tfpatchregion": "wang2015:visual",
+            }}
+            with mock.patch.object(topofit, "run_topofit_workflow", side_effect=_run_mock_workflow):
+                topofit.process(connection, config, metadata=None)
+
+            errors = [message for level, message in connection.logs if level == constants.MRD_LOGGING_ERROR]
+            self.assertEqual(errors, [])
+            outputs = [image for batch in connection.image_batches for image in batch]
+            region_outputs = [
+                image for image in outputs
+                if ismrmrd.Meta.deserialize(image.attribute_string)["SeriesDescription"]
+                == "MPRAGE_TEST_topofit_region_qc"
+            ]
+            self.assertEqual(len(region_outputs), 32)
+            meta = ismrmrd.Meta.deserialize(region_outputs[0].attribute_string)
+            self.assertIn("TopoFit search region wang2015:visual", meta["ImageComments"])
+            self.assertEqual(len({int(image.image_series_index) for image in region_outputs}), 1)
+            values = np.unique(np.stack([np.squeeze(image.data) for image in region_outputs]))
+            self.assertIn(3000, values)
+
     def test_mrd_affine_uses_image_center_and_reconstructed_pixel_directions(self):
         images = _mrd_volume()
         _, _, affine = topofit._mrd_series_to_nifti(images)

@@ -5,7 +5,7 @@
 # on CPU and can take several minutes on a CPU-only release runner.
 
 name: topofit
-version: "0.7.0"
+version: "0.8.0"
 
 required_files:
   - dataset: ds000001
@@ -244,6 +244,16 @@ tests:
               assert center[1] < white[:, 1].mean() - 30, (patch_id, center)
               # Medial: nearer the other hemisphere than this hemisphere's centroid is.
               assert (center[0] - white[:, 0].mean()) * (1 if hemisphere == 'lh' else -1) > 0, (patch_id, center)
+      source = nib.load('${t1w}')
+      region_qc = nib.load(manifest['region_qc_image'])
+      assert region_qc.shape == source.shape
+      np.testing.assert_allclose(region_qc.affine, source.affine)
+      drawn = nib.affines.apply_affine(source.affine, np.argwhere(np.asarray(region_qc.dataobj) == 3000))
+      assert len(drawn) > 1000, len(drawn)
+      lh_white, _ = nib.freesurfer.read_geometry(str(root / 'lh.white'))
+      rh_white, _ = nib.freesurfer.read_geometry(str(root / 'rh.white'))
+      brain_y = np.concatenate((lh_white, rh_white))[:, 1].mean()
+      assert np.median(drawn[:, 1]) < brain_y - 30, (np.median(drawn[:, 1]), brain_y)
       print('V1 patches lie in mapped V1', manifest['patch_counts'])
       "
     expected_output_contains: "V1 patches lie in mapped V1"
