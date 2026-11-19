@@ -30,6 +30,7 @@ from topofit_geometry import (
     siemens_plane_orientation,
     _outward_vertex_normals,
 )
+from topofit_regions import REGIONS, read_region_atlas
 
 RESEARCH_WARNING = "RESEARCH ONLY - NOT MOTION-CLEARED - NOT FOR PRESCRIPTION"
 SURFACE_NAMES = (
@@ -180,10 +181,15 @@ def validate_options(options: TopoFitOptions) -> tuple[str, str]:
             raise ValueError(f"{name} must be between {minimum} and {maximum}")
     if options.patch_hemisphere not in {"both", "lh", "rh"}:
         raise ValueError("patch hemisphere must be both, lh, or rh")
-    if options.patch_search_region not in {"cortex", "roi"}:
-        raise ValueError("patch search region must be cortex or roi")
+    if options.patch_search_region not in {"cortex", "roi", *REGIONS}:
+        raise ValueError("patch search region must be cortex, roi, or a named cortical region")
     if options.patch_search_region == "roi" and not options.patch_roi:
         raise ValueError("ROI search requires a native-grid patch ROI file")
+    if options.patch_search_region in REGIONS:
+        if not options.find_flat_patches:
+            raise ValueError("a named cortical region requires flat-patch analysis")
+        if options.patch_roi:
+            raise ValueError("choose a named cortical region or a patch ROI, not both")
     try:
         return MODEL_PRESETS[options.preset]
     except KeyError:
@@ -422,11 +428,6 @@ def _face_geometry(
     )
     twice_area = np.linalg.norm(cross_products, axis=1)
     valid = twice_area > 1e-8
-    if int(valid.sum()) < 3:
-        raise ValueError(
-            "flat-patch analysis requires at least three non-degenerate faces"
-        )
-
     valid_faces = faces[valid]
     centers = triangles[valid].mean(axis=1)
     areas = twice_area[valid] * 0.5
@@ -575,8 +576,13 @@ def find_ranked_patches(
     count: int = 3,
     max_rms_mm: float = 0.5,
     min_area_fraction: float = 0.25,
+    sparse_is_empty: bool = False,
 ) -> list[_DetectedFlatPatch]:
-    """Rank acceptable cortical neighborhoods and suppress shared mesh vertices."""
+    """Rank acceptable cortical neighborhoods and suppress shared mesh vertices.
+
+    sparse_is_empty: a named region may leave fewer than three non-degenerate
+    faces, which is a search with no patch rather than an error.
+    """
 
     vertices = np.asarray(vertices, dtype=float)
     faces = np.asarray(faces, dtype=np.int64)
@@ -595,6 +601,10 @@ def find_ranked_patches(
     if not len(faces):
         raise ValueError(f"{surface}: no eligible cortical faces")
     valid_faces, centers, normals, areas = _face_geometry(vertices, faces)
+    if len(valid_faces) < 3:
+        if sparse_is_empty:
+            return []
+        raise ValueError("flat-patch analysis requires at least three non-degenerate faces")
     candidate_indices = _candidate_face_indices(
         vertices,
         valid_faces,
@@ -668,21 +678,16 @@ def cortical_ribbon_mask(
     )
 
 
-def mapped_cortex_mask(
+def nearest_fsaverage_vertices(
     registration: np.ndarray,
     hemisphere: str,
     atlas_dir: Path = CORTEX_ATLAS_DIR,
-) -> np.ndarray:
-    """Transfer fsaverage cortex membership through the registration sphere."""
+) -> tuple[np.ndarray, int]:
+    """Return each registration-sphere vertex's nearest fsaverage vertex and fsaverage's vertex count."""
 
     reference, _ = nib.freesurfer.read_geometry(
         str(atlas_dir / f"{hemisphere}.sphere.reg")
     )
-    indices = nib.freesurfer.read_label(str(atlas_dir / f"{hemisphere}.cortex.label"))
-    if not len(indices) or indices.min() < 0 or indices.max() >= len(reference):
-        raise ValueError("invalid fsaverage cortex label")
-    masks = np.zeros(len(reference), dtype=bool)
-    masks[indices] = True
     for sphere in (reference, registration):
         if not np.all(np.isfinite(sphere)) or np.any(
             np.linalg.norm(sphere, axis=1) < 1e-6
@@ -691,7 +696,27 @@ def mapped_cortex_mask(
     reference = reference / np.linalg.norm(reference, axis=1)[:, None]
     target = registration / np.linalg.norm(registration, axis=1)[:, None]
     _, nearest = cKDTree(reference).query(target)
-    return masks[nearest]
+    return nearest, len(reference)
+
+
+def _fsaverage_cortex(hemisphere: str, vertex_count: int, atlas_dir: Path) -> np.ndarray:
+    indices = nib.freesurfer.read_label(str(atlas_dir / f"{hemisphere}.cortex.label"))
+    if not len(indices) or indices.min() < 0 or indices.max() >= vertex_count:
+        raise ValueError("invalid fsaverage cortex label")
+    masks = np.zeros(vertex_count, dtype=bool)
+    masks[indices] = True
+    return masks
+
+
+def mapped_cortex_mask(
+    registration: np.ndarray,
+    hemisphere: str,
+    atlas_dir: Path = CORTEX_ATLAS_DIR,
+) -> np.ndarray:
+    """Transfer fsaverage cortex membership through the registration sphere."""
+
+    nearest, vertex_count = nearest_fsaverage_vertices(registration, hemisphere, atlas_dir)
+    return _fsaverage_cortex(hemisphere, vertex_count, atlas_dir)[nearest]
 
 
 def _roi_membership(
@@ -714,10 +739,17 @@ def find_flat_patches(
     roi: nib.spatialimages.SpatialImage | None = None,
     mock: bool = False,
 ) -> dict[str, _DetectedFlatPatch]:
-    """Select mid-ribbon cortex, excluding the atlas medial-wall closure."""
+    """Select mid-ribbon cortex, excluding the atlas medial-wall closure.
+
+    A named region keeps only vertices whose nearest fsaverage vertex carries one
+    of its labels, and writes that atlas's mapped parcellation as a FreeSurfer
+    annotation next to the surfaces, for example surf/lh.wang2015.annot.
+    """
 
     detected = {}
     eligible_face_count = 0
+    region = REGIONS.get(options.patch_search_region)
+    region_atlas = region_values = None
     for hemisphere in ("lh", "rh"):
         if options.patch_hemisphere not in {"both", hemisphere}:
             continue
@@ -732,14 +764,31 @@ def find_flat_patches(
             np.array_equal(faces, white_faces) and np.array_equal(faces, reg_faces)
         ):
             raise ValueError("patch analysis requires corresponding surface topology")
-        cortex = np.ones(len(pial), dtype=bool) if mock else mapped_cortex_mask(
-            registration, hemisphere, atlas_dir
-        )
+        if mock and region is None:
+            cortex = np.ones(len(pial), dtype=bool)
+        else:
+            nearest, vertex_count = nearest_fsaverage_vertices(registration, hemisphere, atlas_dir)
+            cortex = (np.ones(len(pial), dtype=bool) if mock
+                      else _fsaverage_cortex(hemisphere, vertex_count, atlas_dir)[nearest])
         middle = white + MIDDLE_DEPTH_FRACTION * (pial - white)
         cortex = erode_cortex_mask(middle, faces, cortex)
         eligible = cortical_ribbon_mask(white, pial, cortex)
         if roi is not None:
             eligible &= _roi_membership(middle, roi)
+        if region is not None:
+            if region_atlas is None:
+                region_atlas = read_region_atlas(atlas_dir, region.atlas, vertex_count)
+                region_values = region_atlas.values(region)
+            parcellation = region_atlas.labels[hemisphere][nearest]
+            eligible &= np.isin(parcellation, region_values)
+            table = region_atlas.table
+            nib.freesurfer.write_annot(
+                str(surfaces[f"{hemisphere}.pial"].parent / f"{hemisphere}.{region.atlas}.annot"),
+                # -1 writes annotation 0, which Freeview leaves uncoloured, for unlabelled vertices.
+                np.where(parcellation == 0, -1, parcellation.astype(np.int32)),
+                np.asarray([[*entry["rgb"], 0] for entry in table], dtype=np.int32),
+                [entry["name"] for entry in table],
+            )
         count = int(np.count_nonzero(np.all(eligible[faces], axis=1)))
         eligible_face_count += count
         if not count:
@@ -749,6 +798,7 @@ def find_flat_patches(
             radius_mm=options.patch_radius_mm, count=options.patch_count,
             max_rms_mm=options.patch_max_rms_mm,
             min_area_fraction=options.patch_min_area_fraction,
+            sparse_is_empty=region is not None,
         )
         for rank, detection in enumerate(candidates, 1):
             indices = detection.vertex_indices
@@ -762,7 +812,7 @@ def find_flat_patches(
                     np.linalg.norm(pial[indices] - white[indices], axis=1)
                 )),
             ))
-    if not eligible_face_count:
+    if not eligible_face_count and region is None:
         raise ValueError("ROI contains no eligible cortical patch" if roi is not None
                          else "No eligible cortical faces in the requested hemisphere")
     return detected
@@ -1316,6 +1366,9 @@ def run_topofit_workflow(
         "minimum_ribbon_separation_mm": MIN_RIBBON_SEPARATION_MM,
         "neighborhood": "mesh_edge_geodesic_radius",
         "roi": options.patch_roi,
+        "region": options.patch_search_region,
+        **({"region_atlas": REGIONS[options.patch_search_region].atlas}
+           if options.patch_search_region in REGIONS else {}),
         "medial_wall_margin_mm": MEDIAL_WALL_MARGIN_MM,
         "selection": "independent_candidates_not_homologous_controls",
         "overlap": "no_shared_vertices_within_hemisphere",
