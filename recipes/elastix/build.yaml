@@ -12,7 +12,7 @@ architectures:
 
 variables:
   upstream_version: 5.3.1
-  itk_version: 5.4.7
+  itk_version: "5.4.8"
 
 auto_update:
   method: sources
@@ -24,6 +24,7 @@ auto_update:
       target:
         variable: upstream_version
     - id: itk
+      dependency: true
       method: github_release
       repo: InsightSoftwareConsortium/ITK
       version_regex: v(?P<version>5\.4\.\d+)
