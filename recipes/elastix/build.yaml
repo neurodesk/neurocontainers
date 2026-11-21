@@ -24,6 +24,7 @@ auto_update:
       target:
         variable: upstream_version
     - id: itk
+      dependency: true
       method: github_release
       repo: InsightSoftwareConsortium/ITK
       version_regex: v(?P<version>5\.4\.\d+)
