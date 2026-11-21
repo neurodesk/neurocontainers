@@ -16,7 +16,7 @@ variables:
         condition: arch == "aarch64"
   flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
   openneuro_version: "2026.9.1"
-  pipeline_commit: "e5df627f5586ad712953088a85c5595d29117e9c"
+  pipeline_commit: "6ee0a960e2fc21eef755a5d15909eaa24111785d"
 
 name: mneextended
 version: "1.2.0"
