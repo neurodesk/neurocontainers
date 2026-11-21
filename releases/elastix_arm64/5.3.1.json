@@ -1,7 +1,7 @@
 {
   "apps": {
     "elastix_arm64 5.3.1": {
-      "version": "20261013",
+      "version": "20261121",
       "exec": "",
       "apptainer_args": []
     }
