@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "clearswi 1.7.1": {
+      "version": "20261121",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "phase processing",
+    "structural imaging"
+  ]
+}
