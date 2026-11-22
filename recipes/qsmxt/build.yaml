@@ -22,8 +22,8 @@ variables:
   openrecon_ismrmrd_version: "1.15.0"
   upstream_version: "12.2.0"
   qsmxt_source_sha256: "a79c00ef114fa72204f37b94bc3a40703cc6f388b925033eec90181fc9b449b0"
-  qsm_core_commit: "df6e736c1a4c6ac9bc6b2f050073abc2afa8fe3e"
-  native_build_script_sha256: ae336e8e178ac38f893fb2a75d42f04ff3de788a161ca9b1d0fc1426d8c1f965
+  qsm_core_commit: "dff62e20144fb9c79a31b88ae7b1617010b49282"
+  native_build_script_sha256: dfe543ccff870a5bdf8b71ae269d8e40d57791bfef10832fa053bb903f712eed
   rust_version: "1.100.0"
   rust_x86_64_sha256: "98ee6bec240e1cfe944f17e7092412dc5ef6e008484bb668c6936d35a7d15acd"
   qsmxt_x86_64_sha256: "aa8b4789503e077cac02463d340ee28bc821340431ff7e845a3a9e21cbab9b56"
