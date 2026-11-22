@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "romeo 4.9.2": {
+      "version": "20261122",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "phase processing"
+  ]
+}
