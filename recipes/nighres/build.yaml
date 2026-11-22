@@ -48,7 +48,7 @@ build:
         - tar -zx -C /opt --transform=s/jdk-20.0.1/jdk-temurin-20.0.1/ -f {{ get_file(context.jdk_archive) }}
 
     - environment:
-        JAVAHOME: /opt/jdk-temurin-20.0.1
+        JAVA_HOME: /opt/jdk-temurin-20.0.1
         JCC_JDK: /opt/jdk-temurin-20.0.1
         PATH: $PATH:/opt/jdk-temurin-20.0.1/bin
 
