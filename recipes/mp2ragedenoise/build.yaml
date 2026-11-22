@@ -26,7 +26,7 @@ variables:
   openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
   openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
   openrecon_ismrmrd_version: "1.15.0"
-  base_image_digest: "sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde"
+  base_image_digest: "sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6"
 auto_update:
   container_version: false
   method: sources
