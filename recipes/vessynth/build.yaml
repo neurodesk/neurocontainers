@@ -168,6 +168,7 @@ deploy:
     - openrecon-vessynth
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - image segmentation
   - machine learning

@@ -34,8 +34,16 @@ success older than 60 days. It flags inventory growth beyond the theoretical
 60-day batch capacity. That is an alert, not a promise that failing recipes can
 be made successful. A failed runner setup also records an unsuccessful attempt.
 
-Each observation records the commit, recipe and Dockerfile hashes, staged input
-hashes, built image ID, time, machine and result. CI retains observations and
+Each observation records the commit, canonical build-input hash
+(`build_inputs_sha256`), raw recipe (`recipe_sha256`) and Dockerfile hashes,
+staged input hashes, built image ID, time, machine and result. Change detection
+and coverage freshness compare `build_inputs_sha256`, which strips non-image
+recipe fields (`domains`, `icon`, `auto_update`, `copyright`, `draft`, passive
+documentation fields, and literal `categories`) using `builder/release_plan.py`
+so catalog- or metadata-only edits do not reschedule already-validated
+containers. Legacy state entries without `build_inputs_sha256` fall back to
+`recipe_sha256` and are backfilled automatically during `merge` when their
+recorded `recipe_sha256` matches the current recipe. CI retains observations and
 failure diagnostics for 90 days and restores state from prior completed runs.
 If retained state is unavailable, it warns and restarts coverage. Operators
 should archive the state artifact for longer retention. The jobs do not start on

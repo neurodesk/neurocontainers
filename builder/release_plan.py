@@ -116,6 +116,23 @@ def _passive_documentation(value: object) -> bool:
     return True
 
 
+def non_image_fields(recipe: Mapping[str, object]) -> set[str]:
+    """Return top-level fields in *recipe* that do not affect the built image."""
+    fields = set(ENABLED_SOURCE_ONLY_FIELDS | ENABLED_CATALOG_FIELDS)
+    for field in DOCUMENTATION_FIELDS:
+        if _passive_documentation(recipe.get(field)):
+            fields.add(field)
+    if literal_categories(recipe) is not None:
+        fields.add("categories")
+    return fields
+
+
+def build_input_recipe(recipe: Mapping[str, object]) -> dict[str, object]:
+    """Project a recipe to top-level fields that can affect the built image."""
+    ignored = non_image_fields(recipe)
+    return {key: value for key, value in recipe.items() if key not in ignored}
+
+
 @dataclass(frozen=True)
 class RecipeDecision:
     recipe: str
@@ -273,16 +290,7 @@ def plan_recipe_changes(
                 candidate_reasons.append("new-recipe")
             else:
                 changed_fields = _changed_top_level_fields(base, head)
-                non_image_fields = set(
-                    ENABLED_SOURCE_ONLY_FIELDS | ENABLED_CATALOG_FIELDS
-                )
-                for field in DOCUMENTATION_FIELDS:
-                    if all(
-                        _passive_documentation(data.get(field)) for data in (base, head)
-                    ):
-                        non_image_fields.add(field)
-                if all(literal_categories(data) is not None for data in (base, head)):
-                    non_image_fields.add("categories")
+                ignored_fields = non_image_fields(base) & non_image_fields(head)
                 unknown = changed_fields - TOP_LEVEL_FIELD_TIERS.keys()
                 if unknown:
                     candidate_reasons.append("unclassified-field")
@@ -294,7 +302,7 @@ def plan_recipe_changes(
                     source_reasons.append("source-metadata-only")
                 elif changed_fields <= ENABLED_CATALOG_FIELDS:
                     source_reasons.append("catalog-only")
-                elif changed_fields <= non_image_fields:
+                elif changed_fields <= ignored_fields:
                     source_reasons.append("documentation-or-catalog-only")
                 else:
                     candidate_reasons.append("recipe-definition-changed")

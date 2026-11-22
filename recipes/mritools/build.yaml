@@ -1,12 +1,12 @@
 name: mritools
-version: 4.9.1
+version: "4.9.2"
 
 variables:
-  upstream_version: 4.9.1
-  mritools_x64_sha256: 178e67b4095a32bcb9de136c98f556aa8bef09188d979f206bc06dc79f477846
-  compilemri_source_sha256: 4110e00c35c3fb383a6ac1607fe390ba30e3970c6ad2ac85f90c4823b94e647c
-  julia_version: 1.10.12
-  julia_sha256: cc257b21967049642bfe17de1aff7dae17477eba4f423f98cb400c002080e5a2
+  upstream_version: "4.9.2"
+  mritools_x64_sha256: "8c6ac2eddc7d5ec28aa35a72e6f84e53a8161c5c3e49b26f6caebe7f3b2dfa49"
+  compilemri_source_sha256: "bd2da78ce7ca5432c2b39e99cee585dfec6d6528e73536b3616e5408a20274d1"
+  julia_version: "1.10.14"
+  julia_sha256: "7bdd277c5c4a6069a35f303b0944e374908ccc9ff4cfb5df1478a047120264a8"
 
 copyright:
   - license: MIT

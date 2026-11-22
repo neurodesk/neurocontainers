@@ -23,22 +23,23 @@ export CARGO_NET_GIT_FETCH_WITH_CLI=true
 test "$(rustc --version | cut -d' ' -f2)" = "$rust_version"
 cd "$build_root/source"
 
-# The release workflow sets these two package versions from its tag. Update only
-# their lock entries so --locked retains every upstream dependency and checksum.
+# The release workflow sets the workspace and package versions from its tag.
+# Update only the workspace crates' lock entries so --locked retains every
+# upstream dependency and checksum.
 python3 - "$upstream_version" <<'PY'
 from pathlib import Path
 import re
 import sys
 
 version = sys.argv[1]
-for name in ("Cargo.toml", "crates/qsmxt-engine/Cargo.toml"):
+for name, expected in (("Cargo.toml", 2), ("crates/qsmxt-engine/Cargo.toml", 1)):
     path = Path(name)
-    text, count = re.subn(r'^version = "0\.0\.0"', f'version = "{version}"', path.read_text(), count=1, flags=re.M)
-    assert count == 1, name
+    text, count = re.subn(r'^version = "0\.0\.0"', f'version = "{version}"', path.read_text(), flags=re.M)
+    assert count == expected, (name, count, expected)
     path.write_text(text)
 path = Path("Cargo.lock")
 text = path.read_text()
-for name in ("qsmxt", "qsmxt-engine"):
+for name in ("qsmxt", "qsmxt-engine", "qsmxt-io", "qsmxt-tui"):
     old = f'name = "{name}"\nversion = "0.0.0"'
     assert text.count(old) == 1, name
     text = text.replace(old, f'name = "{name}"\nversion = "{version}"')

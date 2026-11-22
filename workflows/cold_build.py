@@ -8,18 +8,55 @@ import json
 import platform
 import subprocess
 import sys
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
 
+from builder.release_plan import build_input_recipe
 from builder.variants import concrete_variant_specs
+
+
+def _canonical_json_default(value: object) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def build_inputs_sha256(recipe: Mapping[str, object]) -> str:
+    payload = json.dumps(
+        build_input_recipe(recipe),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_canonical_json_default,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def collect_current_hashes(root: Path) -> dict[str, dict[str, str]]:
+    hashes: dict[str, dict[str, str]] = {}
+    for path in sorted((root / "recipes").glob("*/build.yaml")):
+        raw = path.read_bytes()
+        recipe = yaml.safe_load(raw)
+        recipe_sha256 = hashlib.sha256(raw).hexdigest()
+        inputs_sha256 = build_inputs_sha256(recipe)
+        for spec in concrete_variant_specs(recipe):
+            hashes[spec["name"]] = {
+                "recipe_sha256": recipe_sha256,
+                "build_inputs_sha256": inputs_sha256,
+            }
+    return hashes
 
 
 def plan(root: Path, policy: dict, state: dict, today: date) -> dict:
     eligible, excluded = [], []
+    current_hashes: dict[str, dict[str, str]] = {}
     for path in sorted((root / "recipes").glob("*/build.yaml")):
-        recipe = yaml.safe_load(path.read_text())
+        raw = path.read_bytes()
+        recipe = yaml.safe_load(raw)
+        recipe_sha256 = hashlib.sha256(raw).hexdigest()
+        inputs_sha256 = build_inputs_sha256(recipe)
         base = str(recipe["build"]["base-image"]).split("@", 1)[0]
         support = policy["bases"].get(base)
         reason = None
@@ -30,6 +67,10 @@ def plan(root: Path, policy: dict, state: dict, today: date) -> dict:
         elif not (path.parent / "fulltest.yaml").is_file():
             reason = "fulltest.yaml is missing"
         for spec in concrete_variant_specs(recipe):
+            current_hashes[spec["name"]] = {
+                "recipe_sha256": recipe_sha256,
+                "build_inputs_sha256": inputs_sha256,
+            }
             target = {
                 "recipe": path.parent.name,
                 "container": spec["name"],
@@ -37,7 +78,8 @@ def plan(root: Path, policy: dict, state: dict, today: date) -> dict:
                 "architecture": spec["architecture"],
                 "version": str(recipe["version"]),
                 "base": base,
-                "recipe_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "recipe_sha256": recipe_sha256,
+                "build_inputs_sha256": inputs_sha256,
             }
             if reason:
                 excluded.append({**target, "reason": reason})
@@ -48,10 +90,23 @@ def plan(root: Path, policy: dict, state: dict, today: date) -> dict:
         prior = state.get(target["container"], {})
         attempt = date.fromisoformat(prior.get("attempted_at", "1970-01-01")[:10])
         success = date.fromisoformat(prior.get("succeeded_at", "1970-01-01")[:10])
-        changed = prior.get("recipe_sha256") != target["recipe_sha256"]
+        if prior.get("build_inputs_sha256") is not None:
+            changed = prior["build_inputs_sha256"] != target["build_inputs_sha256"]
+        else:
+            changed = prior.get("recipe_sha256") != target["recipe_sha256"]
+        if prior.get("succeeded_build_inputs_sha256") is not None:
+            succeeded_matches = (
+                prior["succeeded_build_inputs_sha256"] == target["build_inputs_sha256"]
+            )
+        elif prior.get("succeeded_recipe_sha256") is not None:
+            succeeded_matches = (
+                prior["succeeded_recipe_sha256"] == target["recipe_sha256"]
+            )
+        else:
+            succeeded_matches = False
         if (
             changed
-            or prior.get("succeeded_recipe_sha256") != target["recipe_sha256"]
+            or not succeeded_matches
             or today - success >= timedelta(days=policy["coverage_days"])
         ):
             overdue.append(target["container"])
@@ -72,6 +127,7 @@ def plan(root: Path, policy: dict, state: dict, today: date) -> dict:
         "excluded": excluded,
         "capacity_warning": len(eligible)
         > policy["batch_size"] * policy["coverage_days"],
+        "current_hashes": current_hashes,
     }
 
 
@@ -197,6 +253,8 @@ def execute(root: Path, target: dict, output: Path) -> dict:
         )
         observation["status"] = "passed"
         observation["succeeded_recipe_sha256"] = target["recipe_sha256"]
+        if "build_inputs_sha256" in target:
+            observation["succeeded_build_inputs_sha256"] = target["build_inputs_sha256"]
         observation["succeeded_at"] = datetime.now(timezone.utc).isoformat()
     except (OSError, ValueError, StopIteration, subprocess.CalledProcessError) as exc:
         observation["error"] = str(exc)
@@ -204,11 +262,34 @@ def execute(root: Path, target: dict, output: Path) -> dict:
     return observation
 
 
-def merge(state: dict, observations: list[dict]) -> dict:
-    merged = dict(state)
+def merge(
+    state: dict,
+    observations: list[dict],
+    current_hashes: Mapping[str, Mapping[str, str]] | None = None,
+) -> dict:
+    merged = {container: dict(entry) for container, entry in state.items()}
     for observation in observations:
         prior = merged.get(observation["container"], {})
         merged[observation["container"]] = {**prior, **observation}
+    if current_hashes:
+        for container, entry in merged.items():
+            hashes = current_hashes.get(container)
+            if not hashes:
+                continue
+            recipe_hash = hashes.get("recipe_sha256")
+            inputs_hash = hashes.get("build_inputs_sha256")
+            if not recipe_hash or not inputs_hash:
+                continue
+            if (
+                entry.get("build_inputs_sha256") is None
+                and entry.get("recipe_sha256") == recipe_hash
+            ):
+                entry["build_inputs_sha256"] = inputs_hash
+            if (
+                entry.get("succeeded_build_inputs_sha256") is None
+                and entry.get("succeeded_recipe_sha256") == recipe_hash
+            ):
+                entry["succeeded_build_inputs_sha256"] = inputs_hash
     return merged
 
 
@@ -238,12 +319,18 @@ def main() -> None:
         result = plan(args.root, json.loads(args.policy.read_text()), state, args.today)
         print(json.dumps(result["targets"]))
     else:
-        observations = [
-            json.loads(path.read_text())
-            for path in args.observations.rglob("observation.json")
-        ]
+        observations = (
+            [
+                json.loads(path.read_text())
+                for path in args.observations.rglob("observation.json")
+            ]
+            if args.observations
+            else []
+        )
+        current_hashes = None
         if args.plan:
             planned = json.loads(args.plan.read_text())
+            current_hashes = planned.get("current_hashes")
             observed = {row["container"] for row in observations}
             observations.extend(
                 {
@@ -255,7 +342,9 @@ def main() -> None:
                 for target in planned["targets"]
                 if target["container"] not in observed
             )
-        result = merge(state, observations)
+        if current_hashes is None and (args.root / "recipes").is_dir():
+            current_hashes = collect_current_hashes(args.root)
+        result = merge(state, observations, current_hashes=current_hashes)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n")
 

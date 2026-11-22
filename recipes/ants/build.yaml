@@ -71,6 +71,7 @@ readme: |
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - "image registration"
   - "structural imaging"

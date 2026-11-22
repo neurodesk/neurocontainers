@@ -81,6 +81,7 @@ tests:
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - quality control
   - image segmentation
