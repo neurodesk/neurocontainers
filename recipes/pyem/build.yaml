@@ -90,7 +90,7 @@ deploy:
   path:
     - /opt/pyem-bin
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
 readme: |

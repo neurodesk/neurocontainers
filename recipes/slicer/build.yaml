@@ -172,6 +172,7 @@ deploy:
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - visualization
   - image segmentation

@@ -87,7 +87,7 @@ files:
     url: "https://github.com/conda-forge/miniforge/releases/download/26.9.4-1/Miniforge3-Linux-x86_64.sh"
     sha256: "571b410272cc434f28bc6c5c49ca8ffd4a4d1bcba9f57f1b6baccdb46446cfcc"
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
   - workflows
