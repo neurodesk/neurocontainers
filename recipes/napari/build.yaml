@@ -188,6 +188,7 @@ gui_apps:
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - visualization
   - image segmentation

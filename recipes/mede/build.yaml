@@ -132,6 +132,7 @@ files:
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - data organisation
 

@@ -152,6 +152,7 @@ deploy:
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - statistics
   - programming

@@ -78,7 +78,7 @@ gui_apps:
   - name: e2displayGUI
     exec: e2display.py
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
 readme: |

@@ -78,7 +78,7 @@ readme: |
   ----------------------------------
 
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
   - machine learning

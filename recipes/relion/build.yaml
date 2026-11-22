@@ -222,7 +222,7 @@ deploy:
     - /opt/relion-{{ context.version }}/bin/
 
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
 

@@ -152,7 +152,7 @@ deploy:
   path:
     - /opt/xmipp/bin
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
 readme: |

@@ -65,7 +65,7 @@ deploy:
     - cryosparcm
     - cryosparcw
 domains:
-  - neuroimaging
+  - microscopy
 categories:
   - cryo EM
 readme: |

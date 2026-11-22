@@ -42,6 +42,7 @@ gui_apps:
     exec: "itksnap"
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - visualization
 readme: |-
