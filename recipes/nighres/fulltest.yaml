@@ -21,7 +21,7 @@
 # neuroimaging. GigaScience, 7(7). https://doi.org/10.1093/gigascience/giy082
 
 name: nighres
-version: 1.5.2
+version: 1.5.3
 
 required_files:
   - dataset: ds000001
