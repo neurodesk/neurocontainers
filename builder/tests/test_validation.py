@@ -887,3 +887,23 @@ def test_flatten_base_image_requires_boolean(value):
     else:
         with pytest.raises((TypeError, ValueError)):
             validate_recipe_dict(recipe)
+
+
+@pytest.mark.parametrize("category", ["preclinical imaging", "molecular imaging"])
+def test_pet_and_preclinical_categories_are_accepted(category):
+    recipe = {
+        "name": "demo-pet",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": [category],
+        "domains": ["neuroimaging"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+    }
+    validated = validate_recipe_dict(recipe)
+    assert validated.categories == [category]
