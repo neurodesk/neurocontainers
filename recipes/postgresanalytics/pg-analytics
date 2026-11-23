@@ -21,8 +21,8 @@ Manage a user-space PostgreSQL ${PG_MAJOR} analytics cluster (safe for read-only
 Apptainer/Lmod containers and non-root sessions such as scidesktop/aidesktop).
 
 Commands:
-  init                       Initialize cluster in PGANALYTICS_DATA with analytics config
-  start                      Start PostgreSQL server
+  init                       Initialize cluster in PGANALYTICS_DATA
+  start [--foreground]       Start PostgreSQL; keep Apptainer open in foreground mode
   stop                       Stop PostgreSQL server cleanly
   status                     Show server status and connection parameters
   psql [psql-args...]        Open psql connected to this cluster
@@ -48,13 +48,15 @@ require_non_root() {
 }
 
 ensure_run_dir() {
-  mkdir -p "$PGANALYTICS_RUN"
-  chmod 700 "$PGANALYTICS_RUN"
+  mkdir -p -m 700 -- "$PGANALYTICS_RUN"
+  if [[ ! -O "$PGANALYTICS_RUN" || -L "$PGANALYTICS_RUN" || $(stat -c %a -- "$PGANALYTICS_RUN") != 700 ]]; then
+    echo "Error: The socket directory must be owned by you and have mode 0700 (${PGANALYTICS_RUN})." >&2
+    return 1
+  fi
 }
 
 cmd_init() {
   require_non_root
-  ensure_run_dir
 
   if [ -f "${PGANALYTICS_DATA}/PG_VERSION" ]; then
     echo "Cluster already initialized at ${PGANALYTICS_DATA} (PostgreSQL $(cat "${PGANALYTICS_DATA}/PG_VERSION"))."
@@ -66,34 +68,18 @@ cmd_init() {
 
   initdb \
     -D "$PGANALYTICS_DATA" \
-    --auth=trust \
+    --auth-local=peer \
+    --auth-host=scram-sha-256 \
     --encoding=UTF8 \
     --locale=C.UTF-8
-
-  mkdir -p "${PGANALYTICS_DATA}/conf.d"
-  cat > "${PGANALYTICS_DATA}/conf.d/pg-analytics.conf" <<CONF
-# Managed by pg-analytics
-listen_addresses = '${PGANALYTICS_HOST}'
-port = ${PGANALYTICS_PORT}
-unix_socket_directories = '${PGANALYTICS_RUN}'
-shared_preload_libraries = '${PGANALYTICS_PRELOAD}'
-timescaledb.telemetry_level = off
-logging_collector = off
-CONF
-
-  if ! grep -Fq "include_dir = 'conf.d'" "${PGANALYTICS_DATA}/postgresql.conf"; then
-    printf "\ninclude_dir = 'conf.d'\n" >> "${PGANALYTICS_DATA}/postgresql.conf"
-  fi
 
   cat <<EOF
 Initialized PostgreSQL ${PG_MAJOR} analytics cluster:
   Data dir:   ${PGANALYTICS_DATA}
-  Socket dir: ${PGANALYTICS_RUN}
-  Listen:     ${PGANALYTICS_HOST}:${PGANALYTICS_PORT}
-  Preload:    ${PGANALYTICS_PRELOAD}
 
 Next steps:
-  pg-analytics start
+  pg-analytics start --foreground &   # Keep the Apptainer session open
+  pg-analytics status                 # Wait for accepting connections
   pg-analytics enable-extensions
   pg-analytics psql
 EOF
@@ -101,6 +87,10 @@ EOF
 
 cmd_start() {
   require_non_root
+  if [[ $# -gt 1 || ( $# -eq 1 && $1 != --foreground ) ]]; then
+    echo "Usage: pg-analytics start [--foreground]" >&2
+    return 2
+  fi
   if [ ! -f "${PGANALYTICS_DATA}/PG_VERSION" ]; then
     echo "Error: No cluster found at ${PGANALYTICS_DATA}. Run 'pg-analytics init' first." >&2
     exit 1
@@ -113,11 +103,26 @@ cmd_start() {
     return 0
   fi
 
-  pg_ctl \
-    -D "$PGANALYTICS_DATA" \
-    -l "$PGANALYTICS_LOG" \
-    -o "-h ${PGANALYTICS_HOST} -p ${PGANALYTICS_PORT} -k ${PGANALYTICS_RUN}" \
-    -w start
+  local -a options=(
+    -h "$PGANALYTICS_HOST"
+    -p "$PGANALYTICS_PORT"
+    -k "$PGANALYTICS_RUN"
+    -c "shared_preload_libraries=$PGANALYTICS_PRELOAD"
+    -c timescaledb.telemetry_level=off
+  )
+  umask 077
+  if [[ $# -eq 1 ]]; then
+    echo "Starting PostgreSQL at ${PGANALYTICS_HOST}:${PGANALYTICS_PORT} (log: ${PGANALYTICS_LOG})."
+    exec postgres -D "$PGANALYTICS_DATA" "${options[@]}" >>"$PGANALYTICS_LOG" 2>&1
+  fi
+
+  local postgres_options
+  # pg_ctl passes -o through /bin/sh. Quote each argument for that shell.
+  printf -v postgres_options "'%s' " "${options[@]//\'/\'\\\'\'}"
+  if ! PGDATA="$PGANALYTICS_DATA" pg_ctl -o "$postgres_options" -w start >>"$PGANALYTICS_LOG" 2>&1; then
+    echo "Error: PostgreSQL did not start. See ${PGANALYTICS_LOG}." >&2
+    return 1
+  fi
 
   echo "PostgreSQL analytics server listening on ${PGANALYTICS_HOST}:${PGANALYTICS_PORT} (socket: ${PGANALYTICS_RUN})."
 }
@@ -156,7 +161,7 @@ cmd_psql() {
 
 cmd_enable_extensions() {
   local target_db="${1:-$PGANALYTICS_DB}"
-  psql -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT" -d "$target_db" -v ON_ERROR_STOP=1 <<'SQL'
+  psql -X -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT" -d "$target_db" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_topology;
 CREATE EXTENSION IF NOT EXISTS postgis_raster;

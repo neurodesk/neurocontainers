@@ -24,6 +24,7 @@ tests:
       for bin in pg-analytics psql initdb pg_ctl postgres pg_dump pg_restore pg_isready shp2pgsql raster2pgsql; do
         command -v "$bin"
       done
+      test -s /usr/share/doc/pgedge-vectorizer/copyright
       psql --version
       pg-analytics --help
     expected_output_contains:
@@ -60,16 +61,17 @@ tests:
     expected_output_contains: "All tracked package versions match"
 
   - name: End-to-end PostgreSQL analytics lifecycle and extensions SQL checks
-    description: Initialize and start PostgreSQL as a non-root user on port 5435, enable all extensions, run functional SQL checks, and stop cleanly
+    description: Verify non-root startup, socket and TCP authentication, and analytics SQL on port 5435
     command: |
       set -euo pipefail
       WORK=$(mktemp -d /tmp/pg-analytics-test.XXXXXX)
+      trap 'rm -rf "$WORK"' EXIT
       cat > "${WORK}/run_pg_test.sh" <<'INNER'
       #!/usr/bin/env bash
       set -euo pipefail
       WORK="$1"
       export PGANALYTICS_DATA="${WORK}/pgdata"
-      export PGANALYTICS_RUN="${WORK}/run"
+      export PGANALYTICS_RUN="${WORK}/socket dir"
       export PGANALYTICS_HOST="127.0.0.1"
       export PGANALYTICS_PORT="5435"
       export PGANALYTICS_DB="postgres"
@@ -80,8 +82,24 @@ tests:
       trap cleanup EXIT
 
       pg-analytics init
-      pg-analytics start
+      PGANALYTICS_PRELOAD=pg_stat_statements pg-analytics start
+      test "$(pg-analytics psql -XAtc 'SHOW shared_preload_libraries')" = pg_stat_statements
+      pg-analytics stop
+
+      pg-analytics start --foreground &
+      server_pid=$!
+      for attempt in {1..30}; do
+        if pg_isready -q -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT"; then
+          break
+        fi
+        sleep 1
+      done
       pg-analytics status
+      if output=$(PGPASSWORD='' PGPASSFILE=/dev/null psql -Xw -h "$PGANALYTICS_HOST" -p "$PGANALYTICS_PORT" -d "$PGANALYTICS_DB" -c 'SELECT 1' 2>&1); then
+        echo 'TCP accepted a connection without a password' >&2
+        exit 1
+      fi
+      printf '%s\n' "$output" | grep -F 'no password supplied'
       pg-analytics enable-extensions
 
       pg-analytics psql -v ON_ERROR_STOP=1 -At <<'SQL'
@@ -108,6 +126,7 @@ tests:
       SELECT 'PGVECTOR_COS=' || round(('[1,0,0]'::vector <=> '[0,1,0]'::vector)::numeric, 2);
 
       -- 5. pgEdge Vectorizer C chunking function & schema check
+      SELECT 'VECTORIZER_VERSION=v' || extversion FROM pg_extension WHERE extname = 'pgedge_vectorizer';
       SELECT 'VECTORIZER_CHUNKS=' || array_length(
         pgedge_vectorizer.chunk_text(
           'PostgreSQL analytics in NeuroDesk supports geospatial, vector, and time series workloads.',
@@ -139,30 +158,28 @@ tests:
       SQL
 
       pg-analytics stop
+      wait "$server_pid"
       echo "PG_ANALYTICS_FULLTEST_OK"
       INNER
-      chmod 0755 "${WORK}/run_pg_test.sh"
-
-      cleanup_work() {
-        rm -rf "${WORK}"
-      }
-      trap cleanup_work EXIT
 
       if [ "$(id -u)" -eq 0 ]; then
         chown -R postgres:postgres "${WORK}"
-        su -s /bin/bash postgres -c "${WORK}/run_pg_test.sh '${WORK}'"
+        runuser -u postgres -- bash "${WORK}/run_pg_test.sh" "$WORK"
       else
-        "${WORK}/run_pg_test.sh" "${WORK}"
+        bash "${WORK}/run_pg_test.sh" "$WORK"
       fi
     expected_output_contains:
+      - "PRELOAD=pg_stat_statements,timescaledb,pgedge_vectorizer"
       - "EXT_COUNT=20"
       - "POSTGIS_DIST=5"
       - "POSTGIS_RASTER=10"
       - "PGVECTOR_L2=5.00"
       - "PGVECTOR_COS=1.00"
-      - "VECTORIZER_CHUNKS="
+      - "VECTORIZER_VERSION=${pgedge_vectorizer_tag}"
+      - "VECTORIZER_CHUNKS=8"
       - "PLPROXY_LANG=plproxy"
       - "TIMESCALE_AVG=15"
       - "HLL_CARD=3"
+      - "TDIGEST_P50=50.5"
       - "HYPOPG_OK=true"
       - "PG_ANALYTICS_FULLTEST_OK"

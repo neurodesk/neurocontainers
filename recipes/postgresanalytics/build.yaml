@@ -4,6 +4,8 @@ version: "18.7.0"
 copyright:
   - license: PostgreSQL
     url: https://www.postgresql.org/about/licence/
+  - license: PostgreSQL
+    url: "https://github.com/pgEdge/pgedge-vectorizer/blob/{{ context.pgedge_vectorizer_tag }}/docs/LICENCE.md"
   - license: GPL-2.0-or-later
     url: https://github.com/postgis/postgis/blob/master/COPYING
   - license: ISC
@@ -184,7 +186,6 @@ auto_update:
     - id: hll-amd64
       method: apt
       package: postgresql-18-hll
-      dependency: true
       urls:
         - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
       target:
@@ -192,7 +193,6 @@ auto_update:
     - id: hll-arm64
       method: apt
       package: postgresql-18-hll
-      dependency: true
       urls:
         - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
       target:
@@ -200,7 +200,6 @@ auto_update:
     - id: tdigest-amd64
       method: apt
       package: postgresql-18-tdigest
-      dependency: true
       urls:
         - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
       target:
@@ -208,7 +207,6 @@ auto_update:
     - id: tdigest-arm64
       method: apt
       package: postgresql-18-tdigest
-      dependency: true
       urls:
         - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
       target:
@@ -216,7 +214,6 @@ auto_update:
     - id: hypopg-amd64
       method: apt
       package: postgresql-18-hypopg
-      dependency: true
       urls:
         - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
       target:
@@ -224,7 +221,6 @@ auto_update:
     - id: hypopg-arm64
       method: apt
       package: postgresql-18-hypopg
-      dependency: true
       urls:
         - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
       target:
@@ -252,8 +248,8 @@ build:
         - locale-gen en_US.UTF-8 C.UTF-8
         - mkdir -p /etc/postgresql-common
         - echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.conf
-        - install -m 0644 {{ get_file("pgdg_key") }} /etc/apt/trusted.gpg.d/pgdg.asc
-        - echo "deb https://apt.postgresql.org/pub/repos/apt noble-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+        - install -D -m 0644 {{ get_file("pgdg_key") }} /etc/apt/keyrings/pgdg.asc
+        - echo "deb [signed-by=/etc/apt/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 
     - install:
         - "postgresql-{{ context.pg_major }}={{ context.postgres_version }}"
@@ -275,6 +271,7 @@ build:
         - tar -xzf {{ get_file("pgedge_vectorizer_tar") }} --strip-components=1 -C /tmp/pgedge-vectorizer
         - make -C /tmp/pgedge-vectorizer PG_CONFIG=/usr/lib/postgresql/{{ context.pg_major }}/bin/pg_config
         - make -C /tmp/pgedge-vectorizer PG_CONFIG=/usr/lib/postgresql/{{ context.pg_major }}/bin/pg_config install
+        - install -D -m 0644 /tmp/pgedge-vectorizer/docs/LICENCE.md /usr/share/doc/pgedge-vectorizer/copyright
         - rm -rf /tmp/pgedge-vectorizer
         - apt-get purge -y --auto-remove build-essential libcurl4-openssl-dev "postgresql-server-dev-{{ context.pg_major }}"
         - rm -rf /var/lib/apt/lists/*
@@ -345,14 +342,21 @@ readme: |
   ```bash
   ml postgresanalytics/{{ context.version }}
   pg-analytics init
-  pg-analytics start
+  pg-analytics start --foreground &
+  pg-analytics status  # Wait for accepting connections before continuing.
   pg-analytics enable-extensions
   pg-analytics psql
   # When finished:
   pg-analytics stop
   ```
 
-  Override defaults via `PGANALYTICS_DATA` (default `$HOME/pg-analytics`), `PGANALYTICS_RUN` (default `/tmp/pg-analytics-$(id -u)`), `PGANALYTICS_HOST` (default `127.0.0.1`), and `PGANALYTICS_PORT` (default `5433`).
+  Foreground mode keeps the Apptainer session and its mounted image alive for PostgreSQL. In Docker or an interactive Apptainer shell, you can use `pg-analytics start` to run PostgreSQL in the background.
+
+  The private Unix socket uses peer authentication. To connect over TCP, set a role password using `\password` in `pg-analytics psql`. PostgreSQL requires SCRAM authentication for TCP clients on the loopback interface.
+
+  The database lives in `$HOME/pg-analytics` on your mounted home by default. Set `PGANALYTICS_DATA` to another writable location for a different cluster. Use `PGANALYTICS_RUN` for a private socket directory, `PGANALYTICS_HOST` and `PGANALYTICS_PORT` for the listener, `PGANALYTICS_DB` for the default database, `PGANALYTICS_LOG` for the log, and `PGANALYTICS_PRELOAD` for the libraries loaded at startup.
+
+  When using `ml`, prefix these variables with `APPTAINERENV_` to pass them to the container. For example, `export APPTAINERENV_PGANALYTICS_PORT=5435` changes the port for subsequent `pg-analytics` commands. Use `SINGULARITYENV_` with SingularityCE.
 
   More documentation: https://www.postgresql.org/docs/18/
   ----------------------------------
