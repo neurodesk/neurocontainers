@@ -12,7 +12,7 @@ tests:
     command: grep -oE "<version>[^<]+</version>" /opt/Icy/version.xml
     expected_output_contains: "${version}"
 
-  - name: icy headless help runs
-    description: Verify Icy JVM boots cleanly in headless mode and prints CLI help.
-    command: icy -hl -h
-    expected_output_contains: "headless"
+  - name: icy headless startup runs
+    description: Verify Icy JVM boots cleanly in headless mode and reports its version.
+    command: icy -hl
+    expected_output_contains: "Icy Version ${version} started"

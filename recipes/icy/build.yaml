@@ -18,7 +18,7 @@ structured_readme:
     icy
 
     # Run Icy in headless mode
-    icy -hl -h
+    icy -hl
   documentation: https://icy.bioimageanalysis.org/
   citation: |-
     de Chaumont, F., Dallongeville, S., Chenouard, N., Hervé, N., Pop, S.,
@@ -57,7 +57,8 @@ files:
       mkdir -p "${icy_home}"
       export JAVA_TOOL_OPTIONS="-Djava.util.prefs.userRoot=${icy_home}/java-prefs ${JAVA_TOOL_OPTIONS:-}"
       export LD_LIBRARY_PATH="/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk:${LD_LIBRARY_PATH:-}"
-      exec java -Djava.library.path=/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk         -jar /opt/Icy/icy.jar --noupdate --nosplash "$@"
+      exec java -Djava.library.path=/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk \
+        -jar /opt/Icy/icy.jar --nosplash "$@"
 
 build:
   kind: neurodocker
