@@ -1,0 +1,87 @@
+name: pymol
+version: 3.1.0
+
+copyright:
+  - license: other-open
+    name: PyMOL Open-Source License (Schrodinger, Inc.)
+    url: https://github.com/schrodinger/pymol-open-source/blob/master/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+structured_readme:
+  description: >-
+    Open-Source PyMOL is a molecular and volumetric 3D visualization system
+    widely used for structural biology, cryo-EM density maps (MRC/CCP4),
+    protein structures (PDB/mmCIF), and publication-quality ray-traced figures.
+  example: |
+    # Launch the PyMOL GUI
+    pymol
+
+    # Run PyMOL headlessly to inspect a structure or render a script
+    pymol -c -q -d "print(cmd.get_version()); quit"
+  documentation: https://pymolwiki.org/
+  citation: |-
+    The PyMOL Molecular Graphics System, Version 3.1.0, Open-Source build,
+    Schrödinger, LLC. https://github.com/schrodinger/pymol-open-source
+
+auto_update:
+  method: webpage
+  url: https://api.anaconda.org/package/conda-forge/pymol-open-source
+  version_regex: '"latest_version"\s*:\s*"(?P<version>[0-9]+\.[0-9]+\.[0-9]+)"'
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - fontconfig
+        - libegl1
+        - libgl1
+        - libglib2.0-0
+        - libglu1-mesa
+        - libglx-mesa0
+        - libx11-6
+        - libxkbcommon-x11-0
+        - libxrender1
+        - libxcb-cursor0
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-shape0
+        - libxcb-xinerama0
+        - libxcb-xkb1
+    - template:
+        name: miniconda
+        version: py312_25.5.1-0
+        install_path: /opt/miniconda
+        env_name: pymol
+        env_exists: "false"
+        conda_install: python=3.11 pymol-open-source=={{ context.version }} pyqt
+    - environment:
+        PATH: /opt/miniconda/envs/pymol/bin:/opt/miniconda/bin:$PATH
+
+deploy:
+  path: []
+  bins:
+    - pymol
+
+gui_apps:
+  - name: "PyMOL"
+    exec: "pymol"
+
+domains:
+  - microscopy
+
+categories:
+  - visualization
+  - molecular biology
+  - cryo EM
+
+icon: data:image/png;base64,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

@@ -1,0 +1,28 @@
+name: pymol
+version: 3.1.0
+
+tests:
+  - name: pymol CLI available
+    description: Verify the pymol executable is installed on PATH.
+    command: command -v pymol
+    expected_output_contains: "pymol"
+
+  - name: pymol headless version check
+    description: Verify PyMOL boots headlessly and reports the packaged version.
+    command: pymol -c -q -d "print(cmd.get_version()[0])"
+    expected_output_contains: "${version}"
+
+  - name: pymol Python API builds and measures a synthetic molecule
+    description: Exercise pymol.cmd in headless batch mode without external files.
+    command: |
+      /opt/miniconda/envs/pymol/bin/python - <<PY
+      import pymol
+      from pymol import cmd
+      pymol.finish_launching(["pymol", "-c", "-q"])
+      cmd.pseudoatom("p1", pos=[0, 0, 0])
+      cmd.pseudoatom("p2", pos=[3, 4, 0])
+      dist = cmd.get_distance("p1", "p2")
+      assert abs(dist - 5.0) < 1e-4, f"unexpected distance: {dist}"
+      print(f"PYMOL_DIST_OK={dist:.1f}")
+      PY
+    expected_output_contains: "PYMOL_DIST_OK=5.0"
