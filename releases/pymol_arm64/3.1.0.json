@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "pymol_arm64 3.1.0": {
+      "version": "20261123",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "PyMOL-pymol_arm64 3.1.0": {
+      "version": "20261123",
+      "exec": "pymol",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "molecular biology",
+    "cryo EM"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "pymol"
+}

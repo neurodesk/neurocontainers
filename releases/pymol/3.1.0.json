@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "pymol 3.1.0": {
+      "version": "20261123",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "PyMOL-pymol 3.1.0": {
+      "version": "20261123",
+      "exec": "pymol",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "molecular biology",
+    "cryo EM"
+  ]
+}
