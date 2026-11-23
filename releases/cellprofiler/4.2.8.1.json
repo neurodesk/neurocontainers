@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "cellprofiler 4.2.8.1": {
+      "version": "20261123",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "CellProfiler-cellprofiler 4.2.8.1": {
+      "version": "20261123",
+      "exec": "cellprofiler",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image segmentation",
+    "workflows"
+  ]
+}
