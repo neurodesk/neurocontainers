@@ -298,7 +298,8 @@ export NEUROCOMMAND_DIR="$NEUROCOMMAND_LOCAL_REPO"
 CATALOG_LOCAL_REPO="${APPS_CATALOG_LOCAL_REPO:-$HOME/scigetorg-apps-json}"
 CATALOG_URL="${APPS_CATALOG_GIT_URL:-https://github.com/scigetorg/apps-catalog.git}"
 CATALOG_BASE_URL="${APPS_CATALOG_BASE_URL:-https://apps-catalog.scigetorg.workers.dev}"
-CATALOG_DOMAINS="${APPS_CATALOG_DOMAINS:-neuroimaging}"
+# Leave unset to sync every domain listed in domains.json; set explicitly to restrict.
+CATALOG_DOMAINS="${APPS_CATALOG_DOMAINS:-}"
 
 cd "$NEUROCOMMAND_LOCAL_REPO" || exit
 
@@ -334,30 +335,12 @@ CATALOG_TEMP=$(mktemp)
 LOG_TEMP=$(mktemp)
 trap 'rm -f "$CATALOG_TEMP" "$LOG_TEMP"; cleanup_lockfile' EXIT
 
-python3 -c "
-import json, sys, urllib.request, pathlib
-base, domains_str, out = sys.argv[1], sys.argv[2], sys.argv[3]
-merged = {}
-for d in domains_str.split():
-    # Cloudflare rejects the default Python-urllib user agent (error 1010).
-    req = urllib.request.Request(f'{base}/{d}/apps.json',
-                                 headers={'User-Agent': 'neurodesk-cvmfs-sync'})
-    with urllib.request.urlopen(req) as r:
-        merged.update(json.load(r))
-pathlib.Path(out).write_text(json.dumps(merged))
-" "$CATALOG_BASE_URL" "$CATALOG_DOMAINS" "$CATALOG_TEMP" || {
-    echo "[ERROR] Failed to fetch catalog from Cloudflare."
-    exit 2
-}
-
-python3 -c "
-import json, sys, pathlib
-sys.path.insert(0, sys.argv[1])
-from cvmfs.generate_metadata import log_lines
-apps = json.loads(pathlib.Path(sys.argv[2]).read_text())
-pathlib.Path(sys.argv[3]).write_text(''.join(f'{l}\n' for l in log_lines(apps)))
-" "$SCRIPT_DIR/.." "$CATALOG_TEMP" "$LOG_TEMP" || {
-    echo "[ERROR] Failed to generate inventory from Cloudflare catalog."
+python3 "$SCRIPT_DIR/fetch_catalog.py" \
+    --base-url "$CATALOG_BASE_URL" \
+    --domains "$CATALOG_DOMAINS" \
+    --catalog-out "$CATALOG_TEMP" \
+    --log-out "$LOG_TEMP" || {
+    echo "[ERROR] Failed to fetch catalog and generate inventory from Cloudflare."
     exit 2
 }
 
