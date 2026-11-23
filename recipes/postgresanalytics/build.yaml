@@ -343,7 +343,8 @@ readme: |
   ml postgresanalytics/{{ context.version }}
   pg-analytics init
   pg-analytics start --foreground &
-  pg-analytics status  # Wait for accepting connections before continuing.
+  for _ in $(seq 1 30); do pg-analytics status >/dev/null 2>&1 && break; sleep 1; done
+  pg-analytics status
   pg-analytics enable-extensions
   pg-analytics psql
   # When finished:
@@ -352,9 +353,9 @@ readme: |
 
   Foreground mode keeps the Apptainer session and its mounted image alive for PostgreSQL. In Docker or an interactive Apptainer shell, you can use `pg-analytics start` to run PostgreSQL in the background.
 
-  The private Unix socket uses peer authentication. To connect over TCP, set a role password using `\password` in `pg-analytics psql`. PostgreSQL requires SCRAM authentication for TCP clients on the loopback interface.
+  The private Unix socket uses peer authentication (and enforces `requirepeer` on client connections). To connect over TCP, set a role password using `\password` in `pg-analytics psql`. PostgreSQL requires SCRAM authentication for TCP clients on the loopback interface.
 
-  The database lives in `$HOME/pg-analytics` on your mounted home by default. Set `PGANALYTICS_DATA` to another writable location for a different cluster. Use `PGANALYTICS_RUN` for a private socket directory, `PGANALYTICS_HOST` and `PGANALYTICS_PORT` for the listener, `PGANALYTICS_DB` for the default database, `PGANALYTICS_LOG` for the log, and `PGANALYTICS_PRELOAD` for the libraries loaded at startup.
+  The database lives in `$HOME/pg-analytics` on your mounted home by default, with an isolated per-cluster private socket directory under `/tmp`. Set `PGANALYTICS_DATA` to another writable location for a different cluster (and choose a distinct `PGANALYTICS_PORT` if running clusters concurrently). Use `PGANALYTICS_RUN` to override the private socket directory, `PGANALYTICS_HOST` and `PGANALYTICS_PORT` for the listener, `PGANALYTICS_DB` for the default database, `PGANALYTICS_LOG` for the log, and `PGANALYTICS_PRELOAD` for the libraries loaded at startup.
 
   When using `ml`, prefix these variables with `APPTAINERENV_` to pass them to the container. For example, `export APPTAINERENV_PGANALYTICS_PORT=5435` changes the port for subsequent `pg-analytics` commands. Use `SINGULARITYENV_` with SingularityCE.
 
