@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "icy 2.5.4.0": {
+      "version": "20261123",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "Icy-icy 2.5.4.0": {
+      "version": "20261123",
+      "exec": "icy",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image segmentation"
+  ]
+}
