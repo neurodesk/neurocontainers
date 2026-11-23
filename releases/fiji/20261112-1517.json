@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "fiji 20261112-1517": {
+      "version": "20261123",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "Fiji-fiji 20261112-1517": {
+      "version": "20261123",
+      "exec": "fiji",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image segmentation"
+  ]
+}
