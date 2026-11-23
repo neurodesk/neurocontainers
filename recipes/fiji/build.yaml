@@ -3,11 +3,11 @@ version: 20261112-1517
 
 copyright:
   - license: GPL-3.0-or-later
-    name: Fiji combined distribution (includes GPL-3.0-or-later plugins such as MTrack2 alongside GPL-2.0-or-later Fiji/ImageJ2 components; notices bundled in /opt/Fiji.app/licenses)
-    url: https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/
+    name: MTrack2 2.0.1 (bundled as MTrack2_-2.0.1.jar in Fiji {{ context.version }}) and combined GPLv3 distribution notices in /opt/Fiji.app/licenses
+    url: https://github.com/fiji/MTrack2/tree/MTrack2_-2.0.1
   - license: GPL-2.0-or-later
-    name: Fiji / ImageJ2 core components and Maven/SciJava corresponding source repositories
-    url: https://maven.scijava.org/
+    name: Fiji {{ context.version }} / ImageJ2 core components and Maven/SciJava corresponding source repositories
+    url: https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/
 
 architectures:
   - x86_64
@@ -46,11 +46,16 @@ files:
       This container redistributes the unmodified upstream Fiji stable archive:
         https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/fiji-stable-linux64-jdk.zip
 
-      The combined distribution includes components under GPL-3.0-or-later (such as
-      MTrack2, https://github.com/fiji/MTrack2) and GPL-2.0-or-later (Fiji/ImageJ2,
-      https://github.com/fiji/fiji), along with permissively licensed plugins and a
-      bundled OpenJDK runtime.
+      The combined distribution includes components under GPL-3.0-or-later and
+      GPL-2.0-or-later, along with permissively licensed plugins and a bundled
+      OpenJDK runtime:
 
+      - MTrack2_-2.0.1.jar (GPL-3.0-or-later) corresponding source revision:
+        https://github.com/fiji/MTrack2/tree/MTrack2_-2.0.1
+        https://github.com/fiji/MTrack2/archive/refs/tags/MTrack2_-2.0.1.tar.gz
+      - Fiji / ImageJ2 core source repositories and release archive:
+        https://github.com/fiji/fiji
+        https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/
       - Upstream license texts are bundled in /opt/Fiji.app/licenses/.
       - Exact release-pinned Maven POM metadata and SCM source coordinates for each
         bundled JAR are embedded under META-INF/maven/ inside /opt/Fiji.app/jars/
