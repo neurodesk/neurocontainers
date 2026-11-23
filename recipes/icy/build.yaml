@@ -1,0 +1,107 @@
+name: icy
+version: 2.5.4.0
+
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/icy-imaging/icy/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+structured_readme:
+  description: >-
+    Icy is an open-source bioimage informatics platform developed at Institut
+    Pasteur for 2D/3D microscopy visualization, Bio-Formats image loading,
+    ROI measurement, and reproducible visual Protocols workflows.
+  example: |
+    # Launch the Icy GUI
+    icy
+
+    # Run Icy in headless mode
+    icy -hl -h
+  documentation: https://icy.bioimageanalysis.org/
+  citation: |-
+    de Chaumont, F., Dallongeville, S., Chenouard, N., Hervé, N., Pop, S.,
+    Provoost, T., Meas-Yedid, V., Pankajakshan, P., Lecomte, T., Le Montagner,
+    Y., Lagache, T., Dufour, A., & Olivo-Marin, J.-C. (2012). Icy: an open
+    bioimage informatics platform for extended reproducible research. Nature
+    Methods, 9(7), 690-696. https://doi.org/10.1038/nmeth.2075
+
+auto_update:
+  container_version: false
+  method: sources
+  local: []
+  sources:
+    - id: icy-archive
+      method: http_digest
+      url: https://icy.bioimageanalysis.org/download-file/?id=101809
+      version_member: Icy/version.xml
+      version_regex: '<version>(?P<version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)</version>'
+      target:
+        variable: archive_sha256
+
+variables:
+  download_id: "101809"
+  archive_sha256: "0b61d58653bfd335579bd896e712eba930478cb13b423a1d5ac927f7869c0441"
+
+files:
+  - name: icy_archive
+    url: https://icy.bioimageanalysis.org/download-file/?id={{ context.download_id }}
+    sha256: "{{ context.archive_sha256 }}"
+  - name: icy-wrapper
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -euo pipefail
+      icy_home="${XDG_DATA_HOME:-${TMPDIR:-/tmp}/icy-$(id -u)}/icy"
+      mkdir -p "${icy_home}"
+      export JAVA_TOOL_OPTIONS="-Djava.util.prefs.userRoot=${icy_home}/java-prefs ${JAVA_TOOL_OPTIONS:-}"
+      export LD_LIBRARY_PATH="/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk:${LD_LIBRARY_PATH:-}"
+      exec java -Djava.library.path=/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk         -jar /opt/Icy/icy.jar --noupdate --nosplash "$@"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - ca-certificates
+        - fontconfig
+        - libfreetype6
+        - libgl1
+        - libglib2.0-0
+        - libglu1-mesa
+        - libgomp1
+        - libgtk-3-0
+        - libx11-6
+        - libxext6
+        - libxi6
+        - libxrandr2
+        - libxrender1
+        - libxtst6
+        - openjdk-17-jre
+    - workdir: /opt
+    - run:
+        - tar -xf {{ get_file("icy_archive") }} -C /opt
+        - chmod -R a+rX /opt/Icy
+        - install -m 755 {{ get_file("icy-wrapper") }} /usr/local/bin/icy
+
+deploy:
+  path: []
+  bins:
+    - icy
+
+gui_apps:
+  - name: "Icy"
+    exec: "icy"
+
+domains:
+  - microscopy
+
+categories:
+  - visualization
+  - image segmentation
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAStElEQVR42u1babBlVXX+1t77THe+b+x+PbxuugVpoEEGG5BJQS3LAUtDLE1M4lSJsUKRoEKJSkiKVEgFU4QklaJQA4ilIWqMkYCgNI02II0NMjbD6+kN/YY73zPvvVd+3Acxfwn9uoGsqlP3zz3nrPWdtdZe31p7A/8vR1ycNe+6+veAS+Qb0vp3XHnLVdfdfn/44ctuPv0NZ/xnvnnfxz/37R358wtd/uZdj3z3SOiwom43ev7VpdLWd9XD534WXnr7A+f4tdLt6+qef+aGMSoE/pvStWfd/dg9/zq7kjqJlXzZ8Re++VNb377lhxd+5bYzNrxp4tZ2L6ycMDlqiZnfvH7cPfeMzZevtAesGACTF19dq4xWL62O1LedfOqx98w2exvLLpnxWlEIEHwJDBf9iy+++rYLXpcArD99y6fdYvGYyeGyPemEDdXm3GJ+yqZxkoLgSEEAsGXdqP+hD5757zfu3nvLZd/Z8bbfvP/vv73jM1f9w08nX229aCWM3/yJG0Y3n7pp9+Tq4YmzTzsWTpbYcQeUJDlWDZfpxFqFXFeh0495d7NDUbUKJjaLC537Xnxu9h8rc6353/3gtp/sfHzfR37rwq13vuY8YHTD2OfGRupr3nryJug05/V1nzwIqsGh5nyHXVcBAMoFnypSsG13jOMquWnz6ovOPO+EH4wcv+au1cPl0vhQcdtrLgTWXnL9mpGh8mfPPGkDPN+lAudcK3lkYoPxWpkanRRL3YgBQAhC1XFQ9xX1W32b5RqSgJ7jlluxxuqRylmvAQD+d0W37rixS88766Sx4eEKok7fbl5VEv1ugpLrgK1FVizgp9MtTtIcADBSCOALQV6es9YWcZSyKgT85EIHtaJ30rs+df3QUQ3A+o+f/mcbP/O17w2990tr1p39hYkLzj7xk5PrRhDFKYZdcL1aoLiTcNF3SRsLFqCwGIjtexettRaVokciNxgrexR3Q5tlmj1P0f4khwGN/87FZ295NfVVr+bDqu+/aqNf9q7wSoVhnWVbTz5n076TT9k8YoyBDiO7abImwihjZUBSSiQ6gyGC7yjM5A49vG+RzzpmnGpKoe8qcvuRXYo1XNcXmbBYyEDHrR0/E8DPj0oPqI/W/kJ57nAWxnbNxPgxslq8aPuDT9ilhbadrPlcLQfUbUUoex4xGJm2bIUALCPwXXoqY+yZa/JEtURplGGs7Ipeo89KSTiOg71xBj9wzj4qQ2Dsw9dc6PrOR5VUtjo6jHPfdqINSj4v9mPxn/fusgdmFmGshY00As8FGMiMAeRABWZGUApoZzNGK0zY1xaB55DHlo1lSAI6IDQzfcrll99aPMoAuMStDFX/sr5qXPqVkjhh0wSvXl2nVBuy2nCrH4ub7n5MXH/rdh11E47TjHVukGgDVhIgAhGBAKhqibYf6kJpi34/sZvGyyKPYjsIWIkFS2uPP239sUcVAKs+dNJFlZH6mcqRcATZd55/Is03e0RCoN3sWSFJMDNi5SMuKs5KAi2R26Uwsqrd56zR4bjT5zhMWGc5okJAjzVjbsx37eTauqhIZmMtBAG6XHbajDOOpiQoKmPVy2rDFWp3evyOM4/n8bGaWHjwWc6TjKMoIcvMpx43ac8/d6vqd3umNlQgqRQZa3kLu8QAEq05zg3CfsYJgF5ucc+u5/P3VQMM+ZKeafZMqVoSXimg/TlOB3DTUUGHRz58zTm10eqfj64eoYIS5rcvPlN2ezEee3YajaUup1kutm5eZ99+3lZBRBRnBkWyXCy61FkMUXZdUkrAcx0qBy6tqhQpYKZdU7P8ZC9yHt+7yFpJBGBeW1QIm130w6iUOGtvm3ni/vSIh0Cp4l/mFwJFgvi4Y1ZzvVqkxUaXO52Y+72ItmycsO84b6sAiKy1cHxXzLZiZstgyxCCwMukRIDw6N45vmHnk/ahRlcI36WIoHbvmRULBxcxMzVn1tU88+kPbnvzV6/6g5uBLe4RDYGx91+91Q3c9ypF3GtH/GKSiSTN+dBil5cWW3jT+lX8zgtOEUIKspYHDUAl0QmZur2YJQAQwREC3TDGnU/vtw8eapAVQpQE8cZygbetG8Fpk2MkidRUGvPsfKd3qBn6myfHL/nuIz9Y/MgZx33uiITAWz5/81nSVzcqT21wpGMsQUZJRpsnx/iR3S9y4Dj4wHu2Scd1XjZ+YC/BEsFGsa2QpIrn0e59h/ibjz7H+3sRbRmt8geOncAnth2LD522WRw/MUzVok/zvQiFsbKYXDPiu64UL842TEZy2+S299mHfnjbzwHwitDht15+08bhyYkrQfb3D0wd9PIktUK4ujJacxjAyZsm8jTS+YXvPLVQKPhkjF2+k/GyrxOhN98wk8bi6UMtzIYxnbFhjE5fP4o1Q2WSSiLJDeJcc6oNMm3x3HzT1ldXhOcoeJ4DR0lq92K8MNvi+x7Zd18rMrf8eufTP372tj9pHDYACud+afXE8Wt+MTIxsrHXbOpuu2NdTwkmJmvAADFp1m/ZuklUh8o5W1bSdaRSEi9dAFgIgfZ8J61kqRqqF2i0XhGaKUss3BQkSUktHCWcwCHXdymKMz50YJp9TwmTG2uNhSQRE7MLyzi00HcWtJLTew9e++Q//9GXD1sOiBrPN3I90Vuc74I1S+WWpMm1mRiumZHRunIdhV4/FknMVIuso6SESTKklm3KxM12z8w021wtFZz1YyOBNzQkrOvSdMcCTLLTD6kbpahVSio3mqw1iKOE+3GCVjdCpDU5ypFCEAkhAiKSxlqqF4sIex3kefL44U2CT9+R2dPfdr8slbZaMEkwj48PyU1rJ+TwcJXCMGbPdUk5iqANrxsdJhICAITWBpViQeXW8sTYENUrJbLGshCKPJehtZEkBJeLPoLAFSXpo9+L2K04tHbNOBlj8cL+OQ6NJjl4pqNzzcOVOobqVVp4otFvL/R2HfZlUOf6Z0ZrCLa8ZrSKwHchBEFrg14vBAkiBiMB04GFpjXGwFiLTi/k3BhMjo+gXimTZYZlC2YGA+j0IvZ8j6SUSNOM2+0ekyAUiwEZY0EEbFw7Bp+IjTHQWc6jtSrGx4YoNxZZku2Z/9GvDxx2ANqt3i6Rp+31q4YoCDyCZTiOpDzPkWsNIQiwDCUFwkzTUqvL1hh0uiEXPQejQ2URxzETCGwZRIw0Sdkww3EkCIx2q2eDwKMg8IitBXhQMygladO6VcSpMePDdYwM14jZQhuDJMkeBu4whx2A+K5rZoSxTwipYK2FIIKjFKIwZqkE0XLGZ2shlaDFbh9T++Z0tVxAueiTFAKSAGM0MzPAjF6UcKHgURInbLTmYsEjR0mwtcurG7/8zDzNeN1IhXwpYMzA3jRJEYbJAytVCXInSR7YP9dArxey4ygmAP0oYmsMp3HKWZKxyQ2TYU5SzZqZ6tWisMtfs+i7SNOcCYwoTpgEURKnDK0xWi8LRSBjDLAM0MADLPrLXlSvFKlecJH0QwaAJIyi5szCoytWCdrcbM+1/tLsUoI0zjjshXZkuIZyoQApBSlHgS2j2e7ZUikQCszGGBARGAzXdQj9mLVhpKEGAyh4DkrFAjEzpBLQuWbXVQQQjLGIwohr5QJ5notON2Tf92hEEHeSDFmWP9vb8cu9KwZAtLCwOygFC9JRY1Eai2LBwdhInV7q7IZhzM/vnbaOq4SSkm2ubc13hesoCCmgpKTAVTQz19CVSlGO1svCdQchRURwlUSY5vBcB1meI01SO1QpCseRAA+aI2yZXSXJyXIsLbYeBe7XKwZA//6vLdXXXb9bOc67JRGP1mskaBCpjUabpw5MQ1uQ6ylIQfAcxUYbqwJXaG0Q5zkbbdFq97k+VEGa5WythaMkkSC4jqQwSTnPc+RxysPVgrDMiKKEc2PR7IQ832ghtRpRnGWzswuvmBq/YjKkc3ufw/xuVykM1atkmTEzO88HZg8hSnJeOz6K0eEasbE8UgpEFKU87JbJUQpCAN1+zJWRqhKeK3q5ZpvkAFtWguBKiVarx1JIWy4HYr4dsmWAhIBUilhJLPV7cHyfwii67eD3vrxrxQFI0nyHkyR2dPWEUFLgmWen7PTCElLDpJSikeEKMTMCKVAp+qLbj22aZHAdBbZAsxuCaFCLu44iuARmRppmnCcZ79s/nw6ND7nkuSgWfZJSgJfpjpISSkrK4qS1ONf7qyPSD2gttJ4U1s4Evo+djzyVPT99iFILwQQqBx4rKWCznEcqhWUjJcI4YSIgTjKOcw0BJiwXRGmccBaGXFGEetGl8bEaFQsuJVmCpUbbdrshW2NAAKQgElIh6sY3zv/oK3v/LwC88o7QwZ1Z4ZjzS71u//ZWllzkeK4HMKy1WFWvcqnoU1FJ1CuDzJ5mOYwddHqX2n3kBNLaQBKBc80lV1K9XCDfc6jZjdiRQjiOJEskpCRK8xxhlLA1Bo7r0vTM3P59+5qfTF+8Pz7i0+G1H7vuPrcQXMAmBxvmkzavQ8l3sX6kSq7rDDymEzILAcEWi70IlgCTal47UqVyKSBaLqHyXGOxHVpFoMB3Mdvpw3HVy3oabTjLGE89M/XJPd/6/L8cFV3hPNPf5+Vy1VUCniNR8hQ8V+GlUpYIcJSghUbPsmUeLRcwPlSmwHcG1cHy/8I4ZaUEhCAu+A5JMPg3CiLP96nZbD2y51ufv+2oaYvH/ehOkyShZUbBc6EIGCoXyNplssMMKYA81+y5ksbrJSr4LoEZ2hgeECKG1nrAJ8AkiVgIQsl1YLQBM4MAdHsRDkwvfBuAOWoA6N517ZQx5iEiQsFzuRZ4cJVY/qqDy5GC4jjhkWqBsiwH86BTxGbZQ3hQFislQQCTALG1qBQ8sNZMy/llenq23Wr1v3+0jcY4S/Pvg4Fq4KJeDmjA9ABBAIFhtGGTDYiOACPPDYgGRjEPfpMsh5DLXUNmwczwPUWOGCyRS60euv3+3a2fXHvwqJsOd/vZfwWe6q0brZUcKRCnOaIk5W6UoBcnaHVjrhcDWFNDwXMQphlLJchaywRGnKQspIA1FkoIWGuZmUkQoVb0cWCpjaVmE3lqbjkqh6PpPdfuDYTaEeeGHn/hoH3shQP81IE5HGy0qJukFKUpgsCjZidkVwniZbb3EkOM0pw9R5HJNStJAMNKAogZaZLxzNwSdJbsmdrf2H7U7g8wuf7iizNzpxSKwRoLCylpea1lxHGGgq9IOpLavYg9RyLJNDtSIM1yWLYkBGCtgZIupVZjsdXhfYcatLDUme1GycOOI/fgob+Lj0oPAIAX7rjq6VYj/GiWZl0h/icJaq2RaQ1HykFyHLTWYKxhsEUUJ+w5isAMYyynScZT0/P0y2deQLMfYt3Y0KPdZnhls9n9Ol5ledW3yDxz+xUPtJY6n9Ja5y8VN3GSMZihJIGthe8p0myRpzmSTLOxg55fuxtxHKfwHAkhmbTRtH50GPVC4c7Fn/z1Cws//uupox4AAHji1iv/rdnsXW6ZIQD0w5QdRSQF0UuN0EIwmArPzrd1nBtu92LOmVEteeQ6kgwbWw4CTNTK/akDi/fgMMlh2yb362988cZOs3udYUKYJOQ5CmCGzjQnScphmLDnCOS5IRKCgqJHSgzmhMwWbBgnbFgHY80vH7j50n2vOQAA4Fdff+SqudnGrVpb8pS0OssZ1sKXApXApaGSLyaGi4K1hjUWVhsoSaS1Qa1YpLGhChqd/n+80rnfEQcAuMM88/PpK4TRjbLvisBVqBQ9CnyHpCRYaxFlOdcLDpI4ZbCF50jsn2twO4xEGsfJwenWXYdTw8O/VXb/Px2KUrNLej41ohSHmn3uhwljef2P85x8V1FJEWAtZ7nGruf2MwmBOM5+tfMbf/r8axsAAHGa39nq9Kc83yXhKuqkGvPtkJv92EZZDmstygWXZuab/PBT+2wrDIWUAlGS/giAfc0DkOf6nj3PzPxxrxs9p5SC6ypyfJfCzFAUJej0ExvGKU/NLdDeQwtQQiCO4iyOzJ2HW7cVASDbccOzre1/c/f8fPcrOtcgDLi9EICjiHxHUKcXZ1mWZ7WiQ65SWGr1n5xzJ59+XQDwUha/98bP3tFq938olQMww2gDaw2IgKVOX2VWe+0wI2aBvTOt791/zdv16wWAl4E4MNu+ot8PO0IKaK0BMC00+7xvvkHScchY7odR8tXukr1hJRRa8cOKs7vvbkyc8m7UaqWLer0++lGMdi9BL0lFnGTbk9R8rH33334H8w/mr0sAACDMJn61anLsPQaYmFloUZxq6veya+b3Tv1h+tDN0yupizoSAMw9elPUOPeUL8Rpetdio3evNraQZPnNePqObKV1OWLndace+vHebunUHc17917nbaiMOcrfmUz9IsUbUdS2S8/BJW/Qw9MDuVocqTf/N21GzXxl9FwJAAAAAElFTkSuQmCC

@@ -1,0 +1,18 @@
+name: icy
+version: 2.5.4.0
+
+tests:
+  - name: icy launcher available
+    description: Verify the icy CLI wrapper is installed on PATH.
+    command: command -v icy
+    expected_output_contains: "icy"
+
+  - name: icy version metadata matches recipe
+    description: Verify the installed Icy distribution version.xml matches the recipe version.
+    command: grep -oE "<version>[^<]+</version>" /opt/Icy/version.xml
+    expected_output_contains: "${version}"
+
+  - name: icy headless help runs
+    description: Verify Icy JVM boots cleanly in headless mode and prints CLI help.
+    command: icy -hl -h
+    expected_output_contains: "headless"
