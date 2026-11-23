@@ -1,0 +1,23 @@
+name: cellprofiler
+version: 4.2.8.1
+
+tests:
+  - name: cellprofiler CLI available
+    description: Verify the cellprofiler entrypoint is installed on PATH.
+    command: command -v cellprofiler
+    expected_output_contains: "cellprofiler"
+
+  - name: cellprofiler reports version
+    description: Verify CellProfiler CLI reports the packaged version.
+    command: cellprofiler --version
+    expected_output_contains: "${version}"
+
+  - name: cellprofiler help works
+    description: Verify CellProfiler CLI prints usage help.
+    command: cellprofiler --help
+    expected_output_contains: "CellProfiler"
+
+  - name: cellprofiler Python modules import cleanly
+    description: Verify core CellProfiler, Bio-Formats/javabridge, and wx GUI imports work.
+    command: /opt/miniconda/envs/cellprofiler/bin/python -c "import cellprofiler, cellprofiler_core, bioformats, javabridge, wx; print(cellprofiler.__version__)"
+    expected_output_contains: "${version}"

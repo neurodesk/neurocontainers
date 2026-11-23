@@ -1,0 +1,94 @@
+name: cellprofiler
+version: 4.2.8.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/CellProfiler/CellProfiler/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+structured_readme:
+  description: >-
+    CellProfiler is an open-source application for quantitative high-throughput
+    microscopy image analysis, providing both an interactive GUI pipeline
+    builder and headless batch execution via Bio-Formats.
+  example: |
+    # Launch the CellProfiler GUI
+    cellprofiler
+
+    # Run a CellProfiler pipeline headlessly
+    cellprofiler -c -r -p pipeline.cppipe -i input_images/ -o output/
+  documentation: https://cellprofiler.org/manuals
+  citation: |-
+    Stirling, D. R., Swain-Bowden, M. J., Lucas, A. M., Carpenter, A. E.,
+    Cimini, B. A., & Goodman, A. (2021). CellProfiler 4: improvements in speed,
+    utility and usability. BMC Bioinformatics, 22, 433.
+    https://doi.org/10.1186/s12859-021-04344-9
+
+auto_update:
+  method: pypi
+  package: cellprofiler
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        JAVA_HOME: /opt/miniconda/envs/cellprofiler/lib/jvm
+        JDK_HOME: /opt/miniconda/envs/cellprofiler/lib/jvm
+    - install:
+        - build-essential
+        - default-libmysqlclient-dev
+        - fontconfig
+        - libgl1
+        - libglib2.0-0
+        - libglu1-mesa
+        - libgtk-3-0
+        - libjpeg-turbo8
+        - libnotify4
+        - libpng16-16t64
+        - libsdl2-2.0-0
+        - libsm6
+        - libtiff6
+        - libxext6
+        - libxi6
+        - libxrender1
+        - libxtst6
+        - libxxf86vm1
+        - pkg-config
+    - template:
+        name: miniconda
+        version: py312_25.5.1-0
+        install_path: /opt/miniconda
+        env_name: cellprofiler
+        env_exists: "false"
+        conda_install: >-
+          python=3.9 pip setuptools wheel openjdk=11 wxpython=4.2.1 cython
+          numpy=1.23.5 scipy=1.9.0 scikit-image=0.18.3 h5py=3.6.0 pillow
+          matplotlib mahotas pyzmq=22.3.0
+    - environment:
+        PATH: /opt/miniconda/envs/cellprofiler/bin:/opt/miniconda/envs/cellprofiler/lib/jvm/bin:/opt/miniconda/bin:$PATH
+    - run:
+        - /opt/miniconda/envs/cellprofiler/bin/pip install --no-cache-dir --no-build-isolation "cellprofiler=={{ context.version }}"
+
+deploy:
+  path: []
+  bins:
+    - cellprofiler
+
+gui_apps:
+  - name: "CellProfiler"
+    exec: "cellprofiler"
+
+domains:
+  - microscopy
+
+categories:
+  - visualization
+  - image segmentation
+  - workflows
+
+icon: data:image/png;base64,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
