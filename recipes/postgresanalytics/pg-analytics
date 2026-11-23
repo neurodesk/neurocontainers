@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PG_MAJOR="18"
+PG_BIN="/usr/lib/postgresql/${PG_MAJOR}/bin"
+export PATH="${PG_BIN}:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
+PGANALYTICS_DATA="${PGANALYTICS_DATA:-${HOME:-/tmp}/pg-analytics}"
+PGANALYTICS_RUN="${PGANALYTICS_RUN:-/tmp/pg-analytics-$(id -u)}"
+PGANALYTICS_HOST="${PGANALYTICS_HOST:-127.0.0.1}"
+PGANALYTICS_PORT="${PGANALYTICS_PORT:-5433}"
+PGANALYTICS_DB="${PGANALYTICS_DB:-postgres}"
+PGANALYTICS_PRELOAD="${PGANALYTICS_PRELOAD:-pg_stat_statements,timescaledb,pgedge_vectorizer}"
+PGANALYTICS_LOG="${PGANALYTICS_LOG:-${PGANALYTICS_DATA}/postgresql.log}"
+
+usage() {
+  cat <<EOF
+Usage: pg-analytics <command> [args...]
+
+Manage a user-space PostgreSQL ${PG_MAJOR} analytics cluster (safe for read-only
+Apptainer/Lmod containers and non-root sessions such as scidesktop/aidesktop).
+
+Commands:
+  init                       Initialize cluster in PGANALYTICS_DATA with analytics config
+  start                      Start PostgreSQL server
+  stop                       Stop PostgreSQL server cleanly
+  status                     Show server status and connection parameters
+  psql [psql-args...]        Open psql connected to this cluster
+  enable-extensions [db]     Enable all bundled analytics extensions in target database
+  help                       Show this help message
+
+Environment variables (with defaults):
+  PGANALYTICS_DATA     ${PGANALYTICS_DATA}
+  PGANALYTICS_RUN      ${PGANALYTICS_RUN}
+  PGANALYTICS_HOST     ${PGANALYTICS_HOST}
+  PGANALYTICS_PORT     ${PGANALYTICS_PORT}
+  PGANALYTICS_DB       ${PGANALYTICS_DB}
+  PGANALYTICS_LOG      ${PGANALYTICS_LOG}
+  PGANALYTICS_PRELOAD  ${PGANALYTICS_PRELOAD}
+EOF
+}
+
+require_non_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    echo "Error: PostgreSQL refuses to run as root. Run pg-analytics as an unprivileged user." >&2
+    exit 1
+  fi
+}
+
+ensure_run_dir() {
+  mkdir -p "$PGANALYTICS_RUN"
+  chmod 700 "$PGANALYTICS_RUN"
+}
+
+cmd_init() {
+  require_non_root
+  ensure_run_dir
+
+  if [ -f "${PGANALYTICS_DATA}/PG_VERSION" ]; then
+    echo "Cluster already initialized at ${PGANALYTICS_DATA} (PostgreSQL $(cat "${PGANALYTICS_DATA}/PG_VERSION"))."
+    return 0
+  fi
+
+  mkdir -p "$PGANALYTICS_DATA"
+  chmod 700 "$PGANALYTICS_DATA"
+
+  initdb \
+    -D "$PGANALYTICS_DATA" \
+    --auth=trust \
+    --encoding=UTF8 \
+    --locale=C.UTF-8
+
+  mkdir -p "${PGANALYTICS_DATA}/conf.d"
+  cat > "${PGANALYTICS_DATA}/conf.d/pg-analytics.conf" <<CONF
+# Managed by pg-analytics
+listen_addresses = '${PGANALYTICS_HOST}'
+port = ${PGANALYTICS_PORT}
+unix_socket_directories = '${PGANALYTICS_RUN}'
+shared_preload_libraries = '${PGANALYTICS_PRELOAD}'
+timescaledb.telemetry_level = off
+logging_collector = off
+CONF
+
+  if ! grep -Fq "include_dir = 'conf.d'" "${PGANALYTICS_DATA}/postgresql.conf"; then
+    printf "\ninclude_dir = 'conf.d'\n" >> "${PGANALYTICS_DATA}/postgresql.conf"
+  fi
+
+  cat <<EOF
+Initialized PostgreSQL ${PG_MAJOR} analytics cluster:
+  Data dir:   ${PGANALYTICS_DATA}
+  Socket dir: ${PGANALYTICS_RUN}
+  Listen:     ${PGANALYTICS_HOST}:${PGANALYTICS_PORT}
+  Preload:    ${PGANALYTICS_PRELOAD}
+
+Next steps:
+  pg-analytics start
+  pg-analytics enable-extensions
+  pg-analytics psql
+EOF
+}
+
+cmd_start() {
+  require_non_root
+  if [ ! -f "${PGANALYTICS_DATA}/PG_VERSION" ]; then
+    echo "Error: No cluster found at ${PGANALYTICS_DATA}. Run 'pg-analytics init' first." >&2
+    exit 1
+  fi
+
+  ensure_run_dir
+
+  if pg_ctl -D "$PGANALYTICS_DATA" status >/dev/null 2>&1; then
+    echo "PostgreSQL analytics server is already running (${PGANALYTICS_HOST}:${PGANALYTICS_PORT})."
+    return 0
+  fi
+
+  pg_ctl \
+    -D "$PGANALYTICS_DATA" \
+    -l "$PGANALYTICS_LOG" \
+    -o "-h ${PGANALYTICS_HOST} -p ${PGANALYTICS_PORT} -k ${PGANALYTICS_RUN}" \
+    -w start
+
+  echo "PostgreSQL analytics server listening on ${PGANALYTICS_HOST}:${PGANALYTICS_PORT} (socket: ${PGANALYTICS_RUN})."
+}
+
+cmd_stop() {
+  require_non_root
+  if [ ! -f "${PGANALYTICS_DATA}/PG_VERSION" ]; then
+    echo "No cluster found at ${PGANALYTICS_DATA}."
+    return 0
+  fi
+
+  if ! pg_ctl -D "$PGANALYTICS_DATA" status >/dev/null 2>&1; then
+    echo "PostgreSQL analytics server is not running."
+    return 0
+  fi
+
+  pg_ctl -D "$PGANALYTICS_DATA" -m fast -w stop
+}
+
+cmd_status() {
+  echo "Data dir:   ${PGANALYTICS_DATA}"
+  echo "Socket dir: ${PGANALYTICS_RUN}"
+  echo "Endpoint:   ${PGANALYTICS_HOST}:${PGANALYTICS_PORT}"
+  if [ ! -f "${PGANALYTICS_DATA}/PG_VERSION" ]; then
+    echo "State:      uninitialized"
+    return 3
+  fi
+  pg_ctl -D "$PGANALYTICS_DATA" status
+  pg_isready -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT" -d "$PGANALYTICS_DB"
+}
+
+cmd_psql() {
+  export PGDATABASE="${PGDATABASE:-$PGANALYTICS_DB}"
+  exec psql -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT" "$@"
+}
+
+cmd_enable_extensions() {
+  local target_db="${1:-$PGANALYTICS_DB}"
+  psql -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT" -d "$target_db" -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgedge_vectorizer;
+CREATE EXTENSION IF NOT EXISTS plproxy;
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS hll;
+CREATE EXTENSION IF NOT EXISTS tdigest;
+CREATE EXTENSION IF NOT EXISTS hypopg;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+CREATE EXTENSION IF NOT EXISTS btree_gin;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS hstore;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS cube;
+CREATE EXTENSION IF NOT EXISTS earthdistance;
+CREATE EXTENSION IF NOT EXISTS tablefunc;
+
+SELECT extname, extversion FROM pg_extension ORDER BY extname;
+SQL
+}
+
+main() {
+  local cmd="${1:-help}"
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$cmd" in
+    init) cmd_init "$@" ;;
+    start) cmd_start "$@" ;;
+    stop) cmd_stop "$@" ;;
+    status) cmd_status "$@" ;;
+    psql) cmd_psql "$@" ;;
+    enable-extensions) cmd_enable_extensions "$@" ;;
+    help|-h|--help) usage ;;
+    *)
+      echo "Unknown command: ${cmd}" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

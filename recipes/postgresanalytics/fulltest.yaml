@@ -1,0 +1,168 @@
+# postgresanalytics container test suite
+# Validates PostgreSQL 18, bundled analytics extensions, non-root execution,
+# read-only rootfs ergonomics via pg-analytics, and real SQL operations.
+
+name: postgresanalytics
+version: "18.7.0"
+postgres_amd64_version: "18.7-1.pgdg24.04+5"
+postgres_arm64_version: "18.7-1.pgdg24.04+5"
+postgis_amd64_version: "3.7.0+dfsg-1.pgdg24.04+2"
+postgis_arm64_version: "3.7.0+dfsg-1.pgdg24.04+2"
+pgvector_amd64_version: "0.8.7-1.pgdg24.04+2"
+pgvector_arm64_version: "0.8.7-1.pgdg24.04+2"
+pgedge_vectorizer_tag: "v1.1"
+plproxy_amd64_version: "2.12.0-1.pgdg24.04+3"
+plproxy_arm64_version: "2.12.0-1.pgdg24.04+3"
+timescaledb_amd64_version: "2.32.0+dfsg-2.pgdg24.04+1"
+timescaledb_arm64_version: "2.32.0+dfsg-2.pgdg24.04+1"
+
+tests:
+  - name: PostgreSQL binaries and pg-analytics available
+    description: Verify pg-analytics, PostgreSQL 18 binaries, and PostGIS CLI tools are on PATH
+    command: |
+      set -euo pipefail
+      for bin in pg-analytics psql initdb pg_ctl postgres pg_dump pg_restore pg_isready shp2pgsql raster2pgsql; do
+        command -v "$bin"
+      done
+      psql --version
+      pg-analytics --help
+    expected_output_contains:
+      - "pg-analytics"
+      - "psql (PostgreSQL) 18."
+
+  - name: Tracked package versions match architecture
+    description: Verify pinned PGDG package versions match the recipe metadata
+    command: |
+      set -euo pipefail
+      case "$(dpkg --print-architecture)" in
+        amd64)
+          pg_expected="${postgres_amd64_version}"
+          postgis_expected="${postgis_amd64_version}"
+          pgvector_expected="${pgvector_amd64_version}"
+          plproxy_expected="${plproxy_amd64_version}"
+          timescale_expected="${timescaledb_amd64_version}"
+          ;;
+        arm64)
+          pg_expected="${postgres_arm64_version}"
+          postgis_expected="${postgis_arm64_version}"
+          pgvector_expected="${pgvector_arm64_version}"
+          plproxy_expected="${plproxy_arm64_version}"
+          timescale_expected="${timescaledb_arm64_version}"
+          ;;
+        *) exit 1 ;;
+      esac
+      test "$(dpkg-query -W -f='${Version}' postgresql-18)" = "$pg_expected"
+      test "$(dpkg-query -W -f='${Version}' postgresql-18-postgis-3)" = "$postgis_expected"
+      test "$(dpkg-query -W -f='${Version}' postgresql-18-pgvector)" = "$pgvector_expected"
+      test "$(dpkg-query -W -f='${Version}' postgresql-18-plproxy)" = "$plproxy_expected"
+      test "$(dpkg-query -W -f='${Version}' postgresql-18-timescaledb)" = "$timescale_expected"
+      echo "All tracked package versions match"
+    expected_output_contains: "All tracked package versions match"
+
+  - name: End-to-end PostgreSQL analytics lifecycle and extensions SQL checks
+    description: Initialize and start PostgreSQL as a non-root user on port 5435, enable all extensions, run functional SQL checks, and stop cleanly
+    command: |
+      set -euo pipefail
+      WORK=$(mktemp -d /tmp/pg-analytics-test.XXXXXX)
+      cat > "${WORK}/run_pg_test.sh" <<'INNER'
+      #!/usr/bin/env bash
+      set -euo pipefail
+      WORK="$1"
+      export PGANALYTICS_DATA="${WORK}/pgdata"
+      export PGANALYTICS_RUN="${WORK}/run"
+      export PGANALYTICS_HOST="127.0.0.1"
+      export PGANALYTICS_PORT="5435"
+      export PGANALYTICS_DB="postgres"
+
+      cleanup() {
+        pg-analytics stop >/dev/null 2>&1 || true
+      }
+      trap cleanup EXIT
+
+      pg-analytics init
+      pg-analytics start
+      pg-analytics status
+      pg-analytics enable-extensions
+
+      pg-analytics psql -v ON_ERROR_STOP=1 -At <<'SQL'
+      -- 1. Verify shared_preload_libraries loaded
+      SELECT 'PRELOAD=' || current_setting('shared_preload_libraries');
+
+      -- 2. Verify all required and bundled extensions are registered
+      SELECT 'EXT_COUNT=' || count(*) FROM pg_extension
+      WHERE extname IN (
+        'postgis', 'postgis_topology', 'postgis_raster',
+        'vector', 'pgedge_vectorizer', 'plproxy',
+        'timescaledb', 'hll', 'tdigest', 'hypopg',
+        'pg_stat_statements', 'btree_gin', 'btree_gist',
+        'pg_trgm', 'hstore', 'uuid-ossp', 'citext',
+        'cube', 'earthdistance', 'tablefunc'
+      );
+
+      -- 3. PostGIS geospatial computation check
+      SELECT 'POSTGIS_DIST=' || ST_Distance(ST_MakePoint(0, 0), ST_MakePoint(3, 4));
+      SELECT 'POSTGIS_RASTER=' || ST_Width(ST_MakeEmptyRaster(10, 10, 0, 0, 1, -1, 0, 0, 0));
+
+      -- 4. pgvector L2 and cosine distance operators
+      SELECT 'PGVECTOR_L2=' || round(('[0,0,0]'::vector <-> '[3,4,0]'::vector)::numeric, 2);
+      SELECT 'PGVECTOR_COS=' || round(('[1,0,0]'::vector <=> '[0,1,0]'::vector)::numeric, 2);
+
+      -- 5. pgEdge Vectorizer C chunking function & schema check
+      SELECT 'VECTORIZER_CHUNKS=' || array_length(
+        pgedge_vectorizer.chunk_text(
+          'PostgreSQL analytics in NeuroDesk supports geospatial, vector, and time series workloads.',
+          'token_based',
+          8,
+          2
+        ),
+        1
+      );
+
+      -- 6. PL/Proxy procedural language registration check
+      SELECT 'PLPROXY_LANG=' || lanname FROM pg_language WHERE lanname = 'plproxy';
+
+      -- 7. TimescaleDB hypertable & time_bucket functional check
+      CREATE TABLE sensor_metrics (ts TIMESTAMPTZ NOT NULL, metric DOUBLE PRECISION);
+      SELECT create_hypertable('sensor_metrics', 'ts') IS NOT NULL;
+      INSERT INTO sensor_metrics VALUES ('2026-01-01 00:00:00+00', 10.0), ('2026-01-01 00:15:00+00', 20.0);
+      SELECT 'TIMESCALE_AVG=' || avg(metric)::text
+      FROM sensor_metrics
+      GROUP BY time_bucket('1 hour', ts);
+
+      -- 8. HyperLogLog, t-digest, and HypoPG functional checks
+      SELECT 'HLL_CARD=' || round(hll_cardinality(hll_add_agg(hll_hash_text(v))))
+      FROM unnest(ARRAY['a', 'b', 'c', 'a']) AS v;
+      SELECT 'TDIGEST_P50=' || round(tdigest_percentile(v, 100, 0.5)::numeric, 1)
+      FROM generate_series(1, 100) AS v;
+      SELECT 'HYPOPG_OK=' || (count(*) >= 1)::text
+      FROM hypopg_create_index('CREATE INDEX ON sensor_metrics (metric)');
+      SQL
+
+      pg-analytics stop
+      echo "PG_ANALYTICS_FULLTEST_OK"
+      INNER
+      chmod 0755 "${WORK}/run_pg_test.sh"
+
+      cleanup_work() {
+        rm -rf "${WORK}"
+      }
+      trap cleanup_work EXIT
+
+      if [ "$(id -u)" -eq 0 ]; then
+        chown -R postgres:postgres "${WORK}"
+        su -s /bin/bash postgres -c "${WORK}/run_pg_test.sh '${WORK}'"
+      else
+        "${WORK}/run_pg_test.sh" "${WORK}"
+      fi
+    expected_output_contains:
+      - "EXT_COUNT=20"
+      - "POSTGIS_DIST=5"
+      - "POSTGIS_RASTER=10"
+      - "PGVECTOR_L2=5.00"
+      - "PGVECTOR_COS=1.00"
+      - "VECTORIZER_CHUNKS="
+      - "PLPROXY_LANG=plproxy"
+      - "TIMESCALE_AVG=15"
+      - "HLL_CARD=3"
+      - "HYPOPG_OK=true"
+      - "PG_ANALYTICS_FULLTEST_OK"
