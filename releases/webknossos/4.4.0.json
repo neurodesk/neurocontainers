@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "webknossos 4.4.0": {
+      "version": "20261123",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "data organisation"
+  ]
+}
