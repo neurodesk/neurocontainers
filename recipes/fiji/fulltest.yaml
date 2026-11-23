@@ -1,0 +1,25 @@
+name: fiji
+version: 20261112-1517
+
+tests:
+  - name: fiji launcher available
+    description: Verify the fiji CLI wrapper is installed on PATH.
+    command: command -v fiji
+    expected_output_contains: "fiji"
+
+  - name: fiji help works
+    description: Verify Fiji starts and prints CLI usage.
+    command: fiji --help
+    expected_output_contains: "Usage"
+
+  - name: headless ImageJ macro execution
+    description: Run a real headless ImageJ macro creating an image and computing stats.
+    command: |
+      cat > /tmp/fiji_smoke.ijm <<IJM
+      newImage("Smoke", "8-bit black", 32, 32, 1);
+      run("Set...", "value=42");
+      getStatistics(area, mean);
+      print("FIJI_SMOKE_MEAN=" + mean);
+      IJM
+      fiji --headless --console --run /tmp/fiji_smoke.ijm
+    expected_output_contains: "FIJI_SMOKE_MEAN=42"
