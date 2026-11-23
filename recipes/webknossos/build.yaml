@@ -1,0 +1,68 @@
+name: webknossos
+version: 4.4.0
+
+copyright:
+  - license: AGPL-3.0-only
+    url: https://github.com/scalableminds/webknossos-libs/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+structured_readme:
+  description: >-
+    WEBKNOSSOS Python library and CLI for converting, streaming, and analyzing
+    large 3D microscopy and connectomics datasets (WKW, OME-Zarr, N5, TIFF,
+    CZI, MRC, Imaris) and working with annotations and skeletons from local
+    storage or a remote WEBKNOSSOS server.
+  example: |
+    # Show available WEBKNOSSOS CLI subcommands
+    webknossos --help
+
+    # Convert a TIFF stack into a WEBKNOSSOS (WKW) dataset
+    webknossos convert input_tiffs/ output_dataset/ --voxel-size 11,11,28
+
+    # Stream or inspect a dataset programmatically using the container's Python
+    /opt/miniconda/bin/python - <<'PY'
+    from importlib.metadata import version
+    import webknossos as wk
+    print(version("webknossos"), wk.Dataset)
+    PY
+  documentation: https://docs.webknossos.org/webknossos-py/
+  citation: |-
+    Boergens, K. M., Berning, M., Bocklisch, T., Bräunlein, D., Drawitsch, F.,
+    Frohnhofen, J., Herold, T., Otto, P., Rzepka, N., Werkmeister, T., Werner,
+    D., Wiese, G., Wissler, H., & Helmstaedter, M. (2017). webKnossos: efficient
+    online 3D data annotation for connectomics. Nature Methods, 14(7), 691-694.
+    https://doi.org/10.1038/nmeth.4331
+
+auto_update:
+  method: pypi
+  package: webknossos
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - template:
+        name: miniconda
+        version: py312_25.5.1-0
+        install_path: /opt/miniconda
+        pip_install: >-
+          webknossos[tifffile,imagecodecs,mrcfile,czi,ims,fastremap,numba,s3,gcs]=={{ context.version }}
+
+deploy:
+  path: []
+  bins:
+    - webknossos
+
+domains:
+  - microscopy
+
+categories:
+  - visualization
+  - data organisation
+
+icon: data:image/png;base64,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
