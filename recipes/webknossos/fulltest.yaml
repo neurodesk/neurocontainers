@@ -1,0 +1,47 @@
+name: webknossos
+version: 4.4.0
+
+tests:
+  - name: webknossos CLI available
+    description: Verify the webknossos CLI entrypoint is on PATH.
+    command: command -v webknossos
+    expected_output_contains: "webknossos"
+
+  - name: webknossos CLI help works
+    description: Verify the webknossos CLI starts and lists subcommands.
+    command: webknossos --help
+    expected_output_contains: "Usage:"
+
+  - name: webknossos Python package version matches recipe
+    description: Verify the installed Python package matches the recipe version.
+    command: /opt/miniconda/bin/python -c "from importlib.metadata import version; print(version('webknossos'))"
+    expected_output_contains: "${version}"
+
+  - name: create and read local WKW dataset
+    description: Exercise local dataset creation and volume I/O using webknossos and wkw.
+    command: |
+      /opt/miniconda/bin/python - <<'PY'
+      import tempfile
+      from pathlib import Path
+      import numpy as np
+      import webknossos as wk
+
+      with tempfile.TemporaryDirectory() as tmp:
+          ds_path = Path(tmp) / "smoke_ds"
+          data = np.arange(32 * 32 * 8, dtype=np.uint8).reshape(1, 32, 32, 8)
+          ds = wk.Dataset(ds_path, voxel_size=(10, 10, 20), exist_ok=True)
+          layer = ds.add_layer(
+              "color",
+              category=wk.COLOR_CATEGORY,
+              dtype_per_channel=np.uint8,
+              data_format="wkw",
+          )
+          mag = layer.add_mag(1)
+          mag.write(data, allow_resize=True)
+          reopened = wk.Dataset.open(ds_path)
+          out = reopened.get_layer("color").get_mag(1).read()
+          assert out.shape == data.shape, f"shape mismatch: {out.shape} != {data.shape}"
+          assert np.array_equal(out, data), "round-trip data mismatch"
+          print("WKW_ROUNDTRIP_OK")
+      PY
+    expected_output_contains: "WKW_ROUNDTRIP_OK"
