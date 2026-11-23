@@ -89,7 +89,7 @@ tests:
       pg-analytics start --foreground &
       server_pid=$!
       for attempt in {1..30}; do
-        if pg_isready -q -h "$PGANALYTICS_RUN" -p "$PGANALYTICS_PORT"; then
+        if pg-analytics status >/dev/null 2>&1; then
           break
         fi
         sleep 1
@@ -183,3 +183,140 @@ tests:
       - "TDIGEST_P50=50.5"
       - "HYPOPG_OK=true"
       - "PG_ANALYTICS_FULLTEST_OK"
+
+  - name: Multi-cluster isolation, socket directory verification, and init permissions
+    description: Verify pg-analytics binds default sockets per cluster, enforces private socket checks on clients, rejects cross-cluster SQL, and leaves existing non-empty directory permissions intact on init failure
+    command: |
+      set -euo pipefail
+      WORK=$(mktemp -d /tmp/pg-analytics-iso.XXXXXX)
+      trap 'rm -rf "$WORK"' EXIT
+      cat > "${WORK}/run_iso_test.sh" <<'INNER'
+      #!/usr/bin/env bash
+      set -euo pipefail
+      WORK="$1"
+      unset PGANALYTICS_RUN
+
+      C1="${WORK}/cluster1"
+      C2="${WORK}/cluster2"
+      PORT1="5436"
+      PORT2="5437"
+
+      cleanup() {
+        PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics stop >/dev/null 2>&1 || true
+        PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT2" pg-analytics stop >/dev/null 2>&1 || true
+      }
+      trap cleanup EXIT
+
+      # 1. init must not alter permissions of an existing non-empty directory
+      NONEMPTY="${WORK}/nonempty"
+      mkdir -m 755 "$NONEMPTY"
+      touch "${NONEMPTY}/keep"
+      if PGANALYTICS_DATA="$NONEMPTY" pg-analytics init >/dev/null 2>&1; then
+        echo "init unexpectedly succeeded on non-empty directory" >&2
+        exit 1
+      fi
+      test "$(stat -c %a "$NONEMPTY")" = "755"
+      echo "INIT_PERMS_PRESERVED=true"
+
+      # 2. Start cluster 1 with default cluster-derived PGANALYTICS_RUN
+      PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics init >/dev/null
+      PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics start >/dev/null
+
+      # 3. Unstarted cluster 2 must fail enable-extensions and psql without touching cluster 1
+      PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT1" pg-analytics init >/dev/null
+      if PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT1" pg-analytics enable-extensions >/dev/null 2>&1; then
+        echo "enable-extensions unexpectedly succeeded on stopped cluster 2" >&2
+        exit 1
+      fi
+      if PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc 'SELECT 1' >/dev/null 2>&1; then
+        echo "psql unexpectedly connected to cluster 1 via cluster 2 PGANALYTICS_DATA" >&2
+        exit 1
+      fi
+      # Confirm cluster 1 was not modified (postgis not installed on cluster 1)
+      c1_postgis=$(PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc "SELECT count(*) FROM pg_extension WHERE extname = 'postgis'")
+      test "$c1_postgis" = "0"
+      echo "STOPPED_C2_ISOLATED=true"
+
+      # 4. Start cluster 2 on PORT2; both clusters must have distinct default sockets and data directories
+      PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT2" pg-analytics start >/dev/null
+      c1_sock=$(sed -n '5p' "${C1}/postmaster.pid")
+      c2_sock=$(sed -n '5p' "${C2}/postmaster.pid")
+      test "$(realpath -- "$c1_sock")" != "$(realpath -- "$c2_sock")"
+      d1=$(PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc 'SHOW data_directory')
+      d2=$(PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT2" pg-analytics psql -XAtc 'SHOW data_directory')
+      test "$(realpath -- "$d1")" = "$(realpath -- "$C1")"
+      test "$(realpath -- "$d2")" = "$(realpath -- "$C2")"
+      test "$d1" != "$d2"
+      echo "TWO_CLUSTERS_ISOLATED=true"
+
+      # 5. Inherited PGHOSTADDR/PGSERVICE and CLI endpoint overrides must not bypass the verified socket
+      test "$(PGHOSTADDR=127.0.0.1 PGSERVICE=nonexistent PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc 'SELECT 1')" = "1"
+      PGHOSTADDR=127.0.0.1 PGSERVICE=nonexistent PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics status >/dev/null
+      for override_cmd in \
+        "-h 127.0.0.1 -XAtc SELECT_1" \
+        "--dbn=host=127.0.0.1" \
+        "host=127.0.0.1"; do
+        read -r -a override_args <<< "$override_cmd"
+        set +e
+        PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics psql "${override_args[@]}" >/dev/null 2>&1
+        rc=$?
+        set -e
+        if [ "$rc" -ne 2 ]; then
+          echo "Expected launcher exit code 2 for override '${override_cmd}', got ${rc}" >&2
+          exit 1
+        fi
+      done
+      echo "ENDPOINT_PINNED=true"
+
+      # 6. Mismatched PGANALYTICS_DATA + PGANALYTICS_PORT must be rejected
+      if PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc 'SELECT 1' >/dev/null 2>&1; then
+        echo "psql accepted mismatched PGANALYTICS_DATA and PGANALYTICS_PORT" >&2
+        exit 1
+      fi
+      if PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT1" pg-analytics enable-extensions >/dev/null 2>&1; then
+        echo "enable-extensions accepted mismatched PGANALYTICS_DATA and PGANALYTICS_PORT" >&2
+        exit 1
+      fi
+      echo "MISMATCH_REJECTED=true"
+
+      # 7. Client paths must reject non-0700 or symlink socket directories (even on the active cluster's own socket)
+      chmod 755 "$c1_sock"
+      if PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc 'SELECT 1' >/dev/null 2>&1; then
+        chmod 700 "$c1_sock"
+        echo "psql accepted world-readable socket directory" >&2
+        exit 1
+      fi
+      if PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics enable-extensions >/dev/null 2>&1; then
+        chmod 700 "$c1_sock"
+        echo "enable-extensions accepted world-readable socket directory" >&2
+        exit 1
+      fi
+      chmod 700 "$c1_sock"
+      test "$(PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics psql -XAtc 'SELECT 1')" = "1"
+      SYM_SOCK="${WORK}/sym_sock"
+      ln -s "$c1_sock" "$SYM_SOCK"
+      if PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" PGANALYTICS_RUN="$SYM_SOCK" pg-analytics psql -XAtc 'SELECT 1' >/dev/null 2>&1; then
+        echo "psql accepted symlink socket directory" >&2
+        exit 1
+      fi
+      echo "UNTRUSTED_SOCK_REJECTED=true"
+
+      PGANALYTICS_DATA="$C1" PGANALYTICS_PORT="$PORT1" pg-analytics stop >/dev/null
+      PGANALYTICS_DATA="$C2" PGANALYTICS_PORT="$PORT2" pg-analytics stop >/dev/null
+      echo "PG_ANALYTICS_ISO_OK"
+      INNER
+
+      if [ "$(id -u)" -eq 0 ]; then
+        chown -R postgres:postgres "${WORK}"
+        runuser -u postgres -- bash "${WORK}/run_iso_test.sh" "$WORK"
+      else
+        bash "${WORK}/run_iso_test.sh" "$WORK"
+      fi
+    expected_output_contains:
+      - "INIT_PERMS_PRESERVED=true"
+      - "STOPPED_C2_ISOLATED=true"
+      - "TWO_CLUSTERS_ISOLATED=true"
+      - "ENDPOINT_PINNED=true"
+      - "MISMATCH_REJECTED=true"
+      - "UNTRUSTED_SOCK_REJECTED=true"
+      - "PG_ANALYTICS_ISO_OK"
