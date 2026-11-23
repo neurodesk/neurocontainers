@@ -1,0 +1,131 @@
+name: fiji
+version: 20261112-1517
+
+copyright:
+  - license: GPL-3.0-or-later
+    name: MTrack2 2.0.1 (bundled as MTrack2_-2.0.1.jar in Fiji {{ context.version }}) and combined GPLv3 distribution notices in /opt/Fiji.app/licenses
+    url: https://github.com/fiji/MTrack2/tree/MTrack2_-2.0.1
+  - license: GPL-2.0-or-later
+    name: Fiji {{ context.version }} / ImageJ2 core components and Maven/SciJava corresponding source repositories
+    url: https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/
+
+architectures:
+  - x86_64
+
+auto_update:
+  method: webpage
+  url: https://downloads.imagej.net/fiji/archive/stable/
+  version_regex: 'href="(?P<version>[0-9]{8}-[0-9]{4})/"'
+
+structured_readme:
+  description: >-
+    Fiji (Fiji Is Just ImageJ) is an open-source image processing package based
+    on ImageJ2, bundling Bio-Formats, BigDataViewer, and scientific microscopy
+    plugins for 2D/3D visualization, segmentation, registration, and analysis.
+  example: |
+    # Launch the Fiji GUI
+    fiji
+
+    # Run a headless ImageJ macro
+    fiji --headless my_macro.ijm
+  documentation: https://imagej.net/software/fiji/
+  citation: |-
+    Schindelin, J., Arganda-Carreras, I., Frise, E., Kaynig, V., Longair, M.,
+    Pietzsch, T., Preibisch, S., Rueden, C., Saalfeld, S., Schmid, B.,
+    Tinevez, J.-Y., White, D. J., Hartenstein, V., Eliceiri, K., Tomancak, P.,
+    & Cardona, A. (2012). Fiji: an open-source platform for biological-image
+    analysis. Nature Methods, 9(7), 676-682. https://doi.org/10.1038/nmeth.2019
+
+files:
+  - name: fiji_archive
+    url: https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/fiji-stable-linux64-jdk.zip
+  - name: gpl-source-notice
+    contents: |-
+      Fiji {{ context.version }} Container — License & Corresponding Source Notice
+      ============================================================================
+      This container redistributes the unmodified upstream Fiji stable archive:
+        https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/fiji-stable-linux64-jdk.zip
+
+      The combined distribution includes components under GPL-3.0-or-later and
+      GPL-2.0-or-later, along with permissively licensed plugins and a bundled
+      OpenJDK runtime:
+
+      - MTrack2_-2.0.1.jar (GPL-3.0-or-later) corresponding source revision:
+        https://github.com/fiji/MTrack2/tree/MTrack2_-2.0.1
+        https://github.com/fiji/MTrack2/archive/refs/tags/MTrack2_-2.0.1.tar.gz
+      - Fiji / ImageJ2 core source repositories and release archive:
+        https://github.com/fiji/fiji
+        https://downloads.imagej.net/fiji/archive/stable/{{ context.version }}/
+      - Upstream license texts are bundled in /opt/Fiji.app/licenses/.
+      - Exact release-pinned Maven POM metadata and SCM source coordinates for each
+        bundled JAR are embedded under META-INF/maven/ inside /opt/Fiji.app/jars/
+        and /opt/Fiji.app/plugins/, with corresponding source artifacts published at
+        https://maven.scijava.org/ and https://repo1.maven.org/maven2/.
+  - name: fiji-wrapper
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -euo pipefail
+      prefs_root="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}/fiji-$(id -u)}/fiji-java-prefs"
+      mkdir -p "${prefs_root}"
+      export JAVA_TOOL_OPTIONS="-Djava.util.prefs.userRoot=${prefs_root} ${JAVA_TOOL_OPTIONS:-}"
+      if [ -x /opt/Fiji.app/fiji-linux-x64 ]; then
+        exec /opt/Fiji.app/fiji-linux-x64 "$@"
+      elif [ -x /opt/Fiji.app/ImageJ-linux64 ]; then
+        exec /opt/Fiji.app/ImageJ-linux64 "$@"
+      elif [ -x /opt/Fiji/fiji-linux-x64 ]; then
+        exec /opt/Fiji/fiji-linux-x64 "$@"
+      else
+        echo "Fiji launcher binary not found under /opt" >&2
+        exit 1
+      fi
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - ca-certificates
+        - fontconfig
+        - libasound2t64
+        - libfreetype6
+        - libgl1
+        - libglib2.0-0
+        - libglu1-mesa
+        - libgtk-3-0
+        - libx11-6
+        - libxext6
+        - libxi6
+        - libxrandr2
+        - libxrender1
+        - libxtst6
+        - unzip
+    - workdir: /opt
+    - run:
+        - unzip -q {{ get_file("fiji_archive") }} -d /opt
+        - install -m 644 {{ get_file("gpl-source-notice") }} /opt/Fiji.app/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/Fiji*
+        - install -m 755 {{ get_file("fiji-wrapper") }} /usr/local/bin/fiji
+        - ln -sf /usr/local/bin/fiji /usr/local/bin/ImageJ
+
+deploy:
+  path: []
+  bins:
+    - fiji
+    - ImageJ
+
+gui_apps:
+  - name: "Fiji"
+    exec: "fiji"
+
+domains:
+  - microscopy
+
+categories:
+  - visualization
+  - image segmentation
+
+icon: data:image/png;base64,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
