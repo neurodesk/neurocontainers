@@ -1,0 +1,364 @@
+name: postgresanalytics
+version: "18.7.0"
+
+copyright:
+  - license: PostgreSQL
+    url: https://www.postgresql.org/about/licence/
+  - license: PostgreSQL
+    url: "https://github.com/pgEdge/pgedge-vectorizer/blob/{{ context.pgedge_vectorizer_tag }}/docs/LICENCE.md"
+  - license: GPL-2.0-or-later
+    url: https://github.com/postgis/postgis/blob/master/COPYING
+  - license: ISC
+    url: https://github.com/plproxy/plproxy/blob/master/COPYRIGHT
+  - license: Apache-2.0
+    url: https://github.com/timescale/timescaledb/blob/main/LICENSE-APACHE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  pg_major: "18"
+  postgres_amd64_version: "18.7-1.pgdg24.04+5"
+  postgres_arm64_version: "18.7-1.pgdg24.04+5"
+  postgis_amd64_version: "3.7.0+dfsg-1.pgdg24.04+2"
+  postgis_arm64_version: "3.7.0+dfsg-1.pgdg24.04+2"
+  pgvector_amd64_version: "0.8.7-1.pgdg24.04+2"
+  pgvector_arm64_version: "0.8.7-1.pgdg24.04+2"
+  plproxy_amd64_version: "2.12.0-1.pgdg24.04+3"
+  plproxy_arm64_version: "2.12.0-1.pgdg24.04+3"
+  timescaledb_amd64_version: "2.32.0+dfsg-2.pgdg24.04+1"
+  timescaledb_arm64_version: "2.32.0+dfsg-2.pgdg24.04+1"
+  hll_amd64_version: "2.21-1.pgdg24.04+3"
+  hll_arm64_version: "2.21-1.pgdg24.04+3"
+  tdigest_amd64_version: "1.4.7-1.pgdg24.04+2"
+  tdigest_arm64_version: "1.4.7-1.pgdg24.04+2"
+  hypopg_amd64_version: "1.4.5-1.pgdg24.04+2"
+  hypopg_arm64_version: "1.4.5-1.pgdg24.04+2"
+  pgedge_vectorizer_tag: "v1.1"
+  postgres_version:
+    try:
+      - value: "{{ context.postgres_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.postgres_arm64_version }}"
+        condition: arch=="aarch64"
+  postgis_version:
+    try:
+      - value: "{{ context.postgis_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.postgis_arm64_version }}"
+        condition: arch=="aarch64"
+  pgvector_version:
+    try:
+      - value: "{{ context.pgvector_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.pgvector_arm64_version }}"
+        condition: arch=="aarch64"
+  plproxy_version:
+    try:
+      - value: "{{ context.plproxy_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.plproxy_arm64_version }}"
+        condition: arch=="aarch64"
+  timescaledb_version:
+    try:
+      - value: "{{ context.timescaledb_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.timescaledb_arm64_version }}"
+        condition: arch=="aarch64"
+  hll_version:
+    try:
+      - value: "{{ context.hll_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.hll_arm64_version }}"
+        condition: arch=="aarch64"
+  tdigest_version:
+    try:
+      - value: "{{ context.tdigest_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.tdigest_arm64_version }}"
+        condition: arch=="aarch64"
+  hypopg_version:
+    try:
+      - value: "{{ context.hypopg_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.hypopg_arm64_version }}"
+        condition: arch=="aarch64"
+
+auto_update:
+  method: sources
+  container_version: postgresql-amd64
+  local: []
+  sources:
+    - id: postgresql-amd64
+      method: apt
+      package: postgresql-18
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: postgres_amd64_version
+        fulltest_variable: postgres_amd64_version
+    - id: postgresql-arm64
+      method: apt
+      package: postgresql-18
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: postgres_arm64_version
+        fulltest_variable: postgres_arm64_version
+    - id: postgis-amd64
+      method: apt
+      package: postgresql-18-postgis-3
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: postgis_amd64_version
+        fulltest_variable: postgis_amd64_version
+    - id: postgis-arm64
+      method: apt
+      package: postgresql-18-postgis-3
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: postgis_arm64_version
+        fulltest_variable: postgis_arm64_version
+    - id: pgvector-amd64
+      method: apt
+      package: postgresql-18-pgvector
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: pgvector_amd64_version
+        fulltest_variable: pgvector_amd64_version
+    - id: pgvector-arm64
+      method: apt
+      package: postgresql-18-pgvector
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: pgvector_arm64_version
+        fulltest_variable: pgvector_arm64_version
+    - id: pgedge-vectorizer
+      method: github_tags
+      repo: pgEdge/pgedge-vectorizer
+      target:
+        variable: pgedge_vectorizer_tag
+        value: tag
+        fulltest_variable: pgedge_vectorizer_tag
+    - id: pgedge-vectorizer-archive
+      method: http_digest
+      url: "https://github.com/pgEdge/pgedge-vectorizer/archive/refs/tags/{{ context.pgedge_vectorizer_tag }}.tar.gz"
+      dependency: true
+      target:
+        file: pgedge_vectorizer_tar
+    - id: plproxy-amd64
+      method: apt
+      package: postgresql-18-plproxy
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: plproxy_amd64_version
+        fulltest_variable: plproxy_amd64_version
+    - id: plproxy-arm64
+      method: apt
+      package: postgresql-18-plproxy
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: plproxy_arm64_version
+        fulltest_variable: plproxy_arm64_version
+    - id: timescaledb-amd64
+      method: apt
+      package: postgresql-18-timescaledb
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: timescaledb_amd64_version
+        fulltest_variable: timescaledb_amd64_version
+    - id: timescaledb-arm64
+      method: apt
+      package: postgresql-18-timescaledb
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: timescaledb_arm64_version
+        fulltest_variable: timescaledb_arm64_version
+    - id: hll-amd64
+      method: apt
+      package: postgresql-18-hll
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: hll_amd64_version
+    - id: hll-arm64
+      method: apt
+      package: postgresql-18-hll
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: hll_arm64_version
+    - id: tdigest-amd64
+      method: apt
+      package: postgresql-18-tdigest
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: tdigest_amd64_version
+    - id: tdigest-arm64
+      method: apt
+      package: postgresql-18-tdigest
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: tdigest_arm64_version
+    - id: hypopg-amd64
+      method: apt
+      package: postgresql-18-hypopg
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz
+      target:
+        variable: hypopg_amd64_version
+    - id: hypopg-arm64
+      method: apt
+      package: postgresql-18-hypopg
+      urls:
+        - https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-arm64/Packages.gz
+      target:
+        variable: hypopg_arm64_version
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        LANG: C.UTF-8
+        LC_ALL: C.UTF-8
+
+    - install:
+        - ca-certificates
+        - gnupg
+        - libcurl4t64
+        - locales
+        - procps
+
+    - run:
+        - locale-gen en_US.UTF-8 C.UTF-8
+        - mkdir -p /etc/postgresql-common
+        - echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.conf
+        - install -D -m 0644 {{ get_file("pgdg_key") }} /etc/apt/keyrings/pgdg.asc
+        - echo "deb [signed-by=/etc/apt/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+
+    - install:
+        - "postgresql-{{ context.pg_major }}={{ context.postgres_version }}"
+        - "postgresql-client-{{ context.pg_major }}={{ context.postgres_version }}"
+        - "postgresql-{{ context.pg_major }}-postgis-3={{ context.postgis_version }}"
+        - "postgresql-{{ context.pg_major }}-postgis-3-scripts={{ context.postgis_version }}"
+        - "postgis={{ context.postgis_version }}"
+        - "postgresql-{{ context.pg_major }}-pgvector={{ context.pgvector_version }}"
+        - "postgresql-{{ context.pg_major }}-plproxy={{ context.plproxy_version }}"
+        - "postgresql-{{ context.pg_major }}-timescaledb={{ context.timescaledb_version }}"
+        - "postgresql-{{ context.pg_major }}-hll={{ context.hll_version }}"
+        - "postgresql-{{ context.pg_major }}-tdigest={{ context.tdigest_version }}"
+        - "postgresql-{{ context.pg_major }}-hypopg={{ context.hypopg_version }}"
+
+    - run:
+        - apt-get update
+        - apt-get install -y --no-install-recommends build-essential libcurl4-openssl-dev "postgresql-server-dev-{{ context.pg_major }}={{ context.postgres_version }}"
+        - mkdir -p /tmp/pgedge-vectorizer
+        - tar -xzf {{ get_file("pgedge_vectorizer_tar") }} --strip-components=1 -C /tmp/pgedge-vectorizer
+        - make -C /tmp/pgedge-vectorizer PG_CONFIG=/usr/lib/postgresql/{{ context.pg_major }}/bin/pg_config
+        - make -C /tmp/pgedge-vectorizer PG_CONFIG=/usr/lib/postgresql/{{ context.pg_major }}/bin/pg_config install
+        - install -D -m 0644 /tmp/pgedge-vectorizer/docs/LICENCE.md /usr/share/doc/pgedge-vectorizer/copyright
+        - rm -rf /tmp/pgedge-vectorizer
+        - apt-get purge -y --auto-remove build-essential libcurl4-openssl-dev "postgresql-server-dev-{{ context.pg_major }}"
+        - rm -rf /var/lib/apt/lists/*
+        - '! ldd /usr/lib/postgresql/{{ context.pg_major }}/lib/pgedge_vectorizer.so | grep -q "not found"'
+
+    - copy:
+        - pg-analytics
+        - /usr/local/bin/pg-analytics
+
+    - run:
+        - chmod 0755 /usr/local/bin/pg-analytics
+
+    - environment:
+        PATH: "/usr/local/bin:/usr/lib/postgresql/{{ context.pg_major }}/bin:$PATH"
+        PGANALYTICS_PORT: "5433"
+
+deploy:
+  path:
+    - /usr/local/bin
+    - "/usr/lib/postgresql/{{ context.pg_major }}/bin"
+  bins:
+    - pg-analytics
+    - psql
+    - initdb
+    - pg_ctl
+    - postgres
+    - pg_dump
+    - pg_restore
+    - pg_isready
+    - shp2pgsql
+    - raster2pgsql
+
+files:
+  - name: pgdg_key
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    sha256: 0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
+  - name: pgedge_vectorizer_tar
+    url: "https://github.com/pgEdge/pgedge-vectorizer/archive/refs/tags/{{ context.pgedge_vectorizer_tag }}.tar.gz"
+    sha256: 96362aebad23a39f3b1c393cadf1f37894052b1eaaa4b3b59d1711330cbfe199
+  - name: pg-analytics
+    filename: pg-analytics
+    executable: true
+
+categories:
+  - "data organisation"
+  - "statistics"
+  - "programming"
+
+domains:
+  - datascience
+
+readme: |
+  ----------------------------------
+  ## postgresanalytics/{{ context.version }} ##
+
+  Bundled PostgreSQL {{ context.pg_major }} advanced analytics container for data science desktops (`scidesktop`, `aidesktop`) loaded via `ml` (Lmod / Apptainer).
+
+  ### Bundled Extensions
+  - **Geospatial**: `postgis`, `postgis_topology`, `postgis_raster` (plus `shp2pgsql` and `raster2pgsql`)
+  - **Vector & AI Embeddings**: `vector` (`pgvector`) and `pgedge_vectorizer` (`{{ context.pgedge_vectorizer_tag }}`)
+  - **Horizontal Partitioning**: `plproxy`
+  - **Time-Series & Streaming Analytics**: `timescaledb` (Apache-2.0 edition), `hll` (HyperLogLog), `tdigest`
+  - **Query Optimization & Contrib**: `hypopg`, `pg_stat_statements`, `btree_gin`, `btree_gist`, `pg_trgm`, `hstore`, `uuid-ossp`, `citext`, `cube`, `earthdistance`, `tablefunc`
+
+  ### Quick Start (Read-Only Apptainer / Non-Root Desktops)
+  The `pg-analytics` helper runs PostgreSQL in user space on port `5433` by default (avoiding port `5432` used by Airflow/MLflow in `aidesktop`):
+
+  ```bash
+  ml postgresanalytics/{{ context.version }}
+  pg-analytics init
+  pg-analytics start --foreground &
+  pg-analytics status  # Wait for accepting connections before continuing.
+  pg-analytics enable-extensions
+  pg-analytics psql
+  # When finished:
+  pg-analytics stop
+  ```
+
+  Foreground mode keeps the Apptainer session and its mounted image alive for PostgreSQL. In Docker or an interactive Apptainer shell, you can use `pg-analytics start` to run PostgreSQL in the background.
+
+  The private Unix socket uses peer authentication. To connect over TCP, set a role password using `\password` in `pg-analytics psql`. PostgreSQL requires SCRAM authentication for TCP clients on the loopback interface.
+
+  The database lives in `$HOME/pg-analytics` on your mounted home by default. Set `PGANALYTICS_DATA` to another writable location for a different cluster. Use `PGANALYTICS_RUN` for a private socket directory, `PGANALYTICS_HOST` and `PGANALYTICS_PORT` for the listener, `PGANALYTICS_DB` for the default database, `PGANALYTICS_LOG` for the log, and `PGANALYTICS_PRELOAD` for the libraries loaded at startup.
+
+  When using `ml`, prefix these variables with `APPTAINERENV_` to pass them to the container. For example, `export APPTAINERENV_PGANALYTICS_PORT=5435` changes the port for subsequent `pg-analytics` commands. Use `SINGULARITYENV_` with SingularityCE.
+
+  More documentation: https://www.postgresql.org/docs/18/
+  ----------------------------------
+
+icon: "data:image/png;base64,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"
