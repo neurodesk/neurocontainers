@@ -15,8 +15,7 @@ tests:
   - name: icy headless startup runs from unrelated working directory
     description: Verify Icy JVM boots cleanly from /tmp with writable setting.xml and relative lib/ layout.
     command: |
+      set -euo pipefail
       rm -rf /tmp/icy-smoke-data
-      cd /tmp && XDG_DATA_HOME=/tmp/icy-smoke-data icy -hl
-      test -w /tmp/icy-smoke-data/icy/setting.xml
-      test -d /tmp/icy-smoke-data/icy/lib/unix64
+      cd /tmp && XDG_DATA_HOME=/tmp/icy-smoke-data icy -hl && test -w /tmp/icy-smoke-data/icy/setting.xml && test -d /tmp/icy-smoke-data/icy/lib/unix64
     expected_output_contains: "Icy Version ${version} started"
