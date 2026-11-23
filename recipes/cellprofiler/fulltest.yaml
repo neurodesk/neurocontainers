@@ -19,5 +19,5 @@ tests:
 
   - name: cellprofiler Python modules import cleanly
     description: Verify core CellProfiler, Bio-Formats/javabridge, and wx GUI imports work.
-    command: /opt/miniconda/envs/cellprofiler/bin/python -c "import cellprofiler, cellprofiler_core, wx; print(cellprofiler.__version__)"
-    expected_output_contains: "4.2.8"
+    command: /opt/miniconda/envs/cellprofiler/bin/python -c "import cellprofiler, cellprofiler_core, bioformats, javabridge, wx; print(cellprofiler.__version__)"
+    expected_output_contains: "${version}"
