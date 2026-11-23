@@ -23,7 +23,7 @@ structured_readme:
     fiji
 
     # Run a headless ImageJ macro
-    fiji --headless --ij2 --run my_macro.ijm
+    fiji --headless my_macro.ijm
   documentation: https://imagej.net/software/fiji/
   citation: |-
     Schindelin, J., Arganda-Carreras, I., Frise, E., Kaynig, V., Longair, M.,
