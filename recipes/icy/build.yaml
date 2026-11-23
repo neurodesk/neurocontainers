@@ -28,7 +28,7 @@ structured_readme:
     Methods, 9(7), 690-696. https://doi.org/10.1038/nmeth.2075
 
 auto_update:
-  container_version: false
+  container_version: icy-archive
   method: sources
   local: []
   sources:
@@ -38,27 +38,51 @@ auto_update:
       version_member: Icy/version.xml
       version_regex: '<version>(?P<version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)</version>'
       target:
-        variable: archive_sha256
+        file: icy_archive
+        variables:
+          upstream_version: version
 
 variables:
-  download_id: "101809"
-  archive_sha256: "0b61d58653bfd335579bd896e712eba930478cb13b423a1d5ac927f7869c0441"
+  upstream_version: "2.5.4.0"
 
 files:
   - name: icy_archive
-    url: https://icy.bioimageanalysis.org/download-file/?id={{ context.download_id }}
-    sha256: "{{ context.archive_sha256 }}"
+    url: https://icy.bioimageanalysis.org/download-file/?id=101809
+    sha256: "0b61d58653bfd335579bd896e712eba930478cb13b423a1d5ac927f7869c0441"
   - name: icy-wrapper
     executable: true
     contents: |-
       #!/usr/bin/env bash
       set -euo pipefail
+      caller_pwd="$(pwd)"
       icy_home="${XDG_DATA_HOME:-${TMPDIR:-/tmp}/icy-$(id -u)}/icy"
-      mkdir -p "${icy_home}"
+      mkdir -p "${icy_home}/workspace" "${icy_home}/java-prefs"
+      for entry in /opt/Icy/*; do
+        base="$(basename "${entry}")"
+        case "${base}" in
+          setting.xml|workspace) continue ;;
+        esac
+        if [ ! -e "${icy_home}/${base}" ] && [ ! -L "${icy_home}/${base}" ]; then
+          ln -s "${entry}" "${icy_home}/${base}"
+        fi
+      done
+      if [ ! -f "${icy_home}/setting.xml" ] && [ -f /opt/Icy/setting.xml ]; then
+        cp /opt/Icy/setting.xml "${icy_home}/setting.xml"
+        chmod u+w "${icy_home}/setting.xml"
+      fi
+      resolved_args=()
+      for arg in "$@"; do
+        if [[ "${arg}" != -* && "${arg}" != /* && -e "${caller_pwd}/${arg}" ]]; then
+          resolved_args+=("${caller_pwd}/${arg}")
+        else
+          resolved_args+=("${arg}")
+        fi
+      done
       export JAVA_TOOL_OPTIONS="-Djava.util.prefs.userRoot=${icy_home}/java-prefs ${JAVA_TOOL_OPTIONS:-}"
-      export LD_LIBRARY_PATH="/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk:${LD_LIBRARY_PATH:-}"
-      exec java -Djava.library.path=/opt/Icy/lib/unix64:/opt/Icy/lib/unix64/vtk \
-        -jar /opt/Icy/icy.jar --nosplash "$@"
+      export LD_LIBRARY_PATH="${icy_home}/lib/unix64:${icy_home}/lib/unix64/vtk:${LD_LIBRARY_PATH:-}"
+      cd "${icy_home}"
+      exec java -Djava.library.path="${icy_home}/lib/unix64:${icy_home}/lib/unix64/vtk" \
+        -jar "${icy_home}/icy.jar" --nosplash "${resolved_args[@]}"
 
 build:
   kind: neurodocker
