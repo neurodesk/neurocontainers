@@ -66,9 +66,11 @@ build:
         env_name: cellprofiler
         env_exists: "false"
         conda_install: >-
-          python=3.9 pip openjdk=11 wxpython=4.2.1 cython numpy=1.23.5 scipy=1.9.0
-          scikit-image=0.18.3 h5py=3.6.0 pillow matplotlib mahotas pyzmq=22.3.0
-        pip_install: cellprofiler=={{ context.version }}
+          python=3.9 pip setuptools wheel openjdk=11 wxpython=4.2.1 cython
+          numpy=1.23.5 scipy=1.9.0 scikit-image=0.18.3 h5py=3.6.0 pillow
+          matplotlib mahotas pyzmq=22.3.0
+    - run:
+        - /opt/miniconda/envs/cellprofiler/bin/pip install --no-cache-dir --no-build-isolation "cellprofiler=={{ context.version }}"
     - environment:
         PATH: /opt/miniconda/envs/cellprofiler/bin:/opt/miniconda/bin:$PATH
 
