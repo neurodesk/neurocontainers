@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "moosez 3.2.2": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "image segmentation",
+    "machine learning"
+  ]
+}
