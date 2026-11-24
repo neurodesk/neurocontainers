@@ -1,7 +1,7 @@
 {
   "apps": {
     "cryosparc 1.0.0": {
-      "version": "20261121",
+      "version": "20261124",
       "exec": "",
       "apptainer_args": []
     }
