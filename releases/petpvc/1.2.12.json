@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "petpvc 1.2.12": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "quantitative imaging"
+  ]
+}
