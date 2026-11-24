@@ -74,6 +74,7 @@ domains:
   - microscopy
   - preclinical
   - molecular-imaging
+  - dermatology
 categories:
   - "image registration"
   - "structural imaging"

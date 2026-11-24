@@ -198,6 +198,7 @@ gui_apps:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - image segmentation

@@ -103,6 +103,7 @@ domains:
   - microscopy
   - neuroimaging
   - datascience
+  - dermatology
 
 categories:
   - data organisation
