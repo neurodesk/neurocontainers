@@ -61,7 +61,8 @@ files:
 
       Note: Redistribution-restricted ImageScience JARs (FeatureJ_.jar, MTrackJ_.jar,
       NeuronJ_.jar, RandomJ_.jar, TransformJ_.jar, and imagescience.jar) are excluded
-      during extraction.
+      during extraction, and ImageScience-dependent node types are skipped during
+      registration so they are cleanly unavailable without class-loading errors.
 
       JIPipe itself is licensed under MIT:
         https://github.com/applied-systems-biology/jipipe/blob/pom-jipipe-{{ context.version }}/LICENSE
@@ -80,6 +81,85 @@ files:
         JARs are embedded under META-INF/maven/ inside /opt/jipipe/bin/jars/ and
         /opt/jipipe/bin/plugins/, with corresponding source artifacts published at
         https://maven.scijava.org/ and https://repo1.maven.org/maven2/.
+  - name: JIPipeJavaNodeRegistrationTask.java
+    contents: |-
+      /*
+       * Adapted from upstream JIPipe (MIT license) to cleanly skip registering
+       * node types whose optional ImageScience dependency JARs are excluded.
+       */
+      package org.hkijena.jipipe.api.registries;
+
+      import org.hkijena.jipipe.JIPipe;
+      import org.hkijena.jipipe.JIPipeDependency;
+      import org.hkijena.jipipe.api.nodes.AddJIPipeInputSlot;
+      import org.hkijena.jipipe.api.nodes.AddJIPipeOutputSlot;
+      import org.hkijena.jipipe.api.nodes.JIPipeGraphNode;
+      import org.hkijena.jipipe.api.nodes.infos.JIPipeJavaNodeInfo;
+      import org.hkijena.jipipe.utils.UIUtils;
+
+      import java.net.URL;
+
+      public class JIPipeJavaNodeRegistrationTask extends JIPipeDefaultNodeRegistrationTask {
+
+          private final JIPipeDependency source;
+          private final String id;
+          private final Class<? extends JIPipeGraphNode> nodeClass;
+          private final URL icon;
+          private boolean alreadyRegistered = false;
+
+          public JIPipeJavaNodeRegistrationTask(String id, Class<? extends JIPipeGraphNode> nodeClass, JIPipeDependency source, URL icon) {
+              this.source = source;
+              this.id = id;
+              this.nodeClass = nodeClass;
+              this.icon = icon;
+
+              for (AddJIPipeInputSlot slot : nodeClass.getAnnotationsByType(AddJIPipeInputSlot.class)) {
+                  getDependencyDatatypeClasses().add(slot.value());
+              }
+              for (AddJIPipeOutputSlot slot : nodeClass.getAnnotationsByType(AddJIPipeOutputSlot.class)) {
+                  getDependencyDatatypeClasses().add(slot.value());
+              }
+          }
+
+          private static boolean isExcludedImageScienceError(Throwable error) {
+              for (Throwable current = error; current != null; current = current.getCause()) {
+                  String message = current.getMessage();
+                  if (message != null && (message.contains("imagescience/") || message.contains("imagescience."))) {
+                      return true;
+                  }
+              }
+              return false;
+          }
+
+          @Override
+          public void register() {
+              if (alreadyRegistered)
+                  return;
+              alreadyRegistered = true;
+              try {
+                  nodeClass.getDeclaredMethods();
+                  nodeClass.getDeclaredFields();
+              } catch (NoClassDefFoundError e) {
+                  if (isExcludedImageScienceError(e)) {
+                      return;
+                  }
+                  throw e;
+              }
+              JIPipeJavaNodeInfo info = new JIPipeJavaNodeInfo(id, nodeClass);
+              JIPipe.getNodes().register(info, source);
+              if (nodeClass.getAnnotation(Deprecated.class) != null) {
+                  JIPipe.getNodes().registerIcon(info, UIUtils.getIconURLFromResources("emblems/deprecated.png"));
+              } else {
+                  if (icon != null)
+                      JIPipe.getNodes().registerIcon(info, icon);
+              }
+          }
+
+          @Override
+          public String toString() {
+              return id + " @ " + nodeClass;
+          }
+      }
   - name: jipipe-wrapper
     executable: true
     contents: |-
@@ -179,6 +259,16 @@ build:
           --exclude='*/TransformJ_*.jar'
           --exclude='*/imagescience*.jar'
         - install -m 0644 {{ get_file("gpl-source-notice") }} /opt/jipipe/GPL-SOURCE-NOTICE.txt
+        - >-
+          apt-get update -qq
+          && apt-get install -y --no-install-recommends openjdk-8-jdk-headless
+          && tmpbuild="$(mktemp -d)"
+          && javac -source 8 -target 8 -cp "/opt/jipipe/bin/jars/*:/opt/jipipe/bin/plugins/JIPipe/*" -d "${tmpbuild}" {{ get_file("JIPipeJavaNodeRegistrationTask.java") }}
+          && jar uf /opt/jipipe/bin/plugins/JIPipe/jipipe-core-{{ context.upstream_version }}.jar -C "${tmpbuild}" org/hkijena/jipipe/api/registries/JIPipeJavaNodeRegistrationTask.class
+          && rm -rf "${tmpbuild}"
+          && apt-get purge -y --auto-remove openjdk-8-jdk-headless
+          && apt-get clean
+          && rm -rf /var/lib/apt/lists/*
         - chmod -R a+rX /opt/jipipe
         - install -m 0755 {{ get_file("jipipe-wrapper") }} /usr/local/bin/jipipe
         - ln -sf jipipe /usr/local/bin/jipipe-cli
