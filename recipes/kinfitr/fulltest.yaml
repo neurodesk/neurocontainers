@@ -1,0 +1,78 @@
+name: kinfitr
+version: "0.9.3"
+upstream_version: "0.9.3"
+r_version: "4.6.2-2.2404.0"
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Rscript on PATH
+    description: Verify Rscript binary is available on PATH
+    command: command -v Rscript
+    expected_output_contains: "Rscript"
+
+  - name: R is the pinned CRAN build
+    description: Verify installed R matches the pinned CRAN Ubuntu build
+    command: |
+      for pkg in r-base-core r-recommended; do
+        test "$(dpkg-query -W -f='${Version}' "$pkg")" = "${r_version}" || { echo "$pkg is not ${r_version}"; exit 1; }
+      done
+      echo "R ${r_version} pinned"
+    expected_output_contains: "R ${r_version} pinned"
+
+  - name: kinfitr package version
+    description: Verify kinfitr loads and reports the expected upstream version
+    command: Rscript -e 'library(kinfitr); cat("kinfitr_version=", as.character(packageVersion("kinfitr")), "\n", sep = "")'
+    expected_output_contains: "kinfitr_version=${upstream_version}"
+
+  - name: Reference tissue SRTM fit on simref dataset
+    description: Fit Simplified Reference Tissue Model (SRTM) to bundled simref TACs and validate finite BPnd estimate
+    command: |
+      Rscript -e '
+        library(kinfitr)
+        data("simref")
+        tacs <- simref$tacs[[2]]
+        fit <- srtm(t_tac = tacs$Times, reftac = tacs$Reference, roitac = tacs$ROI1, weights = tacs$Weights)
+        bp <- fit$par$bp
+        cat(sprintf("SRTM BPnd=%.4f R1=%.4f k2=%.4f\n", bp, fit$par$R1, fit$par$k2))
+        stopifnot(is.finite(bp), bp > 1.5, bp < 2.5)
+        stopifnot(inherits(plot(fit), "ggplot"))
+        ggplot2::ggsave("${output_dir}/srtm_fit.png", plot(fit), width = 6, height = 4, dpi = 100)
+        cat("SRTM_OK\n")
+      '
+    expected_output_contains: "SRTM_OK"
+    validate:
+      - output_exists: ${output_dir}/srtm_fit.png
+
+  - name: Arterial Logan and MA1 fits on pbr28 dataset
+    description: Fit Logan graphical analysis and MA1 models to bundled [11C]PBR28 TACs with arterial input function and validate Vt estimates
+    command: |
+      Rscript -e '
+        library(kinfitr)
+        data("pbr28")
+        meas <- 2
+        t_tac <- pbr28$tacs[[meas]]$Times / 60
+        dur <- pbr28$tacs[[meas]]$Duration / 60
+        tac <- pbr28$tacs[[meas]]$FC
+        input <- pbr28$input[[meas]]
+        weights <- pbr28$tacs[[meas]]$Weights
+        inpshift <- 0.1438066
+
+        logan_fit <- Loganplot(t_tac = t_tac, tac = tac, input = input, tstar = 10, tstar_type = "frames", weights = weights, inpshift = inpshift, dur = dur)
+        ma1_fit <- ma1(t_tac = t_tac, tac = tac, input = input, tstar = 10, tstar_type = "frames", weights = weights, inpshift = inpshift, dur = dur)
+
+        vt_logan <- logan_fit$par$Vt
+        vt_ma1 <- ma1_fit$par$Vt
+        cat(sprintf("Logan Vt=%.4f MA1 Vt=%.4f\n", vt_logan, vt_ma1))
+        stopifnot(is.finite(vt_logan), vt_logan > 2.0, vt_logan < 3.0)
+        stopifnot(is.finite(vt_ma1), vt_ma1 > 2.0, vt_ma1 < 3.0)
+        cat("AIF_MODELS_OK\n")
+      '
+    expected_output_contains: "AIF_MODELS_OK"

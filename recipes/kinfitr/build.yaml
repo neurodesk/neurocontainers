@@ -1,0 +1,199 @@
+name: kinfitr
+version: "0.9.3"
+
+copyright:
+  - license: MIT
+    url: https://github.com/mathesong/kinfitr/blob/v0.9.3/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "0.9.3"
+  # Pinned R build from CRAN's Ubuntu 24.04 (noble-cran40) apt repository.
+  r_version: "4.6.2-2.2404.0"
+  # Posit Package Manager CRAN binary snapshot matching the pinned R version.
+  cran_snapshot: "2026-11-23"
+
+auto_update:
+  method: sources
+  container_version: kinfitr
+  sources:
+    - id: kinfitr
+      method: github_release
+      repo: mathesong/kinfitr
+      target:
+        variable: upstream_version
+        value: version
+        fulltest_variable: upstream_version
+    - id: r
+      method: apt
+      package: r-base-core
+      urls:
+        - https://cloud.r-project.org/bin/linux/ubuntu/noble-cran40/Packages.gz
+      dependency: true
+      target:
+        variable: r_version
+        fulltest_variable: r_version
+    - id: cran_snapshot
+      method: webpage
+      url: https://packagemanager.posit.co/__api__/repos/cran/transaction-dates
+      version_regex: '"alias":"(?P<version>[0-9-]+)"'
+      version_scheme: date
+      dependency: true
+      target:
+        variable: cran_snapshot
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - run:
+        - install -m 0644 {{ get_file("cran_ubuntu_key") }} /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc
+        - echo "deb https://cloud.r-project.org/bin/linux/ubuntu noble-cran40/" > /etc/apt/sources.list.d/cran.list
+
+    - install:
+        - "r-base-core={{ context.r_version }}"
+        - "r-recommended={{ context.r_version }}"
+        - libuv1t64
+
+    - run:
+        - Rscript {{ get_file("install_kinfitr.R") }} {{ get_file("kinfitr_source") }}
+        - Rscript -e 'library(kinfitr); stopifnot(as.character(packageVersion("kinfitr")) == "{{ context.upstream_version }}")'
+        - rm -rf /tmp/* /var/tmp/*
+
+deploy:
+  bins:
+    - R
+    - Rscript
+
+files:
+  - name: cran_ubuntu_key
+    url: https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc
+
+  - name: kinfitr_source
+    url: https://github.com/mathesong/kinfitr/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
+
+  - name: install_kinfitr.R
+    contents: |
+      # Install kinfitr's CRAN dependencies as Ubuntu 24.04 (noble) Linux
+      # binaries from the pinned Posit Package Manager snapshot, then install
+      # kinfitr itself from the staged release source archive.
+      options(
+        repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/{{ context.cran_snapshot }}"),
+        HTTPUserAgent = sprintf(
+          "R/%s R (%s)",
+          getRversion(),
+          paste(getRversion(), R.version$platform, R.version$arch, R.version$os)
+        ),
+        timeout = 1800,
+        Ncpus = 1L
+      )
+
+      tarball <- commandArgs(trailingOnly = TRUE)[[1]]
+      extract_dir <- tempfile("kinfitr_src_")
+      dir.create(extract_dir)
+      on.exit(unlink(extract_dir, recursive = TRUE), add = TRUE)
+      untar(tarball, exdir = extract_dir)
+      pkg_dir <- list.dirs(extract_dir, full.names = TRUE, recursive = FALSE)[[1]]
+
+      dcf <- read.dcf(file.path(pkg_dir, "DESCRIPTION"))
+      parse_pkgs <- function(field) {
+        if (!(field %in% colnames(dcf)) || is.na(dcf[1, field])) {
+          return(character(0))
+        }
+        raw <- strsplit(dcf[1, field], ",", fixed = TRUE)[[1]]
+        pkgs <- sub("\\s*\\(.*$", "", trimws(raw))
+        pkgs[nzchar(pkgs) & pkgs != "R"]
+      }
+
+      deps <- unique(c(
+        parse_pkgs("Depends"),
+        parse_pkgs("Imports"),
+        parse_pkgs("LinkingTo")
+      ))
+      installed <- rownames(installed.packages())
+      needed <- setdiff(deps, installed)
+      if (length(needed)) {
+        install.packages(needed, clean = TRUE)
+      }
+
+      missing <- deps[!vapply(deps, requireNamespace, logical(1), quietly = TRUE)]
+      if (length(missing)) {
+        stop("CRAN dependencies failed to install: ", paste(missing, collapse = ", "))
+      }
+
+      install.packages(pkg_dir, repos = NULL, type = "source", clean = TRUE)
+      if (!requireNamespace("kinfitr", quietly = TRUE)) {
+        stop("kinfitr failed to install")
+      }
+
+domains:
+  - neuroimaging
+
+categories:
+  - molecular imaging
+  - preclinical imaging
+  - quantitative imaging
+  - statistics
+
+structured_readme:
+  description: >-
+    kinfitr is an R package for reproducible pharmacokinetic modeling of Positron
+    Emission Tomography (PET) time-activity curves (TACs). It implements compartmental
+    models (1TCM, 2TCM), graphical analyses (Logan, Patlak, MA1), and reference tissue
+    models (SRTM, SRTM2, MRTM1, MRTM2, refLogan, refPatlak) along with arterial blood
+    data processing utilities.
+  example: |-
+    Rscript -e '
+      library(kinfitr)
+      data(simref)
+      tacs <- simref$tacs[[1]]
+      fit <- srtm(t_tac = tacs$Times, reftac = tacs$Reference, roitac = tacs$ROI1, weights = tacs$Weights)
+      print(fit$par)
+    '
+  documentation: https://github.com/mathesong/kinfitr
+  citation: |-
+    Matheson, G. J. (2019). Kinfitr: Reproducible PET Pharmacokinetic Modelling in R. bioRxiv: 755751. https://doi.org/10.1101/755751
+
+    Tjerkaski, J., Cervenka, S., Farde, L., & Matheson, G. J. (2020). Kinfitr - an open source tool for reproducible PET modelling: Validation and evaluation of test-retest reliability. EJNMMI Research 10, 77. https://doi.org/10.1186/s13550-020-00664-8
+
+readme: |-
+  ----------------------------------
+  ## kinfitr/{{ context.version }} ##
+
+  kinfitr is an R package for reproducible pharmacokinetic modeling of Positron
+  Emission Tomography (PET) time-activity curves (TACs). It implements compartmental
+  models (1TCM, 2TCM), graphical analyses (Logan, Patlak, MA1), and reference tissue
+  models (SRTM, SRTM2, MRTM1, MRTM2, refLogan, refPatlak) along with arterial blood
+  data processing utilities.
+
+  Example:
+  ```bash
+  Rscript -e '
+    library(kinfitr)
+    data(simref)
+    tacs <- simref$tacs[[1]]
+    fit <- srtm(t_tac = tacs$Times, reftac = tacs$Reference, roitac = tacs$ROI1, weights = tacs$Weights)
+    print(fit$par)
+  '
+  ```
+
+  More documentation and tutorials can be found here:
+  - https://github.com/mathesong/kinfitr
+  - https://granvillematheson.com/posts/2020/kinfitr-part-1-theory
+
+  Citation:
+  ```
+  Matheson, G. J. (2019). Kinfitr: Reproducible PET Pharmacokinetic Modelling in R. bioRxiv: 755751. https://doi.org/10.1101/755751
+
+  Tjerkaski, J., Cervenka, S., Farde, L., & Matheson, G. J. (2020). Kinfitr - an open source tool for reproducible PET modelling: Validation and evaluation of test-retest reliability. EJNMMI Research 10, 77. https://doi.org/10.1186/s13550-020-00664-8
+  ```
+
+  To run container outside of this environment: ml kinfitr/{{ context.version }}
+
+  ----------------------------------
+
+icon: data:image/png;base64,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
