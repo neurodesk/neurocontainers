@@ -1,0 +1,607 @@
+name: tiatoolbox
+version: 2.1.3
+
+description: Code-only computational pathology toolbox for dermatopathology WSI reading, tissue masking, Macenko/Vahadane stain normalization, and tiling.
+
+copyright:
+  - license: BSD-3-Clause
+    name: TIAToolbox license
+    url: https://github.com/TissueImageAnalytics/tiatoolbox/blob/v{{ context.upstream_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: PyTorch license
+    url: https://github.com/pytorch/pytorch/blob/v{{ context.torch_version }}/LICENSE
+  - license: LGPL-2.1-only
+    name: OpenSlide binary distribution license
+    url: https://github.com/openslide/openslide-bin/blob/v{{ context.openslide_bin_version }}/COPYING.LESSER
+  - license: LGPL-2.1-only
+    name: OpenSlide Python license
+    url: https://github.com/openslide/openslide-python/blob/v{{ context.openslide_python_version }}/COPYING.LESSER
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "2.1.3"
+  # Pinned official CPU-only PyTorch and torchvision wheels (avoids proprietary
+  # NVIDIA CUDA wheels and satisfies tiatoolbox's torch<2.13, torchvision<0.28).
+  torch_version: "2.12.1"
+  torchvision_version: "0.27.1"
+  # Coordinated LGPL-2.1 OpenSlide pins with matching corresponding source digests.
+  openslide_bin_version: "4.0.1.1"
+  openslide_bin_source_sha256: "3e88501b328650fda3aa5914584d968575e0e1045afc8d250c32e25a8437b3e1"
+  openslide_python_version: "1.4.3"
+  openslide_python_source_sha256: "06eec2e05988c37b71ff1ee57d1f465c0dcbf26e655d1dcdab70217ad2769b82"
+
+auto_update:
+  method: sources
+  container_version: tiatoolbox
+  sources:
+    - id: tiatoolbox
+      method: pypi
+      package: tiatoolbox
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/tiatoolbox/wrappers:/opt/tiatoolbox/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libgl1
+        - libglib2.0-0
+        - libgomp1
+        - libjpeg-turbo8
+        - libopenjp2-7
+        - libpng16-16
+        - libsm6
+        - libtiff6
+        - libwebp7
+        - libxext6
+        - libxrender1
+        - patchelf
+        - python3
+        - python3-numpy
+        - python3-opencv
+        - python3-pip
+        - python3-scipy
+        - python3-shapely
+        - python3-skimage
+        - python3-sklearn
+        - python3-venv
+        - python3-zmq
+
+    - run:
+        # Inherit Ubuntu 26.04 system python3-opencv, python3-shapely, python3-numpy,
+        # python3-scipy, python3-skimage, python3-sklearn, and python3-zmq so we avoid
+        # shipping PyPI wheels bundling LGPL/GPL/MPL binaries (FFmpeg/Qt/GEOS/GCC/ZeroMQ).
+        - python3 -m venv --system-site-packages /opt/tiatoolbox
+        - /opt/tiatoolbox/bin/python -m pip install --no-cache-dir --upgrade pip
+        - >-
+          arch="$(uname -m)"
+          && cp {{ get_file("torch_cpu_wheel") }} "/tmp/torch-{{ context.torch_version }}+cpu-cp314-cp314-manylinux_2_28_${arch}.whl"
+          && cp {{ get_file("torchvision_cpu_wheel") }} "/tmp/torchvision-{{ context.torchvision_version }}+cpu-cp314-cp314-manylinux_2_28_${arch}.whl"
+          && /opt/tiatoolbox/bin/python -m pip install --no-cache-dir
+          "/tmp/torch-{{ context.torch_version }}+cpu-cp314-cp314-manylinux_2_28_${arch}.whl"
+          "/tmp/torchvision-{{ context.torchvision_version }}+cpu-cp314-cp314-manylinux_2_28_${arch}.whl"
+          && rm -f "/tmp/torch-{{ context.torch_version }}+cpu-cp314-cp314-manylinux_2_28_${arch}.whl"
+          "/tmp/torchvision-{{ context.torchvision_version }}+cpu-cp314-cp314-manylinux_2_28_${arch}.whl"
+        # Install tiatoolbox without deps, then install all runtime deps except
+        # opencv-python (supplied by Ubuntu APT python3-opencv), pinning OpenSlide.
+        - /opt/tiatoolbox/bin/python -m pip install --no-cache-dir --no-deps "tiatoolbox=={{ context.upstream_version }}"
+        - >-
+          /opt/tiatoolbox/bin/python -c "import importlib.metadata as md;
+          reqs = [r for r in (md.distribution('tiatoolbox').requires or []) if '; extra ==' not in r];
+          skip = {'opencv-python', 'torch', 'torchvision', 'openslide-bin', 'openslide-python'};
+          kept = [r for r in reqs if r.split(';')[0].split('[')[0].split('<')[0].split('>')[0].split('=')[0].strip().lower() not in skip];
+          open('/tmp/tiatoolbox-reqs.txt', 'w').write('\n'.join(kept) + '\n')"
+        - >-
+          /opt/tiatoolbox/bin/python -m pip install --no-cache-dir
+          -r /tmp/tiatoolbox-reqs.txt
+          "openslide-bin=={{ context.openslide_bin_version }}"
+          "openslide-python=={{ context.openslide_python_version }}"
+          && rm -f /tmp/tiatoolbox-reqs.txt
+        # Link torch and imagecodecs against Ubuntu's system libgomp1 instead of
+        # shipping bundled wheel copies of libgomp.
+        - >-
+          rm -f /opt/tiatoolbox/lib/python*/site-packages/torch/lib/libgomp.so.1
+          && for f in $(find /opt/tiatoolbox/lib/python*/site-packages/imagecodecs /opt/tiatoolbox/lib/python*/site-packages/imagecodecs.libs -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libgomp-' || true); do
+          patchelf --replace-needed "$need" libgomp.so.1 "$f";
+          done;
+          done
+          && rm -f /opt/tiatoolbox/lib/python*/site-packages/imagecodecs.libs/libgomp-*.so*
+        # Install _tiatoolbox_runtime.py + .pth startup hook and patch
+        # tiatoolbox/__init__.py so username/cache fallbacks run before any import
+        # (including torchvision/torch._dynamo imported before tiatoolbox).
+        - /opt/tiatoolbox/bin/python {{ get_file("patch_tiatoolbox_home") }}
+        # Guard: verify only the intentional opencv-python pip-check notice exists,
+        # system APT packages provide cv2/shapely/scipy/sklearn/zmq, zero bundled
+        # GNU/MPL wheel libs exist, CPU PyTorch + imagecodecs work against system
+        # libgomp1, zero CUDA wheels exist, and no pretrained checkpoints are baked.
+        - >-
+          /opt/tiatoolbox/bin/python -c "import importlib.metadata as md, pathlib, subprocess, cv2, imagecodecs, scipy, shapely, sklearn, torch, torchvision, zmq;
+          r = subprocess.run(['/opt/tiatoolbox/bin/python', '-m', 'pip', 'check'], capture_output=True, text=True);
+          lines = [ln.strip() for ln in (r.stdout + '\n' + r.stderr).splitlines() if ln.strip()];
+          unexpected = [ln for ln in lines if not ln.endswith('requires opencv-python, which is not installed.')];
+          assert not unexpected, unexpected;
+          assert all(mod.__file__.startswith('/usr/lib/python3/dist-packages/') for mod in (cv2, shapely, scipy, sklearn, zmq)), [mod.__file__ for mod in (cv2, shapely, scipy, sklearn, zmq)];
+          bad_libs = [str(p) for p in pathlib.Path('/opt/tiatoolbox').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libzmq'))];
+          assert not bad_libs, bad_libs;
+          assert '+cpu' in torch.__version__ and '+cpu' in torchvision.__version__, (torch.__version__, torchvision.__version__);
+          torch.set_num_threads(2); assert float(torch.ones(8).sum()) == 8.0; assert imagecodecs.version();
+          bad = [d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad, bad;
+          weights = [str(p) for p in pathlib.Path('/opt/tiatoolbox').rglob('*') if p.is_file() and p.suffix.lower() in {'.pth', '.pt', '.ckpt', '.onnx', '.safetensors'} and p.stat().st_size > 1_000_000];
+          assert not weights, weights"
+        - mkdir -p /opt/tiatoolbox/wrappers /opt/tiatoolbox/share/licenses/openslide-bin /opt/tiatoolbox/share/src
+        - install -m 0755 {{ get_file("tiatoolbox_wrapper") }} /opt/tiatoolbox/wrappers/tiatoolbox
+        - install -m 0644 {{ get_file("tiatoolbox_license") }} /opt/tiatoolbox/share/licenses/TIATOOLBOX-LICENSE.txt
+        - cp -a /opt/tiatoolbox/lib/python*/site-packages/openslide_bin-{{ context.openslide_bin_version }}.dist-info/licenses/. /opt/tiatoolbox/share/licenses/openslide-bin/
+        - install -m 0644 /opt/tiatoolbox/lib/python*/site-packages/openslide_python-{{ context.openslide_python_version }}.dist-info/licenses/COPYING.LESSER /opt/tiatoolbox/share/licenses/OPENSLIDE-PYTHON-COPYING.LESSER
+        - install -m 0644 {{ get_file("openslide_bin_source") }} /opt/tiatoolbox/share/src/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+        - install -m 0644 {{ get_file("openslide_python_source") }} /opt/tiatoolbox/share/src/openslide_python-{{ context.openslide_python_version }}.tar.gz
+        - chmod -R a+rX /opt/tiatoolbox
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: torch_cpu_wheel
+    condition: arch == "x86_64"
+    url: https://download-r2.pytorch.org/whl/cpu/torch-{{ context.torch_version }}%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl
+    sha256: "618120d79360688595e61162147d37e1d69fc3f2e13d60584a1eb6a74c74735a"
+  - name: torch_cpu_wheel
+    condition: arch == "aarch64"
+    url: https://download-r2.pytorch.org/whl/cpu/torch-{{ context.torch_version }}%2Bcpu-cp314-cp314-manylinux_2_28_aarch64.whl
+    sha256: "1b9ad70d0a300d6bd883fffc153a6c0f9bc64bf4190519aeeed0373807bffbcc"
+  - name: torchvision_cpu_wheel
+    condition: arch == "x86_64"
+    url: https://download-r2.pytorch.org/whl/cpu/torchvision-{{ context.torchvision_version }}%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl
+    sha256: "a1b6e90fe0beeac762acdea272eee40f64f8766106632b7c4b6f66038d60550f"
+  - name: torchvision_cpu_wheel
+    condition: arch == "aarch64"
+    url: https://download-r2.pytorch.org/whl/cpu/torchvision-{{ context.torchvision_version }}%2Bcpu-cp314-cp314-manylinux_2_28_aarch64.whl
+    sha256: "290ebb142880dfcaa1feec3b448dcd3c704c2f0391232a1eed9eff5ea5c65b35"
+  - name: tiatoolbox_license
+    url: https://raw.githubusercontent.com/TissueImageAnalytics/tiatoolbox/v{{ context.upstream_version }}/LICENSE
+  - name: openslide_bin_source
+    url: https://github.com/openslide/openslide-bin/releases/download/v{{ context.openslide_bin_version }}/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+    sha256: "{{ context.openslide_bin_source_sha256 }}"
+  - name: openslide_python_source
+    url: https://files.pythonhosted.org/packages/source/o/openslide_python/openslide_python-{{ context.openslide_python_version }}.tar.gz
+    sha256: "{{ context.openslide_python_source_sha256 }}"
+  - name: patch_tiatoolbox_home
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/tiatoolbox/lib").glob("python*/site-packages/tiatoolbox/__init__.py"))
+      assert len(matches) == 1, matches
+      init_py = matches[0]
+      site_packages = init_py.parent.parent
+
+      runtime_py = site_packages / "_tiatoolbox_runtime.py"
+      runtime_py.write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for TIAToolbox and PyTorch/Numba caches."""
+
+              from __future__ import annotations
+
+              import atexit
+              import getpass
+              import os
+              import shutil
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      fd, probe = tempfile.mkstemp(prefix=".tiatoolbox-write-check-", dir=path_str)
+                      os.close(fd)
+                      os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT
+                  if _CACHE_ROOT is None:
+                      _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="tiatoolbox-cache."))
+                      atexit.register(shutil.rmtree, _CACHE_ROOT, ignore_errors=True)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  # Ensure getpass.getuser() succeeds for unlisted container UIDs regardless
+                  # of import order (PyTorch Inductor/Dynamo reads it on torchvision import).
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("NUMBA_CACHE_DIR", "numba"),
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("TORCHINDUCTOR_CACHE_DIR", "torchinductor"),
+                      ("TORCH_HOME", "torch"),
+                      ("HF_HOME", "huggingface"),
+                      ("XDG_CACHE_HOME", "cache"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+
+              def resolve_tiatoolbox_home() -> Path:
+                  ensure_runtime_env()
+                  env_home = os.environ.get("TIATOOLBOX_HOME")
+                  if is_writable_dir(env_home):
+                      assert env_home is not None
+                      return Path(env_home)
+                  xdg_cache = os.environ.get("XDG_CACHE_HOME")
+                  if xdg_cache:
+                      candidate = Path(xdg_cache) / "tiatoolbox"
+                      if is_writable_dir(str(candidate)):
+                          os.environ["TIATOOLBOX_HOME"] = str(candidate)
+                          return candidate
+                  tmp_home = _private_subdir("tiatoolbox")
+                  os.environ["TIATOOLBOX_HOME"] = str(tmp_home)
+                  return tmp_home
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_tiatoolbox_runtime.pth").write_text(
+          "import _tiatoolbox_runtime\n",
+          encoding="utf-8",
+      )
+
+      src = init_py.read_text(encoding="utf-8")
+      old = '    "TIATOOLBOX_HOME": Path.home() / ".tiatoolbox",'
+      assert src.count(old) == 1, f"Expected unique TIATOOLBOX_HOME line in {init_py}"
+      helper = """
+      def _default_tiatoolbox_home() -> Path:
+          import _tiatoolbox_runtime
+
+          return _tiatoolbox_runtime.resolve_tiatoolbox_home()
+
+
+      """
+      anchor = "rcParam: _RcParam = {"
+      assert src.count(anchor) == 1, f"Expected unique rcParam anchor in {init_py}"
+      src = src.replace(anchor, helper + anchor, 1)
+      src = src.replace(old, '    "TIATOOLBOX_HOME": _default_tiatoolbox_home(),', 1)
+      init_py.write_text(src, encoding="utf-8")
+  - name: tiatoolbox_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run TIAToolbox CLI with private non-/home cache and model paths."""
+
+      from __future__ import annotations
+
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("TIATOOLBOX_HOME", "tiatoolbox"),
+          ("TORCH_HOME", "torch"),
+          ("TORCHINDUCTOR_CACHE_DIR", "torchinductor"),
+          ("HF_HOME", "huggingface"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("NUMBA_CACHE_DIR", "numba"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              fd, probe = tempfile.mkstemp(prefix=".tiatoolbox-write-check-", dir=path_str)
+              os.close(fd)
+              os.unlink(probe)
+              return True
+          except OSError:
+              return False
+
+
+      def main() -> int:
+          cmd = ["/opt/tiatoolbox/bin/tiatoolbox", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="tiatoolbox.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              # Place the child in its own process group so a group SIGINT is delivered
+              # once; transfer foreground terminal ownership only when this job owns
+              # the TTY, and propagate job-control stops (Ctrl-Z/bg/fg/tostop) cleanly.
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - tiatoolbox
+
+domains:
+  - microscopy
+
+categories:
+  - "digital pathology"
+  - "image segmentation"
+  - "machine learning"
+
+readme: |-
+  ----------------------------------
+  ## tiatoolbox/{{ context.version }} ##
+
+  TIAToolbox is an open-source computational pathology toolbox from the Tissue
+  Image Analytics (TIA) Centre for reading whole-slide microscopy images,
+  generating Otsu/morphological tissue masks, performing Macenko/Vahadane/Reinhard
+  H&E stain normalization, and extracting tiles at arbitrary resolutions.
+
+  This container is **code-only** and ships CPU PyTorch (`{{ context.torch_version }}+cpu`),
+  Ubuntu 26.04 system `OpenCV` and `Shapely`, and OpenSlide (`openslide-bin`
+  {{ context.openslide_bin_version }}, `openslide-python` {{ context.openslide_python_version }}).
+  No pretrained model checkpoints (some of which carry non-commercial upstream
+  licenses) are baked into the image; supply authorized checkpoints at runtime via
+  `TIATOOLBOX_HOME`.
+
+  ### Included CLI Tool
+  ```
+  tiatoolbox    TIAToolbox CLI (slide-info, tissue-mask, stain-norm, save-tiles, ...)
+  ```
+
+  ### Examples
+  ```
+  ml tiatoolbox/{{ context.version }}
+  tiatoolbox tissue-mask --img-input slide.svs --mode save --output-path ./masks/
+  tiatoolbox stain-norm --img-input ./patches/ --target-input ref_he.png --method macenko --output-path ./norm/
+  ```
+
+  Documentation: https://tia-toolbox.readthedocs.io/
+  License texts (including TIAToolbox BSD-3-Clause, OpenSlide LGPL-2.1, and
+  bundled third-party notices) are installed under `/opt/tiatoolbox/share/licenses/`.
+  Matching LGPL-2.1 corresponding source archives for `openslide-bin` and
+  `openslide-python` are bundled under `/opt/tiatoolbox/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEBklEQVR42u2avW8cRRiHn3dm9+58lyOxjUnASBahiYQQEj1FkGgokQiipaIA/g8kJJT/AokWSkSXLkrnhsqIhgQpPtv3sR8zL8Xc2Sa3u7dnIYzjWWmbu7n3Zp75eH/vb1cODw+Va3wZrvl17QEkVR+qhvtlugQQ0waAQqcr2EQCBLniI1cQAe+VfKbNAFSh0xMe/XTEwf6MTk+u/EoQgTJXtl9Puf9gE+/0H5O6BMAkwsH+jMe/HDMYGpy/4gAM5FNl716XDz/bbLkFekJ/aNi4YfAvAYDEKt2+We8Q9P7svuqHn/egPqbBCCACiAAigAigfS3gz+6mHCOXLJVVg3ZpbOPraxt50Q8QA6O/HLOxwxipjK0K1gqzE8ePD58xHTus/e9ls3r45OsddnZTikJrJ0M9pF1h63ay1MekqvHmawnGJrVkVcEmwvjIhQrrEuuFnTdTdu92yDNtXI2qUBbabguUhULRHMw6KLLLr5SKXMkzXQlgURi1AtBmX8v/YP+f78dF+xPTYAQQAUQhVC2EtDkLyNwrEAnaYWU6XMNoFaGdFzkXbP5cX5p8gfamaO/MFJUGHaBOKXIlmypJUj9ABawBm7ZJLyENO7eagXro9g39gcGmimn4gfeQz3wzgMXADvZnPH9WkiTV6k4BY4R86tnZTdm+kyBGKldAaAvTE8/zP8vKWTg/eO/g5qsJw00bZrUGqAi4En57MuHp7xmubI7ZHxreeqfXrARVIe0Jj34+OjVFvWveCl99v8vu212yWfUMOA+DoeHJr8f88N3TRp/RGGF67Hj/05t89PkWJ6MgsZdmUyGZK9GH3/zByWFJkkpl3SIWsomyd6/Hl9++gSsbXOHTLdAV+jcMG4NmU3Sx/1yh+FJRqV56rtC1vEX14MoQs3JVKTjAl0q3L/jSnD3HeBGAAWtCu7UOwTam6ClxOXdXnj4XkXgrfjv/bjEJUlPxRVM06oAIIAKIANaVwmLAWMFYaTzBdY3TXWR1TGNDm3XqenOur3Vp0NjQrhUAkSAcxiOHem0WQi2fHcpc3o5HDt8Q0yTCeOQoWrg7i3Q9OfaMR65eB1jIJ8p07FcDEAkW03sfDLi9l5J2VhidCsNbFufqO7yIeWevw8dfbJE0xBQRisxz992NYHHViHsRUK+kXeH+g1sUmWJMdS0mAq6AV7Yt3i8XN0uusCp0N0IxRIs3RLKJX7kKVCFJhU5vRcz5d0WurVaBSCiGGtvpWT2QTZc7KlWvyQUfvV3tamy7DRueNayKKUCY+bbngPe0q7NFKs+B2kNQ/uWXg0RAWsFa73/DoC7e16gDIoAIIAKIACKACCACiAAigAggAogAIoAIIAKIACKACCACiAAigGt0/Q3SouLWVZVvLgAAAABJRU5ErkJggg==
