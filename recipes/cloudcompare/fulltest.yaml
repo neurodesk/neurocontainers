@@ -1,0 +1,73 @@
+name: cloudcompare
+version: "2.13.2"
+cloudcompare_amd64_version: "2.13.2+git20240821+ds-4"
+cloudcompare_arm64_version: "2.13.2+git20240821+ds-4"
+
+tests:
+  - name: CloudCompare and ccViewer binaries available on PATH
+    description: Verify the deployed CloudCompare and ccViewer executables resolve on PATH.
+    command: |
+      set -e
+      command -v CloudCompare
+      command -v ccViewer
+    expected_output_contains: "/usr/bin/CloudCompare"
+
+  - name: installed Ubuntu package version matches recipe exactly
+    description: Verify the pinned Ubuntu cloudcompare package version for this architecture is installed (exact match).
+    command: |
+      set -e
+      arch="$(dpkg --print-architecture)"
+      case "$arch" in
+        amd64) expected="${cloudcompare_amd64_version}" ;;
+        arm64) expected="${cloudcompare_arm64_version}" ;;
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+      esac
+      installed="$(dpkg-query -W -f='${Version}' cloudcompare)"
+      test "$installed" = "$expected"
+      printf 'cloudcompare exact version ok: %s\n' "$installed"
+    expected_output_contains: "cloudcompare exact version ok:"
+
+  - name: shared library linkage, copyright, and Ubuntu corresponding source installed
+    description: Verify shared libraries resolve cleanly and Ubuntu copyright, GPL-2.0 text, source notice, and .dsc/.orig/.debian source package are present.
+    command: |
+      set -e
+      arch="$(dpkg --print-architecture)"
+      case "$arch" in
+        amd64) expected="${cloudcompare_amd64_version}" ;;
+        arm64) expected="${cloudcompare_arm64_version}" ;;
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+      esac
+      test -s /usr/share/doc/cloudcompare/copyright
+      test -s /opt/cloudcompare/share/licenses/GPL-2.0.txt
+      test -s /opt/cloudcompare/share/licenses/GPL-SOURCE-NOTICE.txt
+      test -s "/opt/cloudcompare/share/src/cloudcompare_${expected}.dsc"
+      test -s "/opt/cloudcompare/share/src/cloudcompare_${expected}.debian.tar.xz"
+      ls /opt/cloudcompare/share/src/cloudcompare_*.orig.tar.* >/dev/null
+      libs="$(ldd "$(command -v CloudCompare)")"
+      if printf '%s\n' "$libs" | grep -q 'not found'; then
+        printf '%s\n' "$libs" | grep 'not found'
+        exit 1
+      fi
+      echo "cloudcompare linkage, copyright, and source ok"
+    expected_output_contains: "cloudcompare linkage, copyright, and source ok"
+
+  - name: headless batch point-cloud conversion via CloudCompare -SILENT with unset XDG variables
+    description: Run CloudCompare -SILENT under Xvfb with read-only HOME and unset XDG_* variables to convert a synthetic 3D point cloud from ASCII to PLY and verify the output file.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      chmod 0700 "$tmpdir"
+      cat > "$tmpdir/surface.asc" <<'EOF'
+      0.0 0.0 0.0
+      1.0 0.0 0.1
+      0.0 1.0 0.2
+      1.0 1.0 0.15
+      0.5 0.5 0.3
+      EOF
+      env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_RUNTIME_DIR \
+        HOME=/sys LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a CloudCompare -SILENT -NO_TIMESTAMP -O "$tmpdir/surface.asc" -C_EXPORT_FMT PLY -PLY_EXPORT_FMT ASCII -SAVE_CLOUDS FILE "$tmpdir/surface_out.ply"
+      test -s "$tmpdir/surface_out.ply"
+      grep -q "element vertex 5" "$tmpdir/surface_out.ply"
+      echo "cloudcompare silent ply ok"
+    expected_output_contains: "cloudcompare silent ply ok"
