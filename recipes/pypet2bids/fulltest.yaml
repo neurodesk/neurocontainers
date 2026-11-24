@@ -1,0 +1,131 @@
+name: pypet2bids
+version: 1.6.0
+upstream_version: "1.6.0"
+dcm2niix_tag: "v1.0.20261029"
+
+tests:
+  - name: deployed binaries available on PATH
+    description: Verify all deployed pypet2bids and dcm2niix CLI entrypoints resolve on PATH.
+    command: |
+      set -e
+      for cmd in dcm2niix dcm2niix4pet ecatpet2bids convert-pmod-to-blood ispet updatepetjsonfromdicom updatepetjsonfromecat updatepetjson ecatheaderupdate; do
+        command -v "$cmd"
+      done
+    expected_output_contains: "dcm2niix4pet"
+
+  - name: license notices present and wheel binaries removed
+    description: Verify license notices are installed and redundant wheel-bundled dcm2niix archives were stripped.
+    command: |
+      set -e
+      test -s /opt/pypet2bids/share/licenses/PET2BIDS-LICENSE.txt
+      test -s /opt/pypet2bids/share/licenses/dcm2niix-license.txt
+      test -s /opt/pypet2bids/share/licenses/ujpeg-license.txt
+      test -s /opt/pypet2bids/share/licenses/cjson-license.txt
+      grep -q "MIT" /opt/pypet2bids/share/licenses/ujpeg-license.txt
+      grep -q "Dave Gamble" /opt/pypet2bids/share/licenses/cjson-license.txt
+      /opt/pypet2bids/bin/python -c "
+      from pathlib import Path
+      import pypet2bids
+      bundled = Path(pypet2bids.__file__).parent / 'dcm2niix_binaries'
+      assert not bundled.exists(), f'redundant binaries still present: {bundled}'
+      print('licenses and cleanup ok')
+      "
+    expected_output_contains: "licenses and cleanup ok"
+
+  - name: pypet2bids package version matches recipe
+    description: Verify installed pypet2bids distribution metadata matches upstream_version.
+    command: /opt/pypet2bids/bin/python -c "import importlib.metadata as md, pypet2bids; print(md.version('pypet2bids'))"
+    expected_output_contains: "${upstream_version}"
+
+  - name: dcm2niix version and codecs match pinned build
+    description: Verify bundled dcm2niix exits with documented status 3, matches dcm2niix_tag, and includes OpenJPEG and JPEG-LS codecs.
+    command: |
+      set +e
+      out="$(dcm2niix --version 2>&1)"
+      rc=$?
+      set -e
+      printf '%s\n' "$out"
+      test "$rc" -eq 3
+      printf '%s\n' "$out" | grep -qi "openjpeg"
+      printf '%s\n' "$out" | grep -qi "jpeg-ls\|charls"
+    expected_output_contains: "${dcm2niix_tag}"
+
+  - name: dcm2niix4pet works with read-only HOME and discovers bundled dcm2niix
+    description: Verify pypet2bids imports cleanly and resolves the pinned dcm2niix executable even when HOME is read-only.
+    command: |
+      set -e
+      HOME=/sys dcm2niix4pet --help > /dev/null
+      HOME=/sys /opt/pypet2bids/bin/python -c "from pypet2bids.dcm2niix4pet import Dcm2niix4PET; p = Dcm2niix4PET.check_posix(); assert p and 'dcm2niix' in str(p), p; print(p)"
+    expected_output_contains: "/opt/dcm2niix-${dcm2niix_tag}/bin/dcm2niix"
+
+  - name: ecatpet2bids help output
+    description: Verify ecatpet2bids CLI starts cleanly and reports usage.
+    command: ecatpet2bids --help
+    expected_output_contains: "usage: ecatpet2bids"
+
+  - name: convert-pmod-to-blood help output
+    description: Verify convert-pmod-to-blood CLI starts cleanly and reports usage.
+    command: convert-pmod-to-blood --help
+    expected_output_contains: "usage: convert-pmod-to-blood"
+
+  - name: ispet help output
+    description: Verify ispet CLI starts cleanly and reports usage.
+    command: ispet --help
+    expected_output_contains: "usage: ispet"
+
+  - name: updatepetjson functional test
+    description: Create a synthetic PET JSON sidecar in a temporary directory and update it via updatepetjson.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      cat > "$tmpdir/sub-01_pet.json" <<'EOF'
+      {
+        "Manufacturer": "Siemens",
+        "TimeZero": "12:00:00",
+        "FrameTimesStart": [0, 60, 120],
+        "FrameDuration": [60, 60, 60]
+      }
+      EOF
+      updatepetjson -j "$tmpdir/sub-01_pet.json" -k TracerName=FDG InjectedRadioactivity=185.0 InjectedRadioactivityUnits=MBq
+      /opt/pypet2bids/bin/python -c "
+      import json, sys
+      data = json.load(open(sys.argv[1]))
+      assert data['TracerName'] == 'FDG', data
+      assert float(data['InjectedRadioactivity']) == 185.0, data
+      assert data['InjectedRadioactivityUnits'] == 'MBq', data
+      print('updatepetjson ok:', data['TracerName'], data['InjectedRadioactivity'], data['InjectedRadioactivityUnits'])
+      " "$tmpdir/sub-01_pet.json"
+    expected_output_contains: "updatepetjson ok: FDG 185.0 MBq"
+
+  - name: convert-pmod-to-blood functional test
+    description: Convert synthetic PMOD whole-blood, plasma, and parent-fraction .bld files to BIDS blood TSV and JSON and verify contents.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      mkdir -p "$tmpdir/sub-01/pet"
+      printf 'time[seconds]\twhole_blood[kBq/cc]\n0.0\t0.0\n30.0\t12.5\n60.0\t45.0\n120.0\t22.0\n' > "$tmpdir/whole_blood.bld"
+      printf 'time[seconds]\tparent_fraction[1/1]\n0.0\t1.0\n30.0\t0.95\n60.0\t0.85\n120.0\t0.70\n' > "$tmpdir/parent_fraction.bld"
+      printf 'time[seconds]\tplasma[kBq/cc]\n0.0\t0.0\n30.0\t15.0\n60.0\t52.0\n120.0\t26.0\n' > "$tmpdir/plasma.bld"
+      printf 'M\nM\nM\n' | convert-pmod-to-blood \
+        --whole-blood-path "$tmpdir/whole_blood.bld" \
+        --parent-fraction-path "$tmpdir/parent_fraction.bld" \
+        --plasma-activity-path "$tmpdir/plasma.bld" \
+        --output-path "$tmpdir/sub-01/pet"
+      tsv="$(find "$tmpdir/sub-01/pet" -maxdepth 1 -name '*_blood.tsv' -print -quit)"
+      jsn="$(find "$tmpdir/sub-01/pet" -maxdepth 1 -name '*_blood.json' -print -quit)"
+      test -f "$tsv"
+      test -f "$jsn"
+      /opt/pypet2bids/bin/python -c "
+      import csv, json, sys
+      with open(sys.argv[1], newline='') as fh:
+          rows = list(csv.DictReader(fh, delimiter='\t'))
+      assert len(rows) == 4, rows
+      assert 'whole_blood_radioactivity' in rows[0], rows[0]
+      assert float(rows[2]['time']) == 60.0, rows[2]
+      meta = json.load(open(sys.argv[2]))
+      assert 'whole_blood_radioactivity' in meta, meta
+      print('blood conversion ok:', len(rows), sorted(meta.keys()))
+      " "$tsv" "$jsn"
+    expected_output_contains: "blood conversion ok: 4"
