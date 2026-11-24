@@ -54,6 +54,7 @@ domains:
   - microscopy
   - preclinical
   - molecular-imaging
+  - datascience
 categories:
   - statistics
 
