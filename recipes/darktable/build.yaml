@@ -1,0 +1,429 @@
+variables:
+  darktable_amd64_version: "5.4.1-1"
+  darktable_arm64_version: "5.4.1-1"
+  package_version:
+    try:
+      - value: "{{ context.darktable_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.darktable_arm64_version }}"
+        condition: arch=="aarch64"
+
+name: darktable
+version: "5.4.1"
+
+description: Open-source photography workflow and non-destructive RAW developer for calibrated clinical DSLR macro and dermatology photography.
+
+copyright:
+  - license: GPL-3.0-or-later
+    name: darktable license
+    url: https://github.com/darktable-org/darktable/blob/release-{{ context.version }}/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+auto_update:
+  method: sources
+  container_version: darktable-amd64
+  local: []
+  sources:
+    - id: darktable-amd64
+      method: apt
+      package: darktable
+      urls:
+        - https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz
+        - https://archive.ubuntu.com/ubuntu/dists/resolute-updates/universe/binary-amd64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-amd64/Packages.gz
+      target:
+        variable: darktable_amd64_version
+        fulltest_variable: darktable_amd64_version
+    - id: darktable-arm64
+      method: apt
+      package: darktable
+      urls:
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-updates/universe/binary-arm64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-arm64/Packages.gz
+      target:
+        variable: darktable_arm64_version
+        fulltest_variable: darktable_arm64_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/darktable/wrappers:$PATH
+
+    - install:
+        - "darktable={{ context.package_version }}"
+        - libegl-mesa0
+        - libgl1
+        - libgl1-mesa-dri
+        - libglx-mesa0
+        - python3
+        - xauth
+        - xvfb
+
+    - run:
+        # Download the exact APT-verified Ubuntu source package (.dsc, .orig.tar.*,
+        # and .debian.tar.* with Ubuntu packaging/patches) directly into the image.
+        - mkdir -p /opt/darktable/wrappers /opt/darktable/share/src /opt/darktable/share/licenses
+        - "sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources"
+        - apt-get update -qq
+        - cd /opt/darktable/share/src && apt-get source --download-only "darktable={{ context.package_version }}"
+        - "sed -i 's/^Types: deb deb-src$/Types: deb/' /etc/apt/sources.list.d/ubuntu.sources"
+        - rm -rf /var/lib/apt/lists/*
+        - install -m 0755 {{ get_file("darktable_launcher") }} /opt/darktable/wrappers/_darktable_launcher.py
+        - ln -sf _darktable_launcher.py /opt/darktable/wrappers/darktable
+        - ln -sf _darktable_launcher.py /opt/darktable/wrappers/darktable-cli
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/darktable/share/licenses/GPL-3.0.txt
+        - install -m 0644 {{ get_file("gpl_source_notice") }} /opt/darktable/share/licenses/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/darktable
+
+files:
+  - name: gpl_source_notice
+    contents: |
+      darktable {{ context.version }} Container — License & Corresponding Source Notice
+      =================================================================================
+      This container installs Ubuntu 26.04 (resolute) package:
+        darktable={{ context.package_version }}
+
+      The exact APT-verified Ubuntu corresponding source package (including upstream
+      orig tarball, .dsc descriptor, and Ubuntu/Debian packaging and patches) is
+      bundled inside this image under /opt/darktable/share/src/:
+        - darktable_{{ context.package_version }}.dsc
+        - darktable_*.orig.tar.*
+        - darktable_{{ context.package_version }}.debian.tar.*
+
+      License notices are installed at /usr/share/doc/darktable/copyright and
+      /opt/darktable/share/licenses/GPL-3.0.txt.
+
+      The same Ubuntu source package can also be retrieved directly from Ubuntu's
+      resolute archive with `apt-get source darktable={{ context.package_version }}`
+      (after enabling `deb-src` for `resolute`, `resolute-updates`, and
+      `resolute-security`), or from https://archive.ubuntu.com/ubuntu/pool/universe/d/darktable/.
+  - name: darktable_launcher
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run darktable / darktable-cli with private non-/home XDG paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("XDG_CONFIG_HOME", "config"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_DATA_HOME", "data"),
+          ("XDG_RUNTIME_DIR", "runtime"),
+      )
+
+      TARGETS = {
+          "darktable": "/usr/bin/darktable",
+          "darktable-cli": "/usr/bin/darktable-cli",
+      }
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".darktable-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          prog = os.path.basename(sys.argv[0])
+          target = TARGETS.get(prog, "/usr/bin/darktable-cli")
+          cmd = [target, *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="darktable.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - darktable
+    - darktable-cli
+
+gui_apps:
+  - name: "darktable"
+    exec: "darktable"
+
+domains:
+  - microscopy
+
+categories:
+  - "optical imaging"
+  - "visualization"
+
+readme: |-
+  ----------------------------------
+  ## darktable/{{ context.version }} ##
+
+  darktable is an open-source photography workflow application and
+  non-destructive RAW developer — suited for calibrated RAW DSLR clinical
+  photography, dermoscopy macro shots, and reproducible ICC-profiled batch
+  export via `darktable-cli`.
+
+  ### Included Tools
+  ```
+  darktable        Launch the darktable RAW development GUI
+  darktable-cli    Headless batch RAW/TIFF/PNG export CLI
+  ```
+
+  ### Examples
+  ```
+  ml darktable/{{ context.version }}
+  darktable-cli clinical_raw.dng output.png --hq true
+  darktable ./clinical_photos/
+  ```
+
+  Documentation: https://docs.darktable.org/
+  Debian/Ubuntu copyright and GPL-3.0 notices are installed at
+  `/usr/share/doc/darktable/copyright` and `/opt/darktable/share/licenses/`.
+  The exact Ubuntu source package (`.dsc`, `.orig.tar.*`, and `.debian.tar.*`)
+  is bundled under `/opt/darktable/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC0ElEQVR42u2azW7TQBDH/7N27TjikLQSCKGqj4HEgUrlITjxhBw4waEPgMQBCQnUc9UnCEhxnPV2h4PjtBB7vc6HUycz0p4S7cdvd3b+41maTCaMIzaFI7ejBxBu2gFbwMeHiIrm1ScXjdDct1J7BhAnhMZ1UQFKa7/rJooIKoAXWa0ZzB0DYC7Ia824/pJCzxlKoXIiRIAxwPhM4e1VArbufqOI8O1rhrtbgyiG+/8ALq8SjMYBjGHvE7aVE1Au7OanRjplBEE9gLlmnF+EuHyXODe1BHt3m+PHd43hkGAbgL1+MwCpPbkAEZAkBGY4AQQhEMf+2xNFhOGQkHgAWGfXt3oHWFs0onoA1qKVnzI/9NsEQMKgABAAAmAnl6BLiZVKDU8kjVrOpyFieQMgckvMMuyp4AkcYVXMxQbNIbEqooR18vLeLEJbjQRTATCb8VZC0SaWzRhpyjB6cWRXVTh4ASqKyA3A2kLYXH9OcfNLY5BQpRTlsmMuYNXJ4F0bEfDp4xSKHuZURSDXjJevQrz/8Az23vMEpFNeCpJdZmPbOAFNkLRmZBm3uwNKH3f5FWP/F6FS7jku16LWiAJg7N3HfaPAur+LEBIAAkCkcOXN+bhtGqvb9tPl+JUAjAH0nBGEzTrAZwJaM/LcP5x0OX5YFTJOzxTOL0LEA4LlzSeQ54znL0IvzdD1+FRVGivFBdfqy3WCtf9udjl+6Js1dWldji9hUAAIAAEgAEQKV4gR3/p8X6xODlcCaFOf78fq698nhP/vfJv6fF923vU+YQVAm/p8XwC43ifUuoBPfb4vAFzvE2ovQZ/6fF8AuN4niA4QAAJAAAgAyQVqcgHuSW2wyVzrWPkoSgT8+W2RZbysux8CgJMTwuhUrSyo8rP4aKygFB1SLgRmwBj2cwFjcECp4L+n2wsAEY7GJAwKAAEgAASAABAAAkAACAABcJz2Fz3MYtrHo+siAAAAAElFTkSuQmCC
