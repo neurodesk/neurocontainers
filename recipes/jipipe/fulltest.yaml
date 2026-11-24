@@ -1,0 +1,28 @@
+name: jipipe
+version: 5.3.0
+
+tests:
+  - name: jipipe launchers available
+    description: Verify the jipipe and jipipe-cli wrappers are installed on PATH.
+    command: |
+      set -euo pipefail
+      command -v jipipe
+      command -v jipipe-cli
+    expected_output_contains: "jipipe-cli"
+
+  - name: jipipe installation files present
+    description: Verify the prepackaged JIPipe directory and packaged JIPipe JARs exist.
+    command: |
+      set -euo pipefail
+      test -x /opt/jipipe/bin/ImageJ-linux64
+      test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-core-${version}.jar"
+      test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-cli-${version}.jar"
+      echo "JIPIPE_ASSETS_OK=${version}"
+    expected_output_contains: "JIPIPE_ASSETS_OK=${version}"
+
+  - name: jipipe CLI responds without HOME
+    description: Verify JIPipe CLI starts headlessly with HOME unset using a writable JIPIPE_USER_DIR.
+    command: env -u HOME jipipe --help
+    expected_output_contains:
+      - "JIPipe CLI"
+      - "run <options>"

@@ -1,0 +1,36 @@
+name: nextflow
+version: 26.10.7
+
+tests:
+  - name: nextflow launcher available
+    description: Verify the nextflow wrapper is installed on PATH.
+    command: command -v nextflow
+    expected_output_contains: "nextflow"
+
+  - name: nextflow reports packaged version without HOME
+    description: Verify the self-contained Nextflow distribution runs with OpenJDK 21 when HOME is unset.
+    command: env -u HOME nextflow -version
+    expected_output_contains: "version ${version}"
+
+  - name: nextflow executes a DSL2 workflow
+    description: Run a minimal local DSL2 workflow in a temporary directory with HOME unset.
+    command: |
+      set -euo pipefail
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      cat > "${workdir}/main.nf" <<'EOF'
+      process greet {
+          output:
+          stdout
+          script:
+          '''
+          echo NEXTFLOW_SMOKE_OK
+          '''
+      }
+      workflow {
+          greet() | view { it.trim() }
+      }
+      EOF
+      cd "${workdir}"
+      env -u HOME NXF_OFFLINE=true nextflow run main.nf -work-dir "${workdir}/work"
+    expected_output_contains: "NEXTFLOW_SMOKE_OK"

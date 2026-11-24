@@ -1,0 +1,33 @@
+name: omero
+version: 5.8.6
+
+tests:
+  - name: omero-insight launcher available
+    description: Verify the omero-insight wrapper is installed on PATH.
+    command: command -v omero-insight
+    expected_output_contains: "omero-insight"
+
+  - name: OMERO.insight JAR, manifest version, and config assets installed
+    description: Verify the packaged OMERO.insight version JAR, MANIFEST Implementation-Version, and configuration XML files exist.
+    command: |
+      set -euo pipefail
+      test -x /opt/omero-insight/bin/omero-insight
+      test -f "/opt/omero-insight/lib/omero-insight-${version}.jar"
+      test -f /opt/omero-insight/config/container.xml
+      unzip -p "/opt/omero-insight/lib/omero-insight-${version}.jar" META-INF/MANIFEST.MF
+    expected_output_contains: "Implementation-Version: ${version}"
+
+  - name: OpenJDK runtime and OMERO.insight startup classpath work without HOME
+    description: Verify OpenJDK 17 is installed and OMERO.insight parses its bundled container configuration when launched without HOME.
+    command: |
+      set -euo pipefail
+      java -version 2>&1
+      out="$(env -u HOME JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" omero-insight 2>&1 || true)"
+      printf '%s\n' "${out}" | head -n 30
+      # In headless mode without X11, OMERO.insight initializes ContainerConfigInit and fails only on AWT display creation
+      if printf '%s\n' "${out}" | grep -q "FileNotFoundException"; then
+        echo "ERROR: OMERO.insight failed to find config files" >&2
+        exit 1
+      fi
+      echo "OMERO_JVM_OK"
+    expected_output_contains: "OMERO_JVM_OK"

@@ -1,0 +1,42 @@
+name: plantseg
+version: 2.2.0
+
+tests:
+  - name: plantseg and panseg launchers available
+    description: Verify plantseg, panseg, and plantseg-gui wrappers are installed on PATH.
+    command: |
+      set -euo pipefail
+      command -v plantseg
+      command -v panseg
+      command -v plantseg-gui
+    expected_output_contains: "plantseg-gui"
+
+  - name: plantseg reports packaged version without HOME
+    description: Verify plantseg CLI reports the packaged PanSeg version when HOME is unset.
+    command: env -u HOME plantseg --version
+    expected_output_contains: "${version}"
+
+  - name: plantseg CLI help works
+    description: Verify plantseg/panseg prints CLI options including --napari and --config.
+    command: env -u HOME plantseg --help
+    expected_output_contains: "--napari"
+
+  - name: panseg, napari, PyTorch, and segmentation backends import cleanly
+    description: Verify core PanSeg, napari, PyTorch, vigra, nifty, and Qt GUI imports work cleanly.
+    command: |
+      set -euo pipefail
+      env -u HOME QT_QPA_PLATFORM=offscreen /opt/miniconda/envs/plantseg/bin/python - <<'PY'
+      import panseg
+      from panseg.__version__ import __version__
+      import napari
+      import torch
+      import vigra
+      import nifty
+      import elf
+      from qtpy.QtWidgets import QApplication
+
+      assert __version__ == "${version}", __version__
+      app = QApplication.instance() or QApplication([])
+      print("PLANTSEG_IMPORTS_OK=" + __version__)
+      PY
+    expected_output_contains: "PLANTSEG_IMPORTS_OK=${version}"

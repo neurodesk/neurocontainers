@@ -1,0 +1,46 @@
+name: cellpose
+version: "4.2.1.1"
+torch_version: "2.14.1"
+torchvision_version: "0.29.1"
+
+tests:
+  - name: cellpose launchers available
+    description: Verify cellpose and cellpose-3d wrappers are installed on PATH.
+    command: |
+      set -euo pipefail
+      command -v cellpose
+      command -v cellpose-3d
+    expected_output_contains: "cellpose-3d"
+
+  - name: cellpose reports packaged version without HOME
+    description: Verify cellpose CLI reports the packaged version when HOME is unset.
+    command: env -u HOME cellpose --version
+    expected_output_contains: "${version}"
+
+  - name: cellpose CLI help includes 3D Zstack option
+    description: Verify cellpose CLI prints usage help including --Zstack.
+    command: env -u HOME cellpose --help
+    expected_output_contains: "--Zstack"
+
+  - name: cellpose Python, PyTorch, and Qt6 GUI dependencies import cleanly
+    description: Verify pip consistency, pinned package versions, PyTorch, Cellpose-SAM, and offscreen Qt6 GUI widgets.
+    command: |
+      set -euo pipefail
+      python -m pip check
+      env -u HOME QT_QPA_PLATFORM=offscreen python - <<'PY'
+      from importlib.metadata import version
+      import cellpose
+      from cellpose import models, gui
+      import segment_anything
+      import torch
+      import torchvision
+      import pyqtgraph
+      from PyQt6.QtWidgets import QApplication
+
+      assert version("cellpose") == "${version}", version("cellpose")
+      assert version("torch").split("+")[0] == "${torch_version}", version("torch")
+      assert version("torchvision").split("+")[0] == "${torchvision_version}", version("torchvision")
+      app = QApplication.instance() or QApplication([])
+      print("CELLPOSE_IMPORTS_OK=" + version("cellpose"))
+      PY
+    expected_output_contains: "CELLPOSE_IMPORTS_OK=${version}"

@@ -1,0 +1,90 @@
+name: nextflow
+version: 26.10.7
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/nextflow-io/nextflow/blob/v{{ context.version }}/COPYING
+
+architectures:
+  - x86_64
+  - aarch64
+
+auto_update:
+  method: github_release
+  repo: nextflow-io/nextflow
+
+structured_readme:
+  description: >-
+    Nextflow is a workflow management system for scalable and reproducible
+    scientific data analysis pipelines across local, HPC, and cloud environments.
+    This container bundles the self-contained Nextflow distribution with OpenJDK 21.
+  example: |
+    # Check Nextflow and Java runtime versions
+    nextflow -version
+
+    # Run a Nextflow pipeline
+    nextflow run main.nf
+  documentation: https://www.nextflow.io/docs/latest/
+  citation: |-
+    Di Tommaso, P., Chatzou, M., Floden, E. W., Barja, P. P., Palumbo, E., &
+    Notredame, C. (2017). Nextflow enables reproducible computational workflows.
+    Nature Biotechnology, 35(4), 316-319. https://doi.org/10.1038/nbt.3820
+
+files:
+  - name: nextflow_dist
+    url: https://github.com/nextflow-io/nextflow/releases/download/v{{ context.version }}/nextflow-{{ context.version }}-dist
+  - name: nextflow-wrapper
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      if [ -z "${NXF_HOME:-}" ]; then
+        if [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -w "${HOME}" ]; then
+          export NXF_HOME="${HOME}/.nextflow"
+        else
+          export NXF_HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}/nextflow-$(id -u)}/nextflow"
+        fi
+      fi
+      mkdir -p "${NXF_HOME}"
+
+      if [ -z "${HOME:-}" ] || [ ! -d "${HOME}" ] || [ ! -w "${HOME}" ]; then
+        export HOME="${NXF_HOME}"
+      fi
+
+      exec /opt/nextflow/nextflow "$@"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        NXF_VER: "{{ context.version }}"
+    - install:
+        - ca-certificates
+        - curl
+        - git
+        - graphviz
+        - openjdk-21-jre-headless
+        - procps
+    - run:
+        - install -d -m 0755 /opt/nextflow
+        - install -m 0755 {{ get_file("nextflow_dist") }} /opt/nextflow/nextflow
+        - install -m 0755 {{ get_file("nextflow-wrapper") }} /usr/local/bin/nextflow
+
+deploy:
+  path: []
+  bins:
+    - nextflow
+
+domains:
+  - microscopy
+  - neuroimaging
+
+categories:
+  - workflows
+  - programming
+
+icon: data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjUxIiBoZWlnaHQ9IjI1MSIgdmlld0JveD0iMCAwIDI1MSAyNTEiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0wIDQ3LjAxOTVDMzkuNDUgNDkuNjM5NCA3MS4wNiA4MS4zMjcyIDczLjU0IDEyMC44MTVIMTE5LjYxQzExNy4wNSA1NS44NTg5IDY0LjkzIDMuNjQyNDUgMCAwLjk0MjYyN1Y0Ny4wMTk1WiIgZmlsbD0iIzBEQzA5RCIvPgo8cGF0aCBkPSJNNzMuOCAxMzEuMzI0QzcxLjE4IDE3MC43NzEgMzkuNDkgMjAyLjM3OSAwIDIwNC44NTlWMjUwLjkyNkM2NC45NiAyNDguMzY2IDExNy4xOCAxOTYuMjQ5IDExOS44OCAxMzEuMzI0SDczLjhaIiBmaWxsPSIjMERDMDlEIi8+CjxwYXRoIGQ9Ik0xNzYuMjAxIDEyMC41NDVDMTc4LjgyMSA4MS4wOTcyIDIxMC41MTEgNDkuNDg5NCAyNTAuMDAxIDQ3LjAwOTVWMC45NDI2MjdDMTg1LjA0MSAzLjUwMjQ1IDEzMi44MjEgNTUuNjE5IDEzMC4xMjEgMTIwLjU0NUgxNzYuMjAxWiIgZmlsbD0iIzBEQzA5RCIvPgo8cGF0aCBkPSJNMjUwLjAwMSAyMDQuODQ5QzIxMC41NTEgMjAyLjIyOSAxNzguOTQxIDE3MC41NDIgMTc2LjQ2MSAxMzEuMDU0SDEzMC4zOTFDMTMyLjk1MSAxOTYuMDEgMTg1LjA3MSAyNDguMjI2IDI1MC4wMDEgMjUwLjkyNlYyMDQuODQ5WiIgZmlsbD0iIzBEQzA5RCIvPgo8L3N2Zz4K

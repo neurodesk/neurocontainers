@@ -1,0 +1,35 @@
+name: tissuumaps
+version: 3.2.1.14
+
+tests:
+  - name: tissuumaps launcher available
+    description: Verify the tissuumaps wrapper is installed on PATH.
+    command: command -v tissuumaps
+    expected_output_contains: "tissuumaps"
+
+  - name: tissuumaps CLI help works without HOME
+    description: Verify the TissUUmaps wrapper runs cleanly with HOME unset.
+    command: env -u HOME tissuumaps --help
+    expected_output_contains: "TissUUmaps"
+
+  - name: PySide6, QtWebEngine, pyvips, OpenSlide, and TissUUmaps runtime check
+    description: Verify numpy 1.x pin for shiboken6, PySide6/QtWebEngine, pyvips image processing, OpenSlide, GSettings schemas, and packaged version.
+    command: |
+      set -euo pipefail
+      test -d /opt/miniconda/envs/tissuumaps/share/glib-2.0/schemas
+      env -u HOME LD_LIBRARY_PATH=/opt/miniconda/envs/tissuumaps/lib /opt/miniconda/envs/tissuumaps/bin/python - <<'PY'
+      from importlib.metadata import version
+      import numpy
+      import PySide6.QtGui
+      import PySide6.QtWebEngineWidgets
+      import pyvips
+      import openslide
+      import tissuumaps
+
+      assert numpy.__version__.startswith("1."), numpy.__version__
+      assert version("TissUUmaps") == "${version}", version("TissUUmaps")
+      img = pyvips.Image.black(32, 32)
+      assert img.width == 32 and img.height == 32
+      print("TISSUUMAPS_IMPORTS_OK=" + version("TissUUmaps"))
+      PY
+    expected_output_contains: "TISSUUMAPS_IMPORTS_OK=${version}"

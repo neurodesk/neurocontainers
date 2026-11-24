@@ -1,0 +1,25 @@
+name: rclone
+version: 1.76.0
+
+tests:
+  - name: rclone binary available
+    description: Verify the rclone executable is installed on PATH.
+    command: command -v rclone
+    expected_output_contains: "rclone"
+
+  - name: rclone reports packaged version
+    description: Verify rclone reports the expected upstream version.
+    command: rclone version
+    expected_output_contains: "rclone v${version}"
+
+  - name: rclone copies local files cleanly without HOME
+    description: Run a real local file copy with HOME unset to verify runtime behavior in NeuroDesk containers.
+    command: |
+      set -euo pipefail
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      mkdir -p "${workdir}/src" "${workdir}/dst"
+      printf 'neurocontainers-rclone-smoke\n' > "${workdir}/src/sample.txt"
+      env -u HOME rclone --config "${workdir}/rclone.conf" copy "${workdir}/src" "${workdir}/dst"
+      cat "${workdir}/dst/sample.txt"
+    expected_output_contains: "neurocontainers-rclone-smoke"

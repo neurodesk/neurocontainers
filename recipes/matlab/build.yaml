@@ -11,6 +11,7 @@ architectures:
 
 domains:
   - neuroimaging
+  - microscopy
 categories:
   - programming
   - machine learning
