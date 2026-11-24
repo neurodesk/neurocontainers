@@ -87,6 +87,7 @@ readme: |-
 
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - "preclinical imaging"
   - "diffusion imaging"

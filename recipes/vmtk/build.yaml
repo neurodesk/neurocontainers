@@ -185,6 +185,7 @@ deploy:
 domains:
   - neuroimaging
   - microscopy
+  - preclinical
 categories:
   - image segmentation
   - visualization

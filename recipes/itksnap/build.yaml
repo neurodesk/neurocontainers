@@ -43,6 +43,7 @@ gui_apps:
 domains:
   - neuroimaging
   - microscopy
+  - preclinical
 categories:
   - visualization
 readme: |-

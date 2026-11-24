@@ -626,6 +626,7 @@ gui_apps:
   exec: quantiphyse
 domains:
   - neuroimaging
+  - preclinical
 categories:
 - arterial spin labelling
 - quantitative imaging

@@ -84,6 +84,7 @@ build:
   add-default-template: false
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - molecular imaging
   - functional imaging

@@ -170,6 +170,7 @@ readme: |-
 
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - "molecular imaging"
   - "preclinical imaging"

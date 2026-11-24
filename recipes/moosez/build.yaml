@@ -151,6 +151,7 @@ deploy:
 
 domains:
   - neuroimaging
+  - preclinical
 
 categories:
   - molecular imaging

@@ -33,6 +33,7 @@ build:
 domains:
   - neuroimaging
   - microscopy
+  - preclinical
 categories:
   - data organisation
 structured_readme:

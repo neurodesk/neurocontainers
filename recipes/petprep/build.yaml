@@ -29,6 +29,7 @@ build:
           - petprep
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - molecular imaging
   - quantitative imaging

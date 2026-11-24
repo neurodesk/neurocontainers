@@ -70,6 +70,7 @@ files:
 
 domains:
   - neuroimaging
+  - preclinical
 
 categories:
   - molecular imaging

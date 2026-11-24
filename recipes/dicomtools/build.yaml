@@ -118,6 +118,7 @@ readme: |-
 domains:
   - neuroimaging
   - microscopy
+  - preclinical
 categories:
   - "molecular imaging"
   - "data organisation"

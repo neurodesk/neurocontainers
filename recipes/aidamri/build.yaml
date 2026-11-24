@@ -180,6 +180,7 @@ deploy:
   - /opt/miniconda-4.7.12.1/bin
 domains:
   - neuroimaging
+  - preclinical
 categories:
 - preclinical imaging
 - rodent imaging
