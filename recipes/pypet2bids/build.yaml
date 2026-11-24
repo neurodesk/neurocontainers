@@ -67,6 +67,9 @@ build:
         - cmake --install /tmp/dcm2niix-src/build
         - install -m 0644 /tmp/dcm2niix-src/license.txt /opt/pypet2bids/share/licenses/dcm2niix-license.txt
         - if [ -f /tmp/dcm2niix-src/console/charls/License.txt ]; then install -m 0644 /tmp/dcm2niix-src/console/charls/License.txt /opt/pypet2bids/share/licenses/charls-license.txt; fi
+        - sed -n '1,/^$/p' /tmp/dcm2niix-src/console/ujpeg.cpp > /opt/pypet2bids/share/licenses/ujpeg-license.txt
+        - sed -n '1,/\*\//p' /tmp/dcm2niix-src/console/cJSON.cpp > /opt/pypet2bids/share/licenses/cjson-license.txt
+        - chmod 0644 /opt/pypet2bids/share/licenses/*.txt
         - chmod -R a+rX /opt/dcm2niix-{{ context.dcm2niix_tag }}
         - rm -rf /tmp/dcm2niix-src
         - apt-get purge -y --auto-remove cmake g++ libopenjp2-7-dev make

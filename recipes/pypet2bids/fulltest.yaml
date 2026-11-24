@@ -19,6 +19,10 @@ tests:
       set -e
       test -s /opt/pypet2bids/share/licenses/PET2BIDS-LICENSE.txt
       test -s /opt/pypet2bids/share/licenses/dcm2niix-license.txt
+      test -s /opt/pypet2bids/share/licenses/ujpeg-license.txt
+      test -s /opt/pypet2bids/share/licenses/cjson-license.txt
+      grep -q "MIT" /opt/pypet2bids/share/licenses/ujpeg-license.txt
+      grep -q "Dave Gamble" /opt/pypet2bids/share/licenses/cjson-license.txt
       /opt/pypet2bids/bin/python -c "
       from pathlib import Path
       import pypet2bids
