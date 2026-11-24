@@ -1,0 +1,70 @@
+package_version: "1.0.6-5build2"
+name: amide
+version: 1.0.6
+tests:
+  - name: amide binary available
+    description: Verify the AMIDE executable is installed on PATH.
+    command: command -v amide
+    expected_output_contains: /usr/bin/amide
+  - name: installed distribution version
+    description: Verify the pinned Ubuntu amide package version is installed.
+    command: dpkg-query -W -f='${Version}\n' amide
+    expected_output_contains: ${package_version}
+  - name: shared library linkage
+    description: Verify all shared libraries required by amide resolve cleanly, including multimodal I/O and rendering libraries.
+    command: |
+      set -e
+      libs="$(ldd "$(command -v amide)")"
+      if printf '%s\n' "$libs" | grep -q 'not found'; then
+        printf '%s\n' "$libs" | grep 'not found'
+        exit 1
+      fi
+      for lib in libgtk-3.so.0 libmdc.so.3 libdcmdata.so.17 libvolpack.so.1 libgsl.so.27 libavcodec.so.60; do
+        printf '%s\n' "$libs" | grep -q "$lib"
+      done
+      echo "all amide shared libraries resolved"
+    expected_output_contains: all amide shared libraries resolved
+  - name: desktop entry and GSettings schema
+    description: Verify AMIDE desktop entry, icon asset, and compiled GSettings schema are present.
+    command: |
+      set -e
+      test -f /usr/share/applications/amide.desktop
+      test -f /usr/share/pixmaps/amide_logo.png
+      test -f /usr/share/glib-2.0/schemas/com.github.ferdymercury.amide.gschema.xml
+      test -f /usr/share/glib-2.0/schemas/gschemas.compiled
+      grep -q '^Exec=amide' /usr/share/applications/amide.desktop
+      echo "desktop and schema assets verified"
+    expected_output_contains: desktop and schema assets verified
+  - name: amide CLI help under Xvfb
+    description: Verify amide initializes GTK under Xvfb and prints usage options.
+    command: |
+      set -e
+      scratch="$(mktemp -d)"
+      trap 'rm -rf "$scratch"' EXIT
+      GSETTINGS_BACKEND=memory XDG_CONFIG_HOME="$scratch" XDG_CACHE_HOME="$scratch" XDG_RUNTIME_DIR="$scratch" \
+        xvfb-run -a amide --help
+    expected_output_contains:
+      - "Usage:"
+      - "amide [OPTION"
+  - name: amide headless GUI startup smoke test
+    description: Verify AMIDE starts under Xvfb without crashing and stays alive until terminated.
+    command: |
+      set -e
+      scratch="$(mktemp -d)"
+      trap 'rm -rf "$scratch"' EXIT
+      log="$scratch/amide.log"
+      rc=0
+      GSETTINGS_BACKEND=memory XDG_CONFIG_HOME="$scratch" XDG_CACHE_HOME="$scratch" XDG_RUNTIME_DIR="$scratch" \
+        timeout -k 5 3 xvfb-run -a amide >"$log" 2>&1 || rc=$?
+      if [ "$rc" -ne 124 ]; then
+        echo "amide exited unexpectedly with status $rc"
+        cat "$log"
+        exit 1
+      fi
+      if grep -Eqi 'segmentation fault|aborted|core dumped' "$log"; then
+        cat "$log"
+        exit 1
+      fi
+      echo "AMIDE GUI startup verified under Xvfb"
+    expected_output_contains: AMIDE GUI startup verified under Xvfb
+    timeout: 60
