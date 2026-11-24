@@ -28,14 +28,15 @@ tests:
       trap 'rm -rf "${workdir}"' EXIT
       spaced_dir="${workdir}/omero user dir"
       out="$(HOME=/proc OMERO_USER_DIR="${spaced_dir}" JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" omero-insight 2>&1 || true)"
-      printf '%s\n' "${out}" | head -n 40
-      # Must NOT fail JVM option parsing or config file discovery
-      if printf '%s\n' "${out}" | grep -qE "Unrecognized option|Could not create the Java Virtual Machine|FileNotFoundException"; then
-        echo "ERROR: OMERO.insight failed JVM option parsing or config loading" >&2
+      head -n 40 <<< "${out}"
+      # Must NOT fail JVM launch, class loading, or config file discovery
+      if grep -qE "ClassNotFoundException|NoClassDefFoundError|Unrecognized option|Could not create the Java Virtual Machine|FileNotFoundException" <<< "${out}"; then
+        echo "ERROR: OMERO.insight failed JVM startup, class loading, or config loading" >&2
         exit 1
       fi
-      # Must positively reach OMERO.insight Java startup (Container/Shoola initialization or HeadlessException)
-      printf '%s\n' "${out}" | grep -qE "org\.openmicroscopy\.shoola|HeadlessException"
+      # Must positively reach OMERO.insight Java startup past config loading (HeadlessException with a Shoola stack frame)
+      grep -q "java.awt.HeadlessException" <<< "${out}"
+      grep -q "at org.openmicroscopy.shoola." <<< "${out}"
       test -d "${spaced_dir}/omero"
       test -d "${spaced_dir}/.java-prefs"
       echo "OMERO_SPACED_STARTUP_OK"

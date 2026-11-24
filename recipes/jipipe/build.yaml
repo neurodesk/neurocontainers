@@ -56,8 +56,12 @@ files:
     contents: |-
       JIPipe {{ context.version }} Container — License & Corresponding Source Notice
       ==============================================================================
-      This container redistributes the unmodified upstream JIPipe prepackaged Linux64 archive:
+      This container redistributes the upstream JIPipe prepackaged Linux64 archive:
         https://github.com/applied-systems-biology/jipipe/releases/download/pom-jipipe-{{ context.version }}/JIPipe-{{ context.version }}-Prepackaged-Linux64.tar.gz
+
+      Note: Redistribution-restricted ImageScience JARs (FeatureJ_.jar, MTrackJ_.jar,
+      NeuronJ_.jar, RandomJ_.jar, TransformJ_.jar, and imagescience.jar) are excluded
+      during extraction.
 
       JIPipe itself is licensed under MIT:
         https://github.com/applied-systems-biology/jipipe/blob/pom-jipipe-{{ context.version }}/LICENSE
@@ -166,7 +170,14 @@ build:
         - libxtst6
     - run:
         - mkdir -p /opt/jipipe
-        - tar -xzf {{ get_file("jipipe_archive") }} -C /opt/jipipe --strip-components=1
+        - >-
+          tar -xzf {{ get_file("jipipe_archive") }} -C /opt/jipipe --strip-components=1
+          --exclude='*/FeatureJ_*.jar'
+          --exclude='*/MTrackJ_*.jar'
+          --exclude='*/NeuronJ_*.jar'
+          --exclude='*/RandomJ_*.jar'
+          --exclude='*/TransformJ_*.jar'
+          --exclude='*/imagescience*.jar'
         - install -m 0644 {{ get_file("gpl-source-notice") }} /opt/jipipe/GPL-SOURCE-NOTICE.txt
         - chmod -R a+rX /opt/jipipe
         - install -m 0755 {{ get_file("jipipe-wrapper") }} /usr/local/bin/jipipe

@@ -10,14 +10,16 @@ tests:
       command -v jipipe-cli
     expected_output_contains: "jipipe-cli"
 
-  - name: jipipe installation files and license notice present
-    description: Verify the prepackaged JIPipe directory, packaged JIPipe JARs, and GPL source notice exist.
+  - name: jipipe installation files, license notice, and restricted JAR exclusions verified
+    description: Verify the prepackaged JIPipe JARs and GPL source notice exist and redistribution-restricted ImageScience JARs are excluded.
     command: |
       set -euo pipefail
       test -x /opt/jipipe/bin/ImageJ-linux64
       test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-core-${version}.jar"
       test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-cli-${version}.jar"
       test -f /opt/jipipe/GPL-SOURCE-NOTICE.txt
+      restricted="$(find /opt/jipipe -type f \( -name 'FeatureJ_*.jar' -o -name 'MTrackJ_*.jar' -o -name 'NeuronJ_*.jar' -o -name 'RandomJ_*.jar' -o -name 'TransformJ_*.jar' -o -name 'imagescience*.jar' \))"
+      test -z "${restricted}"
       echo "JIPIPE_ASSETS_OK=${version}"
     expected_output_contains: "JIPIPE_ASSETS_OK=${version}"
 
@@ -30,9 +32,9 @@ tests:
       spaced_dir="${workdir}/jipipe profile dir"
       # 1. Verify CLI help succeeds with a spaced profile path and read-only HOME
       out="$(HOME=/proc JIPIPE_USER_DIR="${spaced_dir}" jipipe --help 2>&1)"
-      printf '%s\n' "${out}" | head -n 30
-      printf '%s\n' "${out}" | grep -q "JIPipe CLI"
-      if printf '%s\n' "${out}" | grep -qE "Unrecognized option|Could not create the Java Virtual Machine"; then
+      head -n 30 <<< "${out}"
+      grep -q "JIPipe CLI" <<< "${out}"
+      if grep -qE "Unrecognized option|Could not create the Java Virtual Machine" <<< "${out}"; then
         echo "ERROR: JVM rejected JAVA_TOOL_OPTIONS with spaced path" >&2
         exit 1
       fi
