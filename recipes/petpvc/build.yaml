@@ -43,6 +43,9 @@ build:
           MAMBA_ROOT_PREFIX=/tmp/mamba /tmp/micromamba/bin/micromamba create -y -p /opt/petpvc
           --override-channels -c conda-forge
           "petpvc={{ context.upstream_version }}"
+        - mkdir -p /opt/petpvc/share/licenses/petpvc
+        - install -m 0644 {{ get_file("petpvc_license") }} /opt/petpvc/share/licenses/petpvc/LICENSE.txt
+        - install -m 0644 {{ get_file("petpvc_notice") }} /opt/petpvc/share/licenses/petpvc/NOTICE.txt
         - rm -rf /tmp/mamba /tmp/micromamba
         - chmod -R a+rX /opt/petpvc
         - test -x /opt/petpvc/bin/petpvc
@@ -51,6 +54,10 @@ files:
   - name: micromamba
     url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
     sha256: 5512233cdd8564a671626081026dc861537a963baa06706baab08fac6f3bb9d2
+  - name: petpvc_license
+    url: https://raw.githubusercontent.com/UCL/PETPVC/v{{ context.upstream_version }}/LICENSE.txt
+  - name: petpvc_notice
+    url: https://raw.githubusercontent.com/UCL/PETPVC/v{{ context.upstream_version }}/NOTICE.txt
 
 deploy:
   bins:

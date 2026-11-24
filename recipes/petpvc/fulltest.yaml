@@ -16,6 +16,17 @@ tests:
     command: petpvc -version
     expected_output_contains: "Version: ${version}"
 
+  - name: License and attribution notices installed
+    description: Verify PETPVC Apache-2.0 LICENSE.txt and NOTICE.txt are present in the image.
+    command: |
+      set -eu
+      test -s /opt/petpvc/share/licenses/petpvc/LICENSE.txt
+      test -s /opt/petpvc/share/licenses/petpvc/NOTICE.txt
+      grep -q "Apache License" /opt/petpvc/share/licenses/petpvc/LICENSE.txt
+      grep -q "University College London" /opt/petpvc/share/licenses/petpvc/NOTICE.txt
+      echo "PETPVC_LICENSES_OK"
+    expected_output_contains: "PETPVC_LICENSES_OK"
+
   - name: Synthetic PET phantom simulation and partial volume correction
     description: >-
       Build a synthetic 3D NIfTI PET phantom and label map, convert to a 4D mask
