@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "hnncore_arm64 1.0.0": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "hnncore"
+}
