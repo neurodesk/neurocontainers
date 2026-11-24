@@ -1,0 +1,115 @@
+name: tpcclib
+version: "0.8.2"
+
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://gitlab.utu.fi/vesoik/tpcclib/-/blob/{{ context.upstream_tag }}/license.md
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_tag: "0.8.2"
+  upstream_version: "0.8.2"
+
+auto_update:
+  method: sources
+  container_version: tpcclib
+  sources:
+    - id: tpcclib
+      method: webpage
+      url: https://gitlab.utu.fi/api/v4/projects/vesoik%2Ftpcclib/repository/tags?per_page=100
+      version_regex: '"name":"(?P<version>v?\d+\.\d+\.\d+)"'
+      target:
+        variable: upstream_tag
+        value: tag
+        variables:
+          upstream_version: version
+    - id: source_archive_digest
+      method: http_digest
+      url: https://gitlab.utu.fi/vesoik/tpcclib/-/archive/{{ context.upstream_tag }}/tpcclib-{{ context.upstream_tag }}.tar.gz
+      dependency: true
+      target:
+        file: source
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/tpcclib/bin:$PATH
+    - install:
+        - libgomp1
+    - run:
+        - apt-get update -qq
+        - apt-get install -y --no-install-recommends build-essential cmake ninja-build
+        - mkdir -p /tmp/tpcclib-src
+        - tar -xzf {{ get_file("source") }} -C /tmp/tpcclib-src --strip-components=1
+        - sed -i -e 's/ -mfpmath=sse//g' -e 's/ -static//g' /tmp/tpcclib-src/CMakeLists.txt
+        - cmake -S /tmp/tpcclib-src -B /tmp/tpcclib-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        - cmake --build /tmp/tpcclib-build --parallel "$(nproc)"
+        - cmake --install /tmp/tpcclib-build --prefix /opt/tpcclib --component applications
+        - mkdir -p /opt/tpcclib/share/licenses
+        - cp -a /tmp/tpcclib-src/README.md /tmp/tpcclib-src/copying.md /tmp/tpcclib-src/license.md /opt/tpcclib/share/licenses/
+        - chmod -R a+rX /opt/tpcclib
+        - rm -rf /tmp/tpcclib-src /tmp/tpcclib-build
+        - apt-get purge -y --auto-remove build-essential cmake ninja-build
+        - rm -rf /var/lib/apt/lists/*
+
+deploy:
+  path:
+    - /opt/tpcclib/bin
+
+files:
+  - name: source
+    url: "https://gitlab.utu.fi/vesoik/tpcclib/-/archive/{{ context.upstream_tag }}/tpcclib-{{ context.upstream_tag }}.tar.gz"
+    sha256: "c9d48ebb5ada13f2a04e5607052f062b9588df8a7c5f2bb4edff0d359a25f5b9"
+
+domains:
+  - neuroimaging
+
+categories:
+  - molecular imaging
+  - preclinical imaging
+  - quantitative imaging
+
+structured_readme:
+  description: >-
+    TPCCLIB is the Turku PET Centre C command-line tool suite for clinical and
+    preclinical dynamic PET analysis, time-activity curves (TACs), input
+    functions, kinetic modeling, and parametric imaging.
+  example: taccalc --help
+  documentation: https://www.turkupetcentre.net/tpcclib-doc/
+  citation: >-
+    Oikonen V, Johansson J, Liukko K, Merisaari H, Alenius S, Laakkonen C,
+    Krais R. TPCCLIB: Turku PET Centre C library and command-line tools for
+    processing and analysing PET data. https://gitlab.utu.fi/vesoik/tpcclib
+
+readme: |
+  ## tpcclib/{{ context.version }}
+
+  TPCCLIB is the Turku PET Centre C command-line tool suite for clinical and
+  preclinical dynamic PET data processing and analysis, including time-activity
+  curve (TAC) manipulation, blood/plasma input function modeling, graphical
+  analysis (Patlak and Logan plots), compartmental modeling, simulation, and
+  PET image format utilities.
+
+  This build compiles both `v1` and `v2` CLI applications from the official
+  TPCCLIB {{ context.upstream_version }} source release and installs them under
+  `/opt/tpcclib/bin`.
+
+  Example:
+
+  ```sh
+  taccalc --version
+  patlak --help
+  logan --help
+  ```
+
+  License texts (`GPL-3.0-or-later`) are installed in `/opt/tpcclib/share/licenses`.
+  [Upstream documentation](https://www.turkupetcentre.net/tpcclib-doc/)
+
+icon: "data:image/png;base64,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"
