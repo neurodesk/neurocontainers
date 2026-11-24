@@ -1,0 +1,66 @@
+name: meshlab
+version: "2025.07.0"
+meshlab_amd64_version: "2025.07~dfsg-2"
+meshlab_arm64_version: "2025.07~dfsg-2"
+
+tests:
+  - name: meshlab binary available on PATH
+    description: Verify the MeshLab executable is installed on PATH.
+    command: command -v meshlab
+    expected_output_contains: "/usr/bin/meshlab"
+
+  - name: installed Ubuntu package version matches recipe exactly
+    description: Verify the pinned Ubuntu meshlab package version for this architecture is installed (exact match).
+    command: |
+      set -e
+      arch="$(dpkg --print-architecture)"
+      case "$arch" in
+        amd64) expected="${meshlab_amd64_version}" ;;
+        arm64) expected="${meshlab_arm64_version}" ;;
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+      esac
+      installed="$(dpkg-query -W -f='${Version}' meshlab)"
+      test "$installed" = "$expected"
+      printf 'meshlab exact version ok: %s\n' "$installed"
+    expected_output_contains: "meshlab exact version ok:"
+
+  - name: shared library linkage, copyright, and Ubuntu corresponding source installed
+    description: Verify shared libraries resolve cleanly and Ubuntu copyright, GPL-3.0 text, source notice, and .dsc/.orig/.debian source package are present.
+    command: |
+      set -e
+      arch="$(dpkg --print-architecture)"
+      case "$arch" in
+        amd64) expected="${meshlab_amd64_version}" ;;
+        arm64) expected="${meshlab_arm64_version}" ;;
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+      esac
+      test -s /usr/share/doc/meshlab/copyright
+      test -s /opt/meshlab/share/licenses/GPL-3.0.txt
+      test -s /opt/meshlab/share/licenses/GPL-SOURCE-NOTICE.txt
+      test -s "/opt/meshlab/share/src/meshlab_${expected}.dsc"
+      test -s "/opt/meshlab/share/src/meshlab_${expected}.debian.tar.xz"
+      ls /opt/meshlab/share/src/meshlab_*.orig.tar.* >/dev/null
+      libs="$(ldd "$(command -v meshlab)")"
+      if printf '%s\n' "$libs" | grep -q 'not found'; then
+        printf '%s\n' "$libs" | grep 'not found'
+        exit 1
+      fi
+      echo "meshlab linkage, copyright, and source ok"
+    expected_output_contains: "meshlab linkage, copyright, and source ok"
+
+  - name: meshlab desktop entry present
+    description: Verify the MeshLab desktop entry is installed.
+    command: |
+      set -e
+      test -f /usr/share/applications/meshlab.desktop
+      grep -q '^Exec=meshlab' /usr/share/applications/meshlab.desktop
+      echo "meshlab desktop entry ok"
+    expected_output_contains: "meshlab desktop entry ok"
+
+  - name: meshlab startup under Xvfb with read-only HOME and unset XDG variables
+    description: Verify meshlab initializes under Xvfb and exits cleanly on --help with read-only HOME and unset XDG_* variables.
+    command: |
+      set -e
+      env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_RUNTIME_DIR \
+        HOME=/sys LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a meshlab --help
+    expected_output_contains: "Usage"
