@@ -102,6 +102,7 @@ deploy:
 domains:
   - microscopy
   - neuroimaging
+  - datascience
 
 categories:
   - data organisation
