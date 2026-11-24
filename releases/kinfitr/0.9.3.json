@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "kinfitr 0.9.3": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "quantitative imaging",
+    "statistics"
+  ]
+}
