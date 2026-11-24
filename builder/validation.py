@@ -44,6 +44,8 @@ CATEGORIES = [
     "spectroscopy",
     "image registration",
     "rodent imaging",
+    "preclinical imaging",
+    "molecular imaging",
     "data organisation",
     "diffusion imaging",
     "structural imaging",
