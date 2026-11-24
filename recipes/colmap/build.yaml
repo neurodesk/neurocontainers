@@ -1,0 +1,420 @@
+variables:
+  colmap_amd64_version: "3.12.6-4"
+  colmap_arm64_version: "3.12.6-4"
+  package_version:
+    try:
+      - value: "{{ context.colmap_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.colmap_arm64_version }}"
+        condition: arch=="aarch64"
+  libposelib_amd64_version: "2.0.5-1"
+  libposelib_arm64_version: "2.0.5-1"
+  libposelib_package_version:
+    try:
+      - value: "{{ context.libposelib_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.libposelib_arm64_version }}"
+        condition: arch=="aarch64"
+
+name: colmap
+version: "3.12.6"
+
+description: Structure-from-Motion (SfM) and Multi-View Stereo (MVS) 3D reconstruction for multi-angle clinical photography, 3D-TBP, and wound surface modeling.
+
+copyright:
+  - license: BSD-3-Clause
+    name: COLMAP license
+    url: https://github.com/colmap/colmap/blob/{{ context.version }}/COPYING.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+auto_update:
+  method: sources
+  container_version: colmap-amd64
+  local: []
+  sources:
+    - id: colmap-amd64
+      method: apt
+      package: colmap
+      urls:
+        - https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz
+        - https://archive.ubuntu.com/ubuntu/dists/resolute-updates/universe/binary-amd64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-amd64/Packages.gz
+      target:
+        variable: colmap_amd64_version
+        fulltest_variable: colmap_amd64_version
+    - id: colmap-arm64
+      method: apt
+      package: colmap
+      urls:
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-updates/universe/binary-arm64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-arm64/Packages.gz
+      target:
+        variable: colmap_arm64_version
+        fulltest_variable: colmap_arm64_version
+    - id: libposelib-amd64
+      method: apt
+      package: libposelib
+      dependency: true
+      urls:
+        - https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz
+        - https://archive.ubuntu.com/ubuntu/dists/resolute-updates/universe/binary-amd64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-amd64/Packages.gz
+      target:
+        variable: libposelib_amd64_version
+        fulltest_variable: libposelib_amd64_version
+    - id: libposelib-arm64
+      method: apt
+      package: libposelib
+      dependency: true
+      urls:
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-updates/universe/binary-arm64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-arm64/Packages.gz
+      target:
+        variable: libposelib_arm64_version
+        fulltest_variable: libposelib_arm64_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/colmap/wrappers:$PATH
+
+    - install:
+        - "colmap={{ context.package_version }}"
+        # Ubuntu 26.04's colmap package omits libposelib from its Depends list;
+        # install the pinned version explicitly so libPoseLib.so resolves at runtime.
+        - "libposelib={{ context.libposelib_package_version }}"
+        - libegl-mesa0
+        - libgl1
+        - libgl1-mesa-dri
+        - libglx-mesa0
+        - python3
+        - xauth
+        - xvfb
+
+    - run:
+        - mkdir -p /opt/colmap/wrappers /opt/colmap/share/licenses
+        - install -m 0755 {{ get_file("colmap_wrapper") }} /opt/colmap/wrappers/colmap
+        - install -m 0644 /usr/share/doc/colmap/copyright /opt/colmap/share/licenses/COLMAP-COPYRIGHT.txt
+        - chmod -R a+rX /opt/colmap
+
+files:
+  - name: colmap_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run COLMAP with private non-/home XDG/Qt paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("XDG_CONFIG_HOME", "config"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_DATA_HOME", "data"),
+          ("XDG_RUNTIME_DIR", "runtime"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".colmap-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/usr/bin/colmap", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="colmap.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - colmap
+
+gui_apps:
+  - name: "COLMAP"
+    exec: "colmap gui"
+
+domains:
+  - microscopy
+
+categories:
+  - "image reconstruction"
+  - "shape analysis"
+  - "body"
+
+readme: |-
+  ----------------------------------
+  ## colmap/{{ context.version }} ##
+
+  COLMAP is a general-purpose Structure-from-Motion (SfM) and Multi-View Stereo
+  (MVS) photogrammetry pipeline — useful for reconstructing 3D wound, scar, and
+  body surface geometry from overlapping clinical photographs.
+
+  ### Included Tool
+  ```
+  colmap    COLMAP SfM/MVS CLI and Qt5 GUI (`colmap gui`)
+  ```
+
+  ### Example
+  ```
+  ml colmap/{{ context.version }}
+  colmap feature_extractor --database_path db.sqlite --image_path ./photos --SiftExtraction.use_gpu 0
+  colmap exhaustive_matcher --database_path db.sqlite --SiftMatching.use_gpu 0
+  ```
+
+  Documentation: https://colmap.github.io/
+  Debian/Ubuntu copyright and BSD-3-Clause notices are installed at
+  `/usr/share/doc/colmap/copyright` and `/opt/colmap/share/licenses/COLMAP-COPYRIGHT.txt`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACg0lEQVR42u2bTW/UMBCG3/F6N/STItFfgYRAFYgDRy78bA4FVfwFPoS4gSh7YJtNHPvlkK4o7W6ySxK7dMdSblHGfuyZeWesyHQ6JbZ4GGz52HoAtusHmNiBRBIDmEwEIkAqDpVjp02wXcg7R5ydzlA6wEj8xZPA02c7ODwcoar4T6ehE4AQgM8fSuRzwpg0AB49vtfJDbq7QCYIRDIAyWMA+edJAUDToAJQAApAAfSdBUTa04sxgNwCfCL1XIxpnvOqTLUUgHNE8ACkGUAxZ/I0WJbEPCdckxJkvVnjsTQDIGthc3Z6gU8fC2QTaVwYCbx4uYejB7UUjeq7BigK4u2bGZxbvXgRwFXE8bHFq9cHCGHNEzDPCYaWnSVw/2iEh8cWpWPUesAYIJ8TzhF5vlqKL2qWsuRmMWDhV20noKrqSVSOnWXppgAWNhdzbVrLqrnZPoLQ1Sdm8OvDnuoABaAAVAn+l/2Avmz20hTNMmmVokOkwXAbAHz9UmL608P7yEpQgNLVfclkPUER4P27CwQ2lg3DuMCl/fFY0jZFx5ME/fBrsSB5ENQ0qAAUgAJQANsqhTdVb21JQxBXWkcDQAJ5zvbFoxY3sS5bBwcgAnhP7O2P8OQka22xjWx95X7+o4K1MvhJiHICQgB2dwUnz3dudGX/eo9Algmm5x7fv1Ww9g66AEPzOyEA3t/hIBhaKpzoZbXqAAWgABSAAtBa4GY+7rPdvel3YtqX6/8LiACzXwFFwdbb4XWlMAlYK9g/MGu9H9O+LPthor5ulrrz2pX+lQpv3dZ5TPtLXcB7DNLnX1fhxbRvu0x0yApSs4ACUAAKQAEoAAWgABSAAlAACmDI8RuUszpGG3mUswAAAABJRU5ErkJggg==
