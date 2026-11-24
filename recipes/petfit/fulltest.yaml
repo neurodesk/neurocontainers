@@ -1,0 +1,83 @@
+name: petfit
+version: "0.2.4"
+default_timeout: 300
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p "${output_dir}"
+
+tests:
+  - name: petfit CLI launcher and help
+    description: Verify petfit is on PATH and prints CLI options
+    command: |
+      set -eu
+      command -v petfit
+      petfit --help
+    expected_output_contains: "--func"
+
+  - name: R and petfit package version
+    description: Verify R, Rscript, petfit, and kinfitr load with expected petfit version
+    command: |
+      set -eu
+      command -v R
+      command -v Rscript
+      Rscript -e '
+        library(petfit)
+        library(kinfitr)
+        petfit_ver <- as.character(packageVersion("petfit"))
+        stopifnot(identical(petfit_ver, "${version}"))
+        cat("petfit_version=", petfit_ver, "\n", sep = "")
+        cat("kinfitr_version=", as.character(packageVersion("kinfitr")), "\n", sep = "")
+        stopifnot(is.function(petfit::petfit_regiondef_auto))
+        stopifnot(is.function(petfit::petfit_modelling_auto))
+        stopifnot(is.function(petfit::region_definition_app))
+        stopifnot(is.function(petfit::modelling_ref_app))
+        stopifnot(is.function(petfit::modelling_plasma_app))
+      '
+    expected_output_contains: "petfit_version=${version}"
+
+  - name: Automatic regiondef and reference-tissue SRTM pipeline
+    description: Run automatic region definition and SRTM reference-tissue modeling on bundled ds004869 BIDS test data
+    command: |
+      set -eu
+      work_dir="${output_dir}/ds004869_work"
+      rm -rf "${work_dir}"
+      mkdir -p "${work_dir}"
+      tar -xzf /app/tests/testthat/fixtures/integration/ds004869_testdata.tar.gz -C "${work_dir}"
+      bids_dir="${work_dir}/ds004869"
+      deriv_dir="${bids_dir}/derivatives"
+
+      petfit --func regiondef --mode automatic \
+        --bids_dir "${bids_dir}" \
+        --derivatives_dir "${deriv_dir}" \
+        --regions_file /app/tests/testthat/fixtures/integration/ds004869_petfit_regions.tsv \
+        --cores 1
+
+      petfit --func modelling_ref --mode automatic \
+        --bids_dir "${bids_dir}" \
+        --derivatives_dir "${deriv_dir}" \
+        --config_file /app/tests/testthat/fixtures/integration/ds004869_ref_config.json \
+        --cores 1
+
+      cp "${deriv_dir}/petfit/desc-combinedregions_tacs.tsv" "${output_dir}/desc-combinedregions_tacs.tsv"
+      cp "${deriv_dir}/petfit/Primary_Analysis/model-SRTM_desc-model1_kinpar.tsv" "${output_dir}/model-SRTM_desc-model1_kinpar.tsv"
+      cp "${deriv_dir}/petfit/Primary_Analysis/reports/model1_report.html" "${output_dir}/model1_report.html"
+
+      Rscript -e '
+        kinpar <- readr::read_tsv("${output_dir}/model-SRTM_desc-model1_kinpar.tsv", show_col_types = FALSE)
+        stopifnot(nrow(kinpar) > 0)
+        stopifnot(all(c("success", "BPnd", "R1", "k2") %in% names(kinpar)))
+        good_fits <- as.logical(kinpar$success) & is.finite(kinpar$BPnd) & is.finite(kinpar$R1) & is.finite(kinpar$k2)
+        stopifnot(isTRUE(any(good_fits)))
+        cat("PETFIT_AUTO_SRTM_OK rows=", nrow(kinpar), " good_fits=", sum(good_fits, na.rm = TRUE), "\n", sep = "")
+      '
+    expected_output_contains: "PETFIT_AUTO_SRTM_OK"
+    validate:
+      - output_exists: ${output_dir}/desc-combinedregions_tacs.tsv
+      - output_exists: ${output_dir}/model-SRTM_desc-model1_kinpar.tsv
+      - output_exists: ${output_dir}/model1_report.html

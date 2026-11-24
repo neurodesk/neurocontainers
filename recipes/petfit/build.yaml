@@ -1,0 +1,152 @@
+name: petfit
+version: "0.2.4"
+
+copyright:
+  - license: MIT
+    url: https://github.com/mathesong/petfit/blob/main/LICENSE.md
+
+architectures:
+  - x86_64
+
+auto_update:
+  method: dockerhub
+  repo: mathesong/petfit
+  version_regex: '^v(?P<version>\d+\.\d+\.\d+)$'
+
+build:
+  kind: neurodocker
+  base-image: mathesong/petfit:v{{ context.version }}
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - run:
+        - ln -sf /app/run_petfit.R /usr/local/bin/petfit
+        - >-
+          printf '%s\n'
+          '#!/usr/bin/env bash'
+          'set -e'
+          ''
+          'if [ "$#" -eq 0 ]; then'
+          '  exec /usr/bin/env bash'
+          'fi'
+          ''
+          'if [ "${1#-}" != "$1" ]; then'
+          '  exec /usr/local/bin/petfit "$@"'
+          'fi'
+          ''
+          'exec "$@"'
+          > /usr/local/bin/petfit-entrypoint
+        - chmod 0755 /usr/local/bin/petfit-entrypoint
+        - test -x /usr/local/bin/petfit
+    - entrypoint: /usr/local/bin/petfit-entrypoint
+    - user: petfit
+
+deploy:
+  bins:
+    - petfit
+    - R
+    - Rscript
+
+domains:
+  - neuroimaging
+
+categories:
+  - molecular imaging
+  - preclinical imaging
+  - quantitative imaging
+  - bids apps
+
+structured_readme:
+  description: >-
+    PETFit is a BIDS App and R Shiny application suite built on kinfitr for
+    reproducible Positron Emission Tomography (PET) pharmacokinetic modeling.
+    It provides interactive web apps and non-interactive automatic pipelines
+    for combining regional time-activity curves (regiondef), plasma-input
+    compartmental and graphical modeling (1TCM, 2TCM, 2TCM_irr, Logan, MA1,
+    Patlak), and reference-tissue modeling (SRTM, SRTM2, SUV/SUVR, refLogan,
+    MRTM1, MRTM2, refPatlak), generating HTML quality-control reports for each
+    processing step.
+  example: |-
+    # Show CLI options
+    petfit --help
+
+    # Run region definition automatically from a saved regions TSV
+    petfit --func regiondef --mode automatic \
+      --bids_dir /path/to/bids \
+      --derivatives_dir /path/to/bids/derivatives \
+      --regions_file /path/to/petfit_regions.tsv \
+      --cores 1
+
+    # Run reference-tissue pharmacokinetic modeling automatically
+    petfit --func modelling_ref --mode automatic \
+      --bids_dir /path/to/bids \
+      --derivatives_dir /path/to/bids/derivatives \
+      --config_file /path/to/petfit_config.json \
+      --cores 1
+
+    # Launch the interactive Shiny app (open http://localhost:3838 by default)
+    petfit --func modelling_ref --mode interactive \
+      --bids_dir /path/to/bids \
+      --derivatives_dir /path/to/bids/derivatives
+  documentation: https://petfit.readthedocs.io/en/latest/
+  citation: |-
+    Matheson, G. J. (2019). Kinfitr: Reproducible PET Pharmacokinetic Modelling in R. bioRxiv: 755751. https://doi.org/10.1101/755751
+
+    Tjerkaski, J., Cervenka, S., Farde, L., & Matheson, G. J. (2020). Kinfitr - an open source tool for reproducible PET modelling: Validation and evaluation of test-retest reliability. EJNMMI Research 10, 77. https://doi.org/10.1186/s13550-020-00664-8
+
+readme: |-
+  ----------------------------------
+  ## petfit/{{ context.version }} ##
+
+  PETFit is a BIDS App and R Shiny application suite built on kinfitr for
+  reproducible Positron Emission Tomography (PET) pharmacokinetic modeling.
+  It provides interactive web apps and non-interactive automatic pipelines
+  for combining regional time-activity curves (`regiondef`), plasma-input
+  compartmental and graphical modeling (`modelling_plasma`: 1TCM, 2TCM,
+  2TCM_irr, Logan, MA1, Patlak), and reference-tissue modeling
+  (`modelling_ref`: SRTM, SRTM2, SUV/SUVR, refLogan, MRTM1, MRTM2, refPatlak),
+  generating HTML quality-control reports for each processing step.
+
+  Example:
+  ```bash
+  # Show CLI options
+  petfit --help
+
+  # Run region definition automatically from a saved regions TSV
+  petfit --func regiondef --mode automatic \
+    --bids_dir /path/to/bids \
+    --derivatives_dir /path/to/bids/derivatives \
+    --regions_file /path/to/petfit_regions.tsv \
+    --cores 1
+
+  # Run reference-tissue pharmacokinetic modeling automatically
+  petfit --func modelling_ref --mode automatic \
+    --bids_dir /path/to/bids \
+    --derivatives_dir /path/to/bids/derivatives \
+    --config_file /path/to/petfit_config.json \
+    --cores 1
+
+  # Launch the interactive Shiny app (available at http://localhost:3838)
+  petfit --func modelling_ref --mode interactive \
+    --bids_dir /path/to/bids \
+    --derivatives_dir /path/to/bids/derivatives
+  ```
+
+  More documentation can be found here:
+  - https://petfit.readthedocs.io/en/latest/
+  - https://github.com/mathesong/petfit
+
+  Citation:
+  ```
+  Matheson, G. J. (2019). Kinfitr: Reproducible PET Pharmacokinetic Modelling in R. bioRxiv: 755751. https://doi.org/10.1101/755751
+
+  Tjerkaski, J., Cervenka, S., Farde, L., & Matheson, G. J. (2020). Kinfitr - an open source tool for reproducible PET modelling: Validation and evaluation of test-retest reliability. EJNMMI Research 10, 77. https://doi.org/10.1186/s13550-020-00664-8
+  ```
+
+  To run container outside of this environment: ml petfit/{{ context.version }}
+
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAZm0lEQVR42tVbaZQU1dl+3ltVXb3NNLMPsg0M67AKAgrIgIggiAuKuCcu6Kdf1KifURMSMMYkGjVqjEtiMNEQxcHEIBhwQ2RRZFiFYRtggGGWnumeme6erqquqvt+P3oGEVFxDd5z+nSf6urT9T7v9tzn3gscz2Cm0uWszniZFZzgYw6zKF3OKpjF8dyvfpHhM8rKRBmRuwJw2q4qg3+/MaNVWDJkxOlEMLrFl8EBaYjIgQ3WvUQGANn+/JgLwr0kP+u3n2nAjJdfVsouvtgFgGEvVHTUOnafKgLeU0hDdzDyQXCIcUIAwAQGoICRAGOPa2KL1Vi7dOP0k7anbWGl7GJyjxuA9h8Mer4y39+1251KQJ3stBgdjX07VatqJ6XCNSBFA4NPnNiXDkQwBH+Pfuwt6i09BTkR18Q6tzH84LoLCjbNmcPi3mNEAh0j7AWI5NDXwqd78/IesqNNvaJLX+aW1cu8VvUeL1xXsJTfrXFpD/Ph5+XPeHYikFBYzSmwQiPGGVmTZrKvZ89mpyl2/4eTQ/MwhwXmgkHExwSg3fOnLGmeqeeEHolvKleq/zA7M1Wz3yd0H8jjSf8JiL9lg2XabBaHg4yPchsBADEIEtx+hcHMxI4DaSahBDLtgqtui+aeM1NzE+bTayf6Zs9gFmX0cTrQ0cYP+3f9aL0gvyyy6CWl5i+/ySGhKEL3MUuXwN96yEsA4vD/KGqr4gtUqVm5O4Qv2AJ2BbNU7Yb6EplMdGPbygEDEAQALgDl40gQzI5DrpFA9oQLI51uvk9lM/nzDyYG/jCDWWkHgdp6h8Bc8JB5u3P9Jb2WJDaVd90397o80jRBigp8NyHvglkBEatZuWszho/7V8GVt23MKlWb41sRcJvTHYsEOGMU4snt8IX/vqBX05uvnJ8KV4+F42RAHI5MagcCJOC0RNDxh3eG8y+9zrLqwpeuP69gdbvD6Ujvj1xuPyCN1ll77pzpdaJhH3n078p4hmRSMjtsyZ0+6/H+v5pRvvuP7/eJLHp+vHWoarhMJopYur52oBR/YL+alV8RKj3nrd6/vnRD7cJDHQ88cPPNdl31WSDCJ+oFtWWGk5JFc59tDgwYusHzxrvnrpg7zkK6dTBVDCA58s9bCtSijr9seOX5zNjqpRlKIJMhXfrWDU8/nvAWl/x9ZPkr98TKqztU3PTjuc1v/fNWO1wzApZxEkvpZ0gNLDVi1tmy8mVzpH/rlg+mVT/zUinbRvVpix9/KrK+pt46uGcEmD2H6wgACIXYMoQTCTtZE6ZlWzkdymt6+/bO6D9XEaXvtuVNjz5TnCbzpJbVS3Xh9YKl/C56vASzCJw85velK/76wIZJN8469IdfPO9EwqMAKFIBHJEuhwqpCYXUVoJIuYLhKmnvymS8T9PSsgdWDZ/+YMmf5yzLv/yWH0OIJBjicOmULoTXj+TOTX5j9y5dDXW4CADKAKgrGtI3aUHPsNjmTZpVvccrdB/A8rswXgkMGvHEaYse+es7w6c/bNdWn0WCXJmOWmRpeeUDO4x6fXTulB2FgeKEZJcSdpO2tvE/PTZEVpxRa+6fxARSBTlN+2smrRw4oe+wV96+Gm7q9vCLTz0OsHq4QQqFnViTmti8RgmU9C4pnfOcd8XFZKqYAVk6Z7nXVdDL2r8L7DiCvALM7rfueS2/09tjlzzx9Nunzfy1XVt9FoRIOZAevxLcd36XWQ+PK5xetbj6uX4v7n/0guZUQzEA+JWM+p6Zg9bdXvLoM/VG7QsvVP1qVmW0ftwVZyY279iX7L5u+pnzJu9968IPt29+IrFx1e0gku0tkhQFRtVOkg46Ov0ndAZQqYKIm3+/3JvByLcaDqGtBfGRLZLb2hLR52eFACCIwSC4/Ll5T6RqsVOe+tdvyq+ae2Gqet+5ECIlIT2Fete35o1e+NtHKh467eYPJ86xpJl3ZL9uthtxyNx79qrwa1b/7MF/vyr0rwe854w/0L9fZZcbH+neVTHjRWtGzZwzds2C2W8PmHyG2xIdAiLJgIAQSDXUCHYRRCBQAKBSAIBqOQzAIUU75hPrHj2lqor7+dwFMFgg4noRc1UIAlQBKAJQjvgsCFKwJHXI6U8v7YbknpUrf8QgyZCekJaz+d2zF8654f1Lb32zbsF9tjTzFJBUQa4AybaXq0K4Qkh9TfVH19aVnPyz/3vY3Dj7sYnR2mbK0jQ45sGqaZtnl40ouOLWh5EmbdReD4SitvmUnXanHUE4+ShWzFBVxbnjrtteHzx4yC4rZYPo0yyQAJgsUOJN4Be5mzEpow4xWyDSyogmGVFHRcRUEG1lNmxWDMXXOPas0ZvLbuhx59W+ijwhiAC19ZFhr/7s/Levv+GAUTlNg3DaGKfgNMERbS9FCKbmhIZrJsc3TR1Tk+rVN+uSPw6c/2hhILTVYVYApsiSF67qcffZ25XM0FYw0xEzxPSbSAeVejwJmxXqYHl0j3Os7xRixF0VpRlRLDw9idCUO2B9+Dpe3nQA+7J6It8rkaypRYJ0hPUcXrUnRa7Xu/e5dVffn3nJNUUXNR+yJyxYrD3Y8MMFG5rezd8V33SlCuG2GX045xQlPSVghmxKaOKqs1q23nRu097JdxedHTcjvrm77jr/zMIr/1S2//HHQQQnGh5Z92pDgb/f0MXxD94Z+NX0gHbm4Ur67LaYZluz8qoRuuVlOAOmQIy7ETPuGQLvIBuo2AUeNRBojYJkpTCmDEbdmnVDveOvU+Ulv5UCUKbXj8WQFVmrJx2cf6GqMEmXwEfNU6IxkW4NJMTVk5u33nRe865Jd3WealhC93lcXt/w/pW3jX3gimWH/rYj5rb0FS7r9fMfGZ01YfrG+IfL3aOi/RN162sP2wWgqnAP7kzHae0ukEow9hxAQ+eJkD9fDvued1CfzIEv2YjunTLU2KH9zICwYxFyY01we24urYkdHN6UJDgSQiGGQgxmwHYIN53bwj+5tIVmTWnaft2U2M4pd6eN1zWXWRJSbOa9WfOfrp0DvVe1J71Vva+kw4QR9aR6mvEZ2oX6dQxXBRBNMm4Yzpg6vhciL96HjPJlaK36CD/flYUiGcZdt3SDA0AN5UDLzMbfV9XY08b3ae2wdVkHum88zKYIuXaU+w1tvmpxwMK8jQpW1xDVmRpUdkCWi0duiuB/fxBJs6Iksnpd1m1KwhC6T3fZlUQEuC5YKY+8M6hfaMTWitg6MAFuLFoc6A1D+P0H3VhLzjcKgCDAcICibMJvJxC8Pj8Co/tj7bpduGJ5HirNIAo1HVMXPI0BYCBykN9cs5mu3D3QmjbzgWsHiIeuKV6/ZurE/gG364DeCmwbZ/dW+OwShar2t+CNFRVY0pCLD4M5uOSsZrgtChkGIZinFOZ3U1FZL+DXP5mWhpPI0ITmHjW7BPiztcyvFQGmzXhmiooOfgKkxNqDjAtWdUKj5SDXk0JcapiysScuqfwzItKLf8X6IuRxlbregxsX/04N40AhCrZDXNMva8V9Z2iuCNaPNw9GOCvcQtfffjuuXf86llVUI1mXhw5FDdADhPi6GM+IVaA1VES77CB0fMxYFaGlPqlVsJpmQOR8Hnf50kMRQIsJXDVMx8RBATAp2FAjMel5Gy1xCxmahC0JGtIt8HfRAXiuuZhcMJMr1dTK9wuLuuaHs7UUYskUPVkuUn97a8FvL1tAxr6t+8hzw9MsL/gF3DteQ2k+o2BPJnhzCcyFEql1g+jHt91J753ZjDGBJphQoAmQAKFP5rDtlfHNPTgtlUD4gzVGDXSZMvM+S/780gAQAFcyPB4FN3aph1G+Hm4shrkrgRaT4dcIrvyY8mnEyFFMZCkWBMDMUmv+8N1ifcDo7Q4TayTg0epGFnawtBc3ZVW8cVBhX3y3ZABaeDdY2vB00KC22DAO6OgwZxHcC3+BzJufwdU51TAN4oghBViNX9rtB7uq4ttGtbMeT0GX7S0r92azaRZ+lnz7pQFQiBGXHtzWsQon52bDOu1WmJWNSDVGoHpUyKPJFACHCW5aumUwYOzeMqzTbefuIt0bBsBJmcp8avuDp00rOuOff4p2o5UP3KfIX5+Nqvtn4KdbQ3h2vUC1CXTwWxB1uwEAsd07MbanBy/M1PiCgRqGdBqw7C81O7IPmZFhChMgSGZNnPF+0xsLS8CsguB+7RpAYNisIE8kcVUxQ7vnNYSCecDA4Zi142K8HcvFFyjlAoKQCteMcprxqN6px5vmnoorSCFe2/j2NVvPf/eSovmrVz4TtLrorSsOzXi376gDjhdUmaTckAczc0O44/6L0bnvAHirPkTm4GJ5RZbAFZ1jMCrKRr2275XRO4Nd1F0JL/tDGdu73np65bqhD1//RfOXLwWBywyfV4VPceBU706rDuFdiDgqJLcLuJ+bQZJNo+P+X/5uVMfr71kIRZiCIU2ZPGnAS9fc2fBMwYs/mBLbNbFs0Glh14tczZXZfiFNw+YnqvJ5wso8PnfedvePrX1kNQLCqI2K+l0xaDf/7aSLfza74+oxB+XPR4OsktKXYm9E8+zGutFtKvDXJ0KCACMlcUpXHZ165yLyu4vh/Goy1j9xLx6rL4KH3ONbKSDilpVLr+94eZ9DvuKSl4il4jiKe/b41X0SmYtO3vLawuc7Or0XeTWbTJZKSrIQClG2x6E6V6f/WJ2V29+2Rem8zu9Z66Ov51zwI6jDz3Xdybc5/l4jlWi4ZbNVNvu1qrk33AiWnqNnt189BQiQknBesQu1UyFyQxn449Kd+Mmm3tA0AR9JSP5CIUmAIGVrvHjTpP+Zdfo78x5b1uesEbloLJl6qrN70P/kXu5znjzpidL5T7xV9fqS5eGF4+uNg6dYsrUTA8hQ9Gh3PX/LmPzSd3vm3rTh91Xjb7i3/BWg9Eqp1FdqtTu22I13/Oenef/3/OjW6v1TP9YDviYPIAJSDqNLCBjfXYBNG47iw1/CneHCRpAkHP4SuSRIJis2ztpwx5+3DPjHGz/afun4v/zwN9pUoZA01F1Tr1g+amzfzCEvXVZ0+6K+oQEvNFhNHgAIebLsqFmjv3rw2VP+fXDccy2u1dVYXO1cXzlMM1K2ubPknLmv+wbazqs3zWEGteXk1wdACMCxGSWFGjrlamDbxqYDDnbX2cjw0Jcx/gjZGmh8Zd6Dijfz1gGLl/9w+4xzfu1EwqPZFZDkZmyNlc+q2HrtLJ/wH/CqvgYwKMV2IOnEe7gkNQGCDuCh2m7qi3Gqyrlu9uzKsWcf8v5g/LOuZeW3eV98I0WQJEOyhqH+Jrh1h0CagvlbGYZNbesS+CqUAnClv37+o49VP/zY8FGbF98cGD7uQdK0RpIMVbYJLbK1azTVOCxqNw5NOC19ANZUSSCXwSDrpJ7FLxa8tfpKJ6+L4btq/Dwn2Vp8PMYfdwQokIhKD37SbS9+0r8LYkYu+P0tWLG/D/T2dROitiUrOmIpiwH5BV2BwJDSH319/kNrx5b/o+eTL/xZ8WPx3rt/OsnYvulMJ95cQq6b8XF3IUAhg7zB/b5uvd496YY5i/OmF4YrLrp7eqz8vVvYdfzHa/xxASAIaGEPTtXDuHNMPkK/egfSnw3r0UsxZM0KbFOLIZQUXMsBbBcsZVp1IQKpCkjX2pauKH2djykoMYjY3Lvzsm3nl4739Rrwz47X/nRp7kWdFsXXIxhd/M9uTrQxAEFMqiKzzpq5NzQ60GLuh77/l3PO2Df7/fPcWPNgCMKXMf64ACAADhRkkwlPZjbgzwYB8HXuhkLdgtskIaUJ9aQ8Vy3McbVu+bbIDEqnPqLaB8Kqva9O41YLLCVIU9OA0KfAoLbC6LJldkx+tO5/99xx4XVVczts13IKt3qL+23TsnNj7EqShuk5+MDtF+1trO3rxiL9OWVngQCIw9X+S7X2LwTAZSCbDMy3uqDHqqWY+djlSHXojL2L/oQXw12QWeB3s2ddFPOdVmKpuVku+T0MVQUsi9yEQda2/ZoTblKsLXs9xtodXrs6rLJlg3QtDYb8BBAKCAwiCWbdbYkOcZujQ8y9FcfQldtwE4fX/L/SxO74aoAQSJo23D4lEA2rICuTuKWiE6JjRhq9fjazBflZrkwYlKoOq/bBsCpbDVI7BKXWvaPjP7WfRboHfMHpSac2oqR2HNCSH1R4E8vW+ZzaqEKaAtI96TRJg0Ftq7zpdfxjtbGPC4L4uqrWcQGQkkC+DxhSQBB9enO8zqHwDyfEis4tTVDIx4n3Nnubnng1w21sUd14UsB2QX6dlQy/1IcUp9SOuY53QFHKO7R3yj9uiOkfO9gMXTohEV+02p94c4PfrqpV2bRBPg+E7mmvI/R5/fubGsdVA1IOkB8k5GcQ0BIXNaHOtj3ujEQw6OHIs0symp99PUMaKRK6BhIC8CmA45LT2KLYS9b6wAzSNWhFhU5w2mmtvoHFKU9JNzv7xxfGMmee0Wpu3OUxN+/ztL5V7rf31irk94I8ajoqXPnfBUAQ0GpLlOQSsn0CcBzsLuhsm16/tJ9aGGp6ZkkGeVSIoDfdDxnpUCZKFz2P1j4Fgr2vVo0+UhYSXh36yT2t0GUTEt6BPVLBSSOM4JSRRnDSMCO2cKXf3Ljbax+oVznlQPh1QFWOrhXfYQQQYLnA2C4KawoAg3GooFPKWFuhO08uyqCgLx0nx/LUUW2PdA/Im5bPzA+262b5Tl3rnO/4xw4yglNPNfSSIjv/132aneoGxdy615N8b4s3sXSdX8aSdLiDfFwrvhsAAIClpM5+UyeTIVWNt4kcN/HkqyFdVdIc+XjD9AhAKKADDNgHw2rzX5dmxP+9Ohg4c2jSXzrY9J3S2wpOHm4EJww1MqaNShqbKj2JxR8E7KpalS0H5DminaYfEF91w9oXAsAQrMIRQTsSguvCCOW5FRvrVf6o0oOg96vnaBtDJF0D+TxgM0WxshWB+L9XB/R+3VK+kf0s/7ghpm9EX8s3oq+Vef6YpLm50mOs2qYb5TvT7TRlp+mD15NOE2oDWfI3yQOI/Rz3+JAIQDIaPUG5/51tukb8zewTZE6TDYUgMv2AZFjbqjzmxt2eWNmKYMb5YxL+kX0tT9+udnDycCM4ebjhHIoo5vb9mr2vVkuu2eZNVez3uNE4gTnNPj3t7PObAABChmSzV4PphaZiX8Shxu0NWqauwP0mixLjcDSRzwPy62DToubn/pPR8o+3MrTO+Y7vlD6mb0x/yzuoOBU8Y6gJVTE7XD4xYVUeUo0127xOfVSxtlV57Ko6jVMOfW0ACAyHhcyV0YAuLBWaio2bYooTTQryK8C31aFk275IRYHI8APMsA/Uq6nK6mDsX+8FtW6FjndwD0srKnR8p/U39Z6dHO+QnnGkHLDjUt2dT2Unl5X7KOj9wnQ4Tj1AtvExQiycEN/BfsFPF822WgHJsKvq1NSugyqIoGRnZHpKuqX8o/qbeo+TbK2o0LH31GpQFXwDEQC4LGSBeygHHgk4Cm8Mg4SC7wyDT9WKI8FggI0UGau36caqrTp5PVCyM6SMJwV51OMqhscVAXTEB/dE2B99BBhQCCLYtoVQSriRmCBV+Qpd4NNL8m1ESJImLQ9AbLvErTZBFXRY/zghRns4CoLwaOn1FwYxH0uhpU8D4BgqMaCwdD5VmFVikevW5UK4FGuRtK3WAjuEJP8X0uC4128YQgho2jECXKa3CEtB4jAAHEzZxEgowdDH7Co9H4UGV5RnTVuzNh4O7o9EAiNGAaaT3vh0IgLAYNJUzWlobMjcsX1nd0VR+HAkMEMEM5kIlmLZiTQAzGILUeuYdbzb36PvYBLi8A+IiFOm4Zm3ojp0xuTJu52goZ49WGEinLBDSpdCmaHU6tVrOlVs29FdUQ6Lj8yuS97ufSV5UB/f8N5eAFBL34VYAUjZ6m7zFvW5QM0pSLnxZp0UFWAmEgJr33v7lI3vvzdYsiTJ+F4MZiZVVdDuTGZJwuORgX5DmR3sqZg7oxVzWajjxkGuAJAK1y3Ru3e6MWP4eIouma+rmVnMrkNEBMlA0kxpJ7Lnj6WYHd7YKQSkmYS3qK8RGHSq5cSMxSA/ly5nRdyb1t9E+cWdd0oTa3MmXyKVQNCRjk1H1gMhCETfj5doez9Ce2d2HORMvcwQHhwyGiqXgplWjIMrAGBO2412uO63vp7FLQVX3h6VRgIgwfi+uP2zWoKqsRNvpqyx50SzJ54HN5p45KPLBzXNKIMAUfpw4b1EcsbLrJRf2HGrHY39MmfaJVr2hAsjTkskXQyFwt87y4UAhAKnJUq+4pJ4xxvnCGk6C9ZOyfj7kcfoPnloqu0szcg3jfuFz3tTw8JnU+EFT+awbSvC5wcJhRl8QocEgZhZkrRMwLERGndOpNMNcxShe99L7ai6av31PeKHFedP0aIjTlqOfKv1ViXDf0di0wZ/Q9kzWnLnJr/bGlNJKIBQAPAJZzpYgl0XwqNLb7feyeypl5nZE89jaTplsnrfPR9e2TuGOSyOPElKn8GkCERy+KvhsWpe3mwSGGjs3qknNr8vjKodItVQK4RQTyAQCFK6UIOZ7C3qKwP9h8nggJE26ah2W1ofXzsp+FcAONp44HOPzrblyfXPaMOnXXSGlpU9nbzozy7y2UZG25mcEyoEiGCRB2G2sUcmjMVuTdWydT8oiRzrwOQXAtCWEqJtsREA0Pm2h315467oJFS1QGXVYWGfEPWApMYuoCiukWjeUblv511j4p9y5NegFTTjZVa+D0fnD485LGYwK+AvLtj/DxsOrcyr23TDAAAAAElFTkSuQmCC
