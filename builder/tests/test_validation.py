@@ -907,3 +907,23 @@ def test_pet_and_preclinical_categories_are_accepted(category):
     }
     validated = validate_recipe_dict(recipe)
     assert validated.categories == [category]
+
+
+@pytest.mark.parametrize("category", ["digital pathology", "optical imaging"])
+def test_dermatology_and_optical_categories_are_accepted(category):
+    recipe = {
+        "name": "demo-derm",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": [category],
+        "domains": ["microscopy"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+    }
+    validated = validate_recipe_dict(recipe)
+    assert validated.categories == [category]
