@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "rclone 1.76.0": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "workflows"
+  ]
+}

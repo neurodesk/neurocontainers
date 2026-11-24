@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "tissuumaps 3.2.1.14": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "TissUUmaps-tissuumaps 3.2.1.14": {
+      "version": "20261124",
+      "exec": "tissuumaps",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "molecular biology"
+  ]
+}

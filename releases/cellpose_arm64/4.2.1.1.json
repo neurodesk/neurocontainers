@@ -1,0 +1,27 @@
+{
+  "apps": {
+    "cellpose_arm64 4.2.1.1": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "Cellpose-cellpose_arm64 4.2.1.1": {
+      "version": "20261124",
+      "exec": "cellpose",
+      "apptainer_args": []
+    },
+    "Cellpose 3D-cellpose_arm64 4.2.1.1": {
+      "version": "20261124",
+      "exec": "cellpose-3d",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "machine learning",
+    "visualization"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "cellpose"
+}

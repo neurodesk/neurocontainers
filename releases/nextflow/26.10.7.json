@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "nextflow 26.10.7": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "workflows",
+    "programming"
+  ]
+}

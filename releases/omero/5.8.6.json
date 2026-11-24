@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "omero 5.8.6": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "OMERO.insight-omero 5.8.6": {
+      "version": "20261124",
+      "exec": "omero-insight",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "data organisation"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "jipipe 5.3.0": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "JIPipe-jipipe 5.3.0": {
+      "version": "20261124",
+      "exec": "jipipe",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image segmentation",
+    "workflows"
+  ]
+}

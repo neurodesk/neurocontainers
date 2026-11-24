@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "rclone_arm64 1.76.0": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "workflows"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "rclone"
+}
