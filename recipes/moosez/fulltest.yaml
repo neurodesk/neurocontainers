@@ -8,9 +8,9 @@ tests:
     expected_output_contains: "/opt/moosez/bin/moosez"
 
   - name: Package version matches container version
-    description: Verify installed moosez Python distribution version matches container version.
-    command: python -c "import importlib.metadata as md; print(md.version('moosez'))"
-    expected_output_contains: "${version}"
+    description: Verify installed moosez Python distribution version exactly matches container version.
+    command: python -c "import importlib.metadata as md; v = md.version('moosez'); assert v == '${version}', f'{v!r} != ${version}'; print('version ok:', v)"
+    expected_output_contains: "version ok: ${version}"
 
   - name: License notice present
     description: Verify upstream Apache-2.0 license notice is installed.
@@ -35,8 +35,15 @@ tests:
 
   - name: CLI help works without HOME
     description: Verify moosez --help runs cleanly with an unwritable HOME and lists clinical and preclinical models.
-    command: HOME=/sys moosez --help
-    expected_output_contains: "clin_ct_organs"
+    command: |
+      set -eu
+      help_out="$(HOME=/sys moosez --help)"
+      printf '%s\n' "$help_out" | grep -q "clin_ct_organs"
+      printf '%s\n' "$help_out" | grep -q "clin_pt_fdg_brain_v1"
+      printf '%s\n' "$help_out" | grep -q "preclin_mr_all"
+      printf '%s\n' "$help_out" | grep -q "preclin_ct_legs"
+      echo "help models ok"
+    expected_output_contains: "help models ok"
 
   - name: Clinical and preclinical model registry
     description: Verify moosez.models.AVAILABLE_MODELS includes clinical whole-body and preclinical models.
@@ -93,19 +100,28 @@ tests:
       assert "site-packages" not in system.MODELS_DIRECTORY_PATH, system.MODELS_DIRECTORY_PATH
       assert system.MODELS_DIRECTORY_PATH.endswith("models/nnunet_trained_models"), system.MODELS_DIRECTORY_PATH
 
-      # Verify MOOSEZ_MODELS_DIR override propagates cleanly to system and Model defaults.
+      # Verify MOOSEZ_MODELS_DIR override propagates cleanly to system, Model defaults,
+      # and moosez -md path logic (including when the directory already contains Dataset*).
       with tempfile.TemporaryDirectory(prefix="moosez-test-") as tmp:
           custom_models = Path(tmp) / "custom_models"
-          env = {**os.environ, "HOME": "/sys", "MOOSEZ_MODELS_DIR": str(custom_models)}
+          (custom_models / "Dataset123_Organs").mkdir(parents=True)
+          expected_models = str(custom_models / "models" / "nnunet_trained_models")
           check_code = (
-              "import inspect; from moosez import models, system; "
+              "import inspect, os; from moosez import models, system; "
               "default_dir = inspect.signature(models.Model.__init__).parameters['base_directory'].default; "
               "assert system.MODELS_DIRECTORY_PATH == default_dir; "
-              "print(system.MODELS_DIRECTORY_PATH)"
+              "p = system.MODELS_DIRECTORY_PATH; "
+              "assert os.path.basename(p) == 'nnunet_trained_models' and os.path.basename(os.path.dirname(p)) == 'models', p; "
+              "print(p)"
           )
-          out = subprocess.check_output([sys.executable, "-c", check_code], env=env, text=True).strip()
-          expected_models = str(custom_models / "models" / "nnunet_trained_models")
-          assert out == expected_models, f"{out} != {expected_models}"
+          for override_val in (
+              str(custom_models),
+              str(custom_models / "models"),
+              expected_models,
+          ):
+              env = {**os.environ, "HOME": "/sys", "MOOSEZ_MODELS_DIR": override_val}
+              out = subprocess.check_output([sys.executable, "-c", check_code], env=env, text=True).strip()
+              assert out == expected_models, f"{override_val}: {out} != {expected_models}"
 
           # Verify custom trainer check and accelerator detection without writing to site-packages or HOME.
           trainer_status = add_custom_trainers_to_local_nnunetv2()

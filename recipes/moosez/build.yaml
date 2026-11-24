@@ -86,16 +86,6 @@ files:
               parent_name = os.path.basename(os.path.dirname(base))
               if base_name == "nnunet_trained_models" and parent_name == "models":
                   return base
-              if os.path.isdir(base):
-                  try:
-                      if any(
-                          entry.startswith("Dataset")
-                          and os.path.isdir(os.path.join(base, entry))
-                          for entry in os.listdir(base)
-                      ):
-                          return base
-                  except OSError:
-                      pass
               if base_name == "models":
                   return os.path.join(base, "nnunet_trained_models")
               return os.path.join(base, "models", "nnunet_trained_models")
@@ -171,9 +161,10 @@ categories:
 structured_readme:
   description: >-
     MOOSE (Multi-Organ Objective Segmentation, moosez) is an nnU-Net v2 deep
-    learning segmentation suite from the ENHANCE-PET initiative providing both
-    clinical whole-body PET/CT/MR segmentation models and preclinical CT
-    leg-muscle and preclinical multi-organ MR segmentation models.
+    learning segmentation suite from the ENHANCE-PET initiative providing
+    clinical whole-body CT and clinical MR segmentation models, clinical
+    FDG-PET brain and face models, and preclinical CT leg-muscle and
+    preclinical multi-organ MR segmentation models.
   example: |-
     # Download models to a persistent directory and run segmentation
     export MOOSEZ_MODELS_DIR=/path/to/persistent/moosez_models
@@ -188,8 +179,11 @@ structured_readme:
     Model weights are not baked into the image and are downloaded on demand.
     By default, models and runtime caches are stored in a private per-user
     directory `/tmp/moosez-<uid>`. Set `MOOSEZ_MODELS_DIR` to a writable
-    persistent directory to retain downloaded models across runs, or pre-fetch
-    models with `moosez -md <model_name> -md-out <directory>`.
+    persistent directory to retain downloaded models across runs (both
+    `moosez -md` and inference resolve `<MOOSEZ_MODELS_DIR>/models/nnunet_trained_models`),
+    or pre-fetch models with `moosez -md <model_name> -md-out <directory>`.
+    For ENHANCE 1.6k training-data downloads without a writable `$HOME`, pass
+    `moosez -dtd -dd <writable-directory>`.
 
     Upstream documentation: https://github.com/ENHANCE-PET/MOOSE
   citation: >-
@@ -209,7 +203,7 @@ readme: |
 
   ### Available Model Families
 
-  - **Clinical whole-body PET/CT/MR models**: CT organ, lung, rib, muscle,
+  - **Clinical CT, PET, and MR models**: whole-body CT organ, lung, rib, muscle,
     vertebrae, peripheral bone, cardiac, digestive, body-composition, dental,
     face, PUMA, and ALPACA models (e.g., `clin_ct_organs`, `clin_ct_body`,
     `clin_ct_lungs`, `clin_ct_cardiac`, `clin_ct_body_composition`,
@@ -225,17 +219,25 @@ readme: |
 
   Model weights are not baked into this image and are downloaded on demand.
   Because Apptainer/Singularity images are read-only and `$HOME` is not
-  assumed to be writable, this container redirects model storage and runtime
-  caches (`MPLCONFIGDIR`, `XDG_CACHE_HOME`, `TORCH_HOME`) to a private
-  per-user directory `/tmp/moosez-<uid>` by default.
+  assumed to be writable, this container redirects segmentation model storage
+  and runtime caches (`MPLCONFIGDIR`, `XDG_CACHE_HOME`, `TORCH_HOME`) to a
+  private per-user directory `/tmp/moosez-<uid>` by default.
 
   To keep downloaded model weights across sessions, set `MOOSEZ_MODELS_DIR` to
-  a writable persistent directory:
+  a writable persistent directory (both `moosez -md` and inference resolve
+  `<MOOSEZ_MODELS_DIR>/models/nnunet_trained_models`):
 
   ```bash
   export MOOSEZ_MODELS_DIR=/path/to/persistent/moosez_models
   moosez -md clin_ct_organs
   moosez -d /path/to/subjects_dir -m clin_ct_organs
+  ```
+
+  If you download the ENHANCE 1.6k training dataset (`-dtd`), pass `-dd` so it
+  does not default to `$HOME/Downloads`:
+
+  ```bash
+  moosez -dtd -dd /path/to/writable_download_dir
   ```
 
   Preclinical example:
