@@ -1,0 +1,301 @@
+name: nnunetv2
+version: 2.8.1
+upstream_version: "2.8.1"
+torch_version: "2.15.0"
+torchvision_version: "0.29.1"
+cc3d_version: "4.1.1"
+
+tests:
+  - name: nnunetv2 wrappers available on PATH
+    description: Verify core deployed nnU-Net v2 wrappers resolve on PATH.
+    command: |
+      set -e
+      command -v nnUNetv2_plan_and_preprocess
+      command -v nnUNetv2_train
+      command -v nnUNetv2_predict
+      command -v nnUNetv2_evaluate_folder
+    expected_output_contains: "/opt/nnunetv2/wrappers/nnUNetv2_plan_and_preprocess"
+
+  - name: package versions match recipe, CPU PyTorch + system APT libs used, and zero bundled GNU/MPL/CUDA libs or baked weights
+    description: Verify nnunetv2 and torch versions match, pip check passes, scientific libs come from Ubuntu APT, zero bundled GNU/MPL/CUDA libraries exist, and no large pretrained checkpoints are baked.
+    command: |
+      set -e
+      /opt/nnunetv2/bin/python -m pip check
+      /opt/nnunetv2/bin/python - <<'PY'
+      import importlib.metadata as md
+      import pathlib
+      import torch._dynamo
+      import torchvision
+      import SimpleITK
+      import cc3d
+      import imagecodecs
+      import matplotlib
+      import nibabel
+      import nnunetv2
+      import numpy
+      import pandas
+      import scipy
+      import seaborn
+      import skimage
+      import sklearn
+      import torch
+
+      assert md.version("nnunetv2") == "${upstream_version}", md.version("nnunetv2")
+      assert md.version("connected-components-3d") == "${cc3d_version}", md.version("connected-components-3d")
+      assert torch.__version__.startswith("${torch_version}+cpu"), torch.__version__
+      assert torchvision.__version__.startswith("${torchvision_version}+cpu"), torchvision.__version__
+
+      for mod in (matplotlib, nibabel, numpy, pandas, scipy, seaborn, skimage, sklearn):
+          assert mod.__file__.startswith("/usr/lib/python3/dist-packages/"), mod.__file__
+
+      bad_libs = [
+          str(p)
+          for p in pathlib.Path("/opt/nnunetv2").rglob("*.so*")
+          if p.name.startswith(("libquadmath", "libgfortran", "libgomp", "libzmq", "libtcc"))
+      ]
+      assert not bad_libs, bad_libs
+
+      bad_pkgs = [
+          d.metadata.get("Name")
+          for d in md.distributions()
+          if (d.metadata.get("Name") or "").lower().startswith(("nvidia-", "cuda-"))
+      ]
+      assert not bad_pkgs, bad_pkgs
+
+      weights = [
+          str(p)
+          for p in pathlib.Path("/opt/nnunetv2").rglob("*")
+          if p.is_file() and p.suffix.lower() in {".pth", ".pt", ".ckpt", ".onnx", ".safetensors"} and p.stat().st_size > 1_000_000
+      ]
+      assert not weights, weights
+
+      torch.set_num_threads(2)
+      assert float(torch.ones(8).sum()) == 8.0
+      assert imagecodecs.version()
+      print(f"nnunetv2={md.version('nnunetv2')} torch={torch.__version__} sitk={SimpleITK.Version_VersionString()}")
+      PY
+    expected_output_contains: "nnunetv2=${upstream_version}"
+
+  - name: license notices and LGPL-3.0 corresponding source installed
+    description: Verify nnU-Net v2 Apache-2.0 and connected-components-3d LGPL-3.0-or-later license files and matching source archive are installed.
+    command: |
+      set -e
+      test -s /opt/nnunetv2/share/licenses/NNUNETV2-LICENSE.txt
+      grep -q "Apache License" /opt/nnunetv2/share/licenses/NNUNETV2-LICENSE.txt
+      test -s /opt/nnunetv2/share/licenses/CC3D-LGPL-3.0.txt
+      test -s /opt/nnunetv2/share/licenses/GPL-3.0.txt
+      test -s /opt/nnunetv2/share/src/connected_components_3d-${cc3d_version}.tar.gz
+      echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: wrapper isolates process-group signals, cleans up on SIGHUP, and preserves piped and PTY stdin
+    description: Verify the installed nnunetv2 wrapper handles SIGINT/SIGHUP cleanup, noexec /tmp, and foreground PTY stdin cleanly.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, sys, tempfile, termios, time
+
+      src = open("/opt/nnunetv2/wrappers/_nnunetv2_launcher.py").read()
+      py = sys.executable
+
+      def make_wrapper(path, stub_path):
+          patched = src.replace(
+              'cmd = [f"/opt/nnunetv2/bin/{prog}", *sys.argv[1:]]',
+              f'cmd = [{py!r}, {stub_path!r}, *sys.argv[1:]]',
+          )
+          assert patched != src
+          open(path, "w").write(patched)
+
+      def run_in_pty(argv, env, on_ready=None, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if on_ready:
+              on_ready()
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('TORCH_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          wrapper = os.path.join(td, "nnUNetv2_plan_and_preprocess")
+          make_wrapper(wrapper, stub)
+
+          env = os.environ.copy()
+          for k in ("TORCH_HOME", "TORCHINDUCTOR_CACHE_DIR", "MPLCONFIGDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
+              env.pop(k, None)
+
+          r = subprocess.run([py, wrapper, "stdin"], input="nnunet-pipe\n", capture_output=True, text=True, env=env, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:nnunet-pipe", (r.returncode, r.stdout, r.stderr)
+
+          rc, out = run_in_pty([py, wrapper, "stdin"], env=env, send_bytes=b"nnunet-pty\n")
+          assert rc == 0 and "GOT:nnunet-pty" in out, (rc, out)
+
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([py, wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_dir = open(ready_hup).read().strip()
+          assert scratch_dir and os.path.isdir(scratch_dir), scratch_dir
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_dir)), scratch_dir
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: offline nnUNetv2_plan_and_preprocess on synthetic 2D dermoscopy dataset under unset/read-only HOME
+    description: Create a synthetic 2D RGB skin-lesion Dataset501_SkinLesion, run nnUNetv2_plan_and_preprocess offline with integrity verification, and confirm fingerprint, plans, and preprocessed arrays are generated.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      mkdir -p "$tmpdir/raw/Dataset501_SkinLesion/imagesTr" "$tmpdir/raw/Dataset501_SkinLesion/labelsTr" "$tmpdir/preprocessed" "$tmpdir/results"
+      /opt/nnunetv2/bin/python - "$tmpdir" <<'PY'
+      import json
+      import os
+      import sys
+      import numpy as np
+      from PIL import Image
+
+      td = sys.argv[1]
+      ds = os.path.join(td, "raw", "Dataset501_SkinLesion")
+      rng = np.random.default_rng(21)
+      yy, xx = np.ogrid[:64, :64]
+      for i in range(6):
+          cy, cx = 28 + (i % 3) * 4, 28 + (i // 3) * 8
+          mask = (((yy - cy) ** 2 + (xx - cx) ** 2) <= 14 ** 2).astype(np.uint8)
+          rgb = np.full((64, 64, 3), [215, 170, 145], dtype=np.int16)
+          rgb[mask == 1] = [110, 65, 50]
+          rgb = np.clip(rgb + rng.integers(-10, 11, size=(64, 64, 3)), 0, 255).astype(np.uint8)
+          case = f"lesion_{i:03d}"
+          for c in range(3):
+              Image.fromarray(rgb[:, :, c]).save(os.path.join(ds, "imagesTr", f"{case}_{c:04d}.png"))
+          Image.fromarray(mask).save(os.path.join(ds, "labelsTr", f"{case}.png"))
+
+      dataset_json = {
+          "channel_names": {"0": "R", "1": "G", "2": "B"},
+          "labels": {"background": 0, "lesion": 1},
+          "numTraining": 6,
+          "file_ending": ".png",
+      }
+      with open(os.path.join(ds, "dataset.json"), "w", encoding="utf-8") as f:
+          json.dump(dataset_json, f, indent=2)
+      PY
+
+      env -u HOME -u USER -u LOGNAME -u TORCH_HOME -u TORCHINDUCTOR_CACHE_DIR -u XDG_CACHE_HOME \
+        nnUNetv2_plan_and_preprocess --help | grep -q "verify_dataset_integrity"
+
+      HOME=/sys TORCH_HOME=/sys/unwritable-torch XDG_CACHE_HOME=/sys/unwritable-cache \
+        nnUNet_raw="$tmpdir/raw" nnUNet_preprocessed="$tmpdir/preprocessed" nnUNet_results="$tmpdir/results" \
+        nnUNetv2_plan_and_preprocess -d 501 --verify_dataset_integrity -c 2d -np 1
+
+      test -s "$tmpdir/preprocessed/Dataset501_SkinLesion/dataset_fingerprint.json"
+      test -s "$tmpdir/preprocessed/Dataset501_SkinLesion/nnUNetPlans.json"
+      ls "$tmpdir/preprocessed/Dataset501_SkinLesion/nnUNetPlans_2d"/*.b2nd >/dev/null 2>&1 || \
+        ls "$tmpdir/preprocessed/Dataset501_SkinLesion/nnUNetPlans_2d"/*.npz >/dev/null 2>&1
+      echo "nnunetv2 plan and preprocess ok"
+    expected_output_contains: "nnunetv2 plan and preprocess ok"
+
+  - name: runtime hook preserves cache across fork and cleans up on SIGTERM/SIGHUP (including PID 1)
+    description: Verify direct /opt/nnunetv2/bin/python keeps parent cache across os.fork()+sys.exit(0), cleans up on SIGTERM/SIGHUP, and exits cleanly under the PID 1 signal path.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import os, pathlib, signal, subprocess, tempfile
+
+      py = "/opt/nnunetv2/bin/python"
+      with tempfile.TemporaryDirectory() as td:
+          env = {"PATH": os.environ["PATH"], "TMPDIR": td}
+
+          fork_code = (
+              "import os, sys, _nnunetv2_runtime as rt\n"
+              "root = rt._CACHE_ROOT\n"
+              "assert root is not None and root.is_dir(), root\n"
+              "pid = os.fork()\n"
+              "if pid == 0:\n"
+              "    sys.exit(0)\n"
+              "_, st = os.waitpid(pid, 0)\n"
+              "assert os.WIFEXITED(st) and os.WEXITSTATUS(st) == 0, st\n"
+              "assert root.is_dir(), root\n"
+              "print(root)\n"
+          )
+          r = subprocess.run([py, "-c", fork_code], env=env, capture_output=True, text=True, timeout=30)
+          assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+          assert not pathlib.Path(r.stdout.strip()).exists(), r.stdout
+
+          for sig in (signal.SIGTERM, signal.SIGHUP):
+              sp = subprocess.Popen(
+                  [py, "-c", "import time, _nnunetv2_runtime as rt; print(rt._CACHE_ROOT, flush=True); time.sleep(30)"],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir = sp.stdout.readline().strip()
+              assert cdir and os.path.isdir(cdir), cdir
+              os.kill(sp.pid, sig)
+              rc = sp.wait(timeout=10)
+              assert rc == -sig.value, (sig, rc, sp.stderr.read())
+              assert not os.path.exists(cdir), cdir
+
+              pid1_code = (
+                  "import os, time, _nnunetv2_runtime as rt\n"
+                  "rt._CACHE_OWNER_PID = 1\n"
+                  "os.getpid = lambda: 1\n"
+                  "print(rt._CACHE_ROOT, flush=True)\n"
+                  "time.sleep(30)\n"
+              )
+              sp1 = subprocess.Popen(
+                  [py, "-c", pid1_code],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir1 = sp1.stdout.readline().strip()
+              assert cdir1 and os.path.isdir(cdir1), cdir1
+              os.kill(sp1.pid, sig)
+              rc1 = sp1.wait(timeout=10)
+              assert rc1 == 128 + sig.value, (sig, rc1, sp1.stderr.read())
+              assert not os.path.exists(cdir1), cdir1
+          assert os.listdir(td) == [], os.listdir(td)
+      print("runtime hook signal and fork ok")
+      PY
+    expected_output_contains: "runtime hook signal and fork ok"

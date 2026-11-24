@@ -1,0 +1,685 @@
+name: nnunetv2
+version: 2.8.1
+
+description: Code-only standalone nnU-Net v2 self-configuring 2D/3D segmentation framework for dermoscopy, OCT, HFUS, and dermatopathology datasets.
+
+copyright:
+  - license: Apache-2.0
+    name: nnU-Net v2 license
+    url: https://github.com/MIC-DKFZ/nnUNet/blob/v{{ context.upstream_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: PyTorch license
+    url: https://github.com/pytorch/pytorch/blob/v{{ context.torch_version }}/LICENSE
+  - license: LGPL-3.0-or-later
+    name: connected-components-3d license
+    url: https://github.com/seung-lab/connected-components-3d/blob/{{ context.cc3d_version }}/COPYING.LESSER
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "2.8.1"
+  torch_version: "2.15.0"
+  torchvision_version: "0.29.1"
+  cc3d_version: "4.1.1"
+  cc3d_source_sha256: "becc200f0b9fd8c16ffe0ddb37c94a963737b96b79705c8ae25dd141f402f990"
+
+auto_update:
+  method: sources
+  container_version: nnunetv2
+  sources:
+    - id: nnunetv2
+      method: pypi
+      package: nnunetv2
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: torch
+      dependency: true
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torch/
+      version_regex: 'torch-(?P<version>\d+\.\d+\.\d+)(?:\+|%2B)cpu-cp314-cp314-manylinux_2_28_x86_64\.whl'
+      target:
+        variable: torch_version
+        fulltest_variable: torch_version
+    - id: torchvision
+      dependency: true
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torchvision/
+      version_regex: 'torchvision-(?P<version>\d+\.\d+\.\d+)(?:\+|%2B)cpu-cp314-cp314-manylinux_2_28_x86_64\.whl'
+      target:
+        variable: torchvision_version
+        fulltest_variable: torchvision_version
+    - id: connected_components_3d
+      dependency: true
+      method: pypi
+      package: connected-components-3d
+      target:
+        variable: cc3d_version
+        fulltest_variable: cc3d_version
+    - id: connected_components_3d_source_digest
+      dependency: true
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/source/c/connected-components-3d/connected_components_3d-{{ context.cc3d_version }}.tar.gz
+      target:
+        variable: cc3d_source_sha256
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/nnunetv2/wrappers:/opt/nnunetv2/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - graphviz
+        - libgfortran5
+        - libgomp1
+        - patchelf
+        - python3
+        - python3-graphviz
+        - python3-matplotlib
+        - python3-nibabel
+        - python3-numpy
+        - python3-pandas
+        - python3-pil
+        - python3-pip
+        - python3-requests
+        - python3-scipy
+        - python3-seaborn
+        - python3-skimage
+        - python3-sklearn
+        - python3-tifffile
+        - python3-tqdm
+        - python3-venv
+
+    - install:
+        - libquadmath0
+      condition: arch == "x86_64"
+
+    - run:
+        # Inherit Ubuntu 26.04 system scientific Python stack so no PyPI bundled
+        # GNU runtime libraries (libquadmath/libgfortran/libgomp) ship; install CPU PyTorch.
+        - python3 -m venv --system-site-packages /opt/nnunetv2
+        - >-
+          /opt/nnunetv2/bin/python -m pip install --no-cache-dir
+          --index-url https://download.pytorch.org/whl/cpu
+          --extra-index-url https://pypi.org/simple
+          "torch=={{ context.torch_version }}+cpu"
+          "torchvision=={{ context.torchvision_version }}+cpu"
+        - /opt/nnunetv2/bin/python -m pip install --no-cache-dir "nnunetv2=={{ context.upstream_version }}" "connected-components-3d=={{ context.cc3d_version }}"
+        - /opt/nnunetv2/bin/python -m pip check
+        # Relink torch, imagecodecs, and any wheel-bundled GNU runtime libs against Ubuntu's system libs.
+        - >-
+          rm -f /opt/nnunetv2/lib/python*/site-packages/torch/lib/libgomp.so.1
+          /opt/nnunetv2/lib/python*/site-packages/torch/lib/libgfortran.so.5
+          /opt/nnunetv2/lib/python*/site-packages/torch/lib/libquadmath.so.0
+          && for f in $(find /opt/nnunetv2/lib/python*/site-packages -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libgomp-' || true); do
+          patchelf --replace-needed "$need" libgomp.so.1 "$f";
+          done;
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libgfortran-' || true); do
+          patchelf --replace-needed "$need" libgfortran.so.5 "$f";
+          done;
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libquadmath-' || true); do
+          patchelf --replace-needed "$need" libquadmath.so.0 "$f";
+          done;
+          done
+          && find /opt/nnunetv2/lib/python*/site-packages \( -name 'libgomp*.so*' -o -name 'libgfortran*.so*' -o -name 'libquadmath*.so*' -o -name 'libtcc*.so*' \) -delete
+          && rm -rf /opt/nnunetv2/lib/python*/site-packages/blosc2/lib/miniexpr-tcc
+        - /opt/nnunetv2/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/nnunetv2/bin/python -c "import importlib.metadata as md, pathlib, SimpleITK, cc3d, imagecodecs, matplotlib, nibabel, nnunetv2, numpy, pandas, scipy, seaborn, skimage, sklearn, torch, torchvision;
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (matplotlib, nibabel, numpy, pandas, scipy, seaborn, skimage, sklearn));
+          bad_libs = [str(p) for p in pathlib.Path('/opt/nnunetv2').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libzmq', 'libtcc'))];
+          assert not bad_libs, bad_libs;
+          assert '+cpu' in torch.__version__ and '+cpu' in torchvision.__version__, (torch.__version__, torchvision.__version__);
+          bad_pkgs = [d.metadata.get('Name') for d in md.distributions() if (d.metadata.get('Name') or '').lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad_pkgs, bad_pkgs;
+          weights = [str(p) for p in pathlib.Path('/opt/nnunetv2').rglob('*') if p.is_file() and p.suffix.lower() in {'.pth', '.pt', '.ckpt', '.onnx', '.safetensors'} and p.stat().st_size > 1_000_000];
+          assert not weights, weights"
+        - mkdir -p /opt/nnunetv2/wrappers /opt/nnunetv2/share/licenses /opt/nnunetv2/share/src
+        - install -m 0755 {{ get_file("nnunetv2_launcher") }} /opt/nnunetv2/wrappers/_nnunetv2_launcher.py
+        - >-
+          for cmd in
+          nnUNetv2_accumulate_crossval_results
+          nnUNetv2_apply_postprocessing
+          nnUNetv2_convert_MSD_dataset
+          nnUNetv2_convert_old_nnUNet_dataset
+          nnUNetv2_determine_postprocessing
+          nnUNetv2_download_pretrained_model_by_url
+          nnUNetv2_ensemble
+          nnUNetv2_evaluate_folder
+          nnUNetv2_evaluate_simple
+          nnUNetv2_export_model_to_zip
+          nnUNetv2_extract_fingerprint
+          nnUNetv2_find_best_configuration
+          nnUNetv2_install_pretrained_model_from_zip
+          nnUNetv2_move_plans_between_datasets
+          nnUNetv2_plan_and_preprocess
+          nnUNetv2_plan_experiment
+          nnUNetv2_plot_overlay_pngs
+          nnUNetv2_predict
+          nnUNetv2_predict_from_modelfolder
+          nnUNetv2_preprocess
+          nnUNetv2_train; do
+          test -x "/opt/nnunetv2/bin/$cmd";
+          ln -sf _nnunetv2_launcher.py "/opt/nnunetv2/wrappers/$cmd";
+          done
+        - install -m 0644 {{ get_file("nnunetv2_license") }} /opt/nnunetv2/share/licenses/NNUNETV2-LICENSE.txt
+        - install -m 0644 {{ get_file("cc3d_source") }} /opt/nnunetv2/share/src/connected_components_3d-{{ context.cc3d_version }}.tar.gz
+        - tar -xzOf /opt/nnunetv2/share/src/connected_components_3d-{{ context.cc3d_version }}.tar.gz "connected_components_3d-{{ context.cc3d_version }}/COPYING.LESSER" > /opt/nnunetv2/share/licenses/CC3D-LGPL-3.0.txt
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/nnunetv2/share/licenses/GPL-3.0.txt
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/nnunetv2
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: nnunetv2_license
+    url: https://raw.githubusercontent.com/MIC-DKFZ/nnUNet/v{{ context.upstream_version }}/LICENSE
+  - name: cc3d_source
+    url: https://files.pythonhosted.org/packages/source/c/connected-components-3d/connected_components_3d-{{ context.cc3d_version }}.tar.gz
+    sha256: "{{ context.cc3d_source_sha256 }}"
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/nnunetv2/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_nnunetv2_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for nnU-Net v2/PyTorch caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".nnunetv2-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="nnunetv2-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("TORCH_HOME", "torch"),
+                      ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_nnunetv2_runtime.pth").write_text(
+          "import _nnunetv2_runtime\n",
+          encoding="utf-8",
+      )
+  - name: nnunetv2_launcher
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run nnU-Net v2 CLIs with private non-/home cache paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ALLOWED_BINS = {
+          "nnUNetv2_accumulate_crossval_results",
+          "nnUNetv2_apply_postprocessing",
+          "nnUNetv2_convert_MSD_dataset",
+          "nnUNetv2_convert_old_nnUNet_dataset",
+          "nnUNetv2_determine_postprocessing",
+          "nnUNetv2_download_pretrained_model_by_url",
+          "nnUNetv2_ensemble",
+          "nnUNetv2_evaluate_folder",
+          "nnUNetv2_evaluate_simple",
+          "nnUNetv2_export_model_to_zip",
+          "nnUNetv2_extract_fingerprint",
+          "nnUNetv2_find_best_configuration",
+          "nnUNetv2_install_pretrained_model_from_zip",
+          "nnUNetv2_move_plans_between_datasets",
+          "nnUNetv2_plan_and_preprocess",
+          "nnUNetv2_plan_experiment",
+          "nnUNetv2_plot_overlay_pngs",
+          "nnUNetv2_predict",
+          "nnUNetv2_predict_from_modelfolder",
+          "nnUNetv2_preprocess",
+          "nnUNetv2_train",
+      }
+      ENV_SUBDIRS = (
+          ("TORCH_HOME", "torch"),
+          ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".nnunetv2-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          prog = os.path.basename(sys.argv[0])
+          if prog not in ALLOWED_BINS:
+              prog = "nnUNetv2_plan_and_preprocess"
+          cmd = [f"/opt/nnunetv2/bin/{prog}", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="nnunetv2.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - nnUNetv2_accumulate_crossval_results
+    - nnUNetv2_apply_postprocessing
+    - nnUNetv2_convert_MSD_dataset
+    - nnUNetv2_convert_old_nnUNet_dataset
+    - nnUNetv2_determine_postprocessing
+    - nnUNetv2_download_pretrained_model_by_url
+    - nnUNetv2_ensemble
+    - nnUNetv2_evaluate_folder
+    - nnUNetv2_evaluate_simple
+    - nnUNetv2_export_model_to_zip
+    - nnUNetv2_extract_fingerprint
+    - nnUNetv2_find_best_configuration
+    - nnUNetv2_install_pretrained_model_from_zip
+    - nnUNetv2_move_plans_between_datasets
+    - nnUNetv2_plan_and_preprocess
+    - nnUNetv2_plan_experiment
+    - nnUNetv2_plot_overlay_pngs
+    - nnUNetv2_predict
+    - nnUNetv2_predict_from_modelfolder
+    - nnUNetv2_preprocess
+    - nnUNetv2_train
+
+domains:
+  - microscopy
+
+categories:
+  - "image segmentation"
+  - "machine learning"
+  - "digital pathology"
+  - "optical imaging"
+
+readme: |-
+  ----------------------------------
+  ## nnunetv2/{{ context.version }} ##
+
+  nnU-Net v2 (CPU PyTorch {{ context.torch_version }} build, code-only — no model
+  weights baked) is a self-configuring deep-learning segmentation framework for
+  2D and 3D biomedical images including dermoscopy, OCT, HFUS, and histopathology.
+
+  ### Included CLI Tools
+  ```
+  nnUNetv2_plan_and_preprocess   Fingerprint, plan, and preprocess a dataset
+  nnUNetv2_train                 Train a 2D/3D nnU-Net v2 fold
+  nnUNetv2_predict               Run segmentation inference
+  nnUNetv2_find_best_configuration  Select best configuration/ensemble
+  nnUNetv2_evaluate_folder       Evaluate predictions against ground truth
+  ```
+
+  ### Example
+  ```
+  ml nnunetv2/{{ context.version }}
+  export nnUNet_raw=/data/nnUNet_raw
+  export nnUNet_preprocessed=/data/nnUNet_preprocessed
+  export nnUNet_results=/data/nnUNet_results
+  nnUNetv2_plan_and_preprocess -d 501 --verify_dataset_integrity -c 2d
+  ```
+
+  Documentation: https://github.com/MIC-DKFZ/nnUNet/tree/v{{ context.upstream_version }}/documentation
+  License texts (`NNUNETV2-LICENSE.txt`, `CC3D-LGPL-3.0.txt`, `GPL-3.0.txt`) are
+  installed under `/opt/nnunetv2/share/licenses/`, and the matching
+  `connected-components-3d` LGPL-3.0 corresponding source archive is bundled
+  under `/opt/nnunetv2/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADrklEQVR42u2by2oUQRSG/1NdfZlJHCUJGm8oguLGGEQxkqXgI/gUPpXPoL6AuBAki4A3yCK4SAhEjZikZ6q767ioTpyYme7q6WZaSBXMbqar6uuqc/766wzt7e0xznATOOPtzAOQtZ+gW95BgtoFQJ0QIABtcCCABwnAPGUAbMizUohfvTWDENQCBEb09DG8uR44TQGiKa4AIiDVUOsb4IMY8MT0ATAjXF2utQ1k3SVInRBg3RqASd5680FQM0DcDgCXBh0AB8ABcAAcgBbTIPPQx0I8NZneGkiDVMsPYIb+/gusefx5gBkUBUi+bCJ+8w4UBeMPUEKA4z6i1fsIniyB4z5AxYtUzPVAvpwYRk0lSPAuL5QKJeqGyHZ+2A1SM+jcDOS1i0Zii2IAnGYtHIaGB6CScqUoBZCm9g/NNFgl5tklANqXwmUDoPw7VQY6/JuaE3RZwAFwAByA6kGQGzzbH/kFVVIVM6B1rhcaGgiNDtgjAVDgA57XTOeaQZ3IPNNq8gD5EhR1DAghmpm91iNTtvy3c3gC6eYW9M/fxuZqAkDoI93cMpPhkjcvBdLtXai1T+C+qm17/xVjEeStq6dW4kkprBnUCbH/8jXUh8+gmbAZ3z8HS760W6pJZhReExKACDxIIG8s4tyL50Cm7bYAdUNjeDZ18cGWhxcG4EtQIBva+2Tgh0HFIKiHPtNuTQZhQmEQdjrAAXAAHAAnhUemDiFyFVYSjrWugNuSN1eQzoJQKBiO50KWAAjggQLvH5pLz6I0SDD51ca00AyOY6vJUxgYF8lGNsSD/CXQeCGklPleKQAicJIhWL4Db3G+2GwkAicp1PuP4KSgPoAInGbwzs8iePSwGCgD8D0k6xtIt3fLzc78elz0uqcU3on+swyiNzuyb3lKNKQZgqXbwIO74zvPpS0fxFBrXwGlipeh1qBeF9GzlfEDPZLiUWQM1G87QCBLV0G4cg/y+iWwUgUrMT8MDZT9FkCfS7U9H8b2e1WzcXlLAEBroMI5gOMB+ODQnPQKtyKNjAPjg2DRwxhDQRLVgiCXHASEqGaEiqGAPYGB6nSAA+AAOAAOgAPgADgADoAD4AA4AA6AA3AGWzNFUkX+wSTFTsO/of8cwHE527h/jOS3s5xUKJNLUuNKSVHiIXLtatF6AASZgsb+oNgUTVJ4i/N2F57MEAsXIG9eAUV+6eVsnSpRoG6pLJBbUTYTg/0dgqiwZTLdcgzQuvmN2WRtkMsCDoADUNT+ANODpmbQnDbGAAAAAElFTkSuQmCC
