@@ -1,0 +1,147 @@
+name: colour-science
+version: 0.4.7
+upstream_version: "0.4.7"
+colour_checker_detection_version: "0.2.3"
+pillow_version: "13.0.0"
+openimageio_version: "3.2.2.0"
+
+tests:
+  - name: colour-derm binary available on PATH
+    description: Verify the deployed colour-derm CLI entrypoint resolves on PATH.
+    command: command -v colour-derm
+    expected_output_contains: "/opt/colour-science/bin/colour-derm"
+
+  - name: package versions match recipe and system OpenCV is used
+    description: Verify pinned package versions, system python3-opencv origin, and absence of PyPI opencv-python and AGPL ultralytics wheels.
+    command: |
+      set -e
+      /opt/colour-science/bin/python -c "
+      import importlib.metadata as md, cv2
+      c_ver = md.version('colour-science')
+      d_ver = md.version('colour-checker-detection')
+      p_ver = md.version('pillow')
+      o_ver = md.version('openimageio')
+      for banned in ('ultralytics', 'opencv-python', 'opencv-python-headless'):
+          try:
+              md.version(banned)
+              raise AssertionError(f'{banned} must not be installed')
+          except md.PackageNotFoundError:
+              pass
+      assert cv2.__file__.startswith('/usr/lib/python3/dist-packages/'), cv2.__file__
+      print(f'colour-science={c_ver} colour-checker-detection={d_ver} pillow={p_ver} openimageio={o_ver} cv2={cv2.__version__}')
+      "
+    expected_output_contains: "colour-science=${upstream_version} colour-checker-detection=${colour_checker_detection_version} pillow=${pillow_version} openimageio=${openimageio_version}"
+
+  - name: license notices installed
+    description: Verify release-matched license notices are installed for colour-science, colour-checker-detection, pillow, and openimageio.
+    command: |
+      set -e
+      test -s /opt/colour-science/share/licenses/COLOUR-LICENSE.txt
+      test -s /opt/colour-science/share/licenses/COLOUR-CHECKER-DETECTION-LICENSE.txt
+      test -s /opt/colour-science/share/licenses/PILLOW-LICENSE.txt
+      test -s /opt/colour-science/share/licenses/OPENIMAGEIO-LICENSE.md
+      grep -q "Redistribution and use in source and binary forms" /opt/colour-science/share/licenses/COLOUR-LICENSE.txt
+      echo "licenses ok"
+    expected_output_contains: "licenses ok"
+
+  - name: colour-derm works with read-only HOME
+    description: Verify colour-derm --version and --help run cleanly when HOME is read-only.
+    command: |
+      set -e
+      HOME=/sys colour-derm --version
+      HOME=/sys colour-derm --help > /dev/null
+    expected_output_contains: "colour-science ${upstream_version}"
+
+  - name: CIELAB, ITA edge cases, and non-sRGB ICC profile transform
+    description: Verify ITA with ROI mask, genuine non-sRGB ICC profile pixel conversion (R/B-swapped RGB profile), negative b* arctan formula, and b*=0 undefined handling.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      HOME=/sys /opt/colour-science/bin/python -c "
+      import importlib.machinery, importlib.util, math, sys, numpy as np
+      from PIL import Image, ImageCms
+
+      loader = importlib.machinery.SourceFileLoader('colour_derm_mod', '/opt/colour-science/bin/colour-derm')
+      spec = importlib.util.spec_from_loader('colour_derm_mod', loader)
+      mod = importlib.util.module_from_spec(spec)
+      loader.exec_module(mod)
+
+      ita_neg, warn_neg = mod.compute_ita(52.0, -12.0)
+      assert ita_neg is not None and math.isclose(ita_neg, -9.4623, abs_tol=1e-3), (ita_neg, warn_neg)
+      assert warn_neg is not None
+      assert mod.classify_ita(ita_neg) == 'Brown'
+
+      ita_zero, warn_zero = mod.compute_ita(60.0, 0.0)
+      assert ita_zero is None and warn_zero is not None
+      assert mod.classify_ita(ita_zero) == 'Undefined'
+
+      img = np.zeros((64, 64, 3), dtype=np.uint8)
+      img[16:48, 16:48] = [215, 175, 145]
+      Image.fromarray(img).save(sys.argv[1])
+
+      # Build a valid non-sRGB RGB ICC profile by swapping rXYZ and bXYZ primaries.
+      srgb_bytes = bytearray(ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())
+      r_pos = srgb_bytes.index(b'rXYZ')
+      b_pos = srgb_bytes.index(b'bXYZ')
+      srgb_bytes[r_pos:r_pos + 4] = b'bXYZ'
+      srgb_bytes[b_pos:b_pos + 4] = b'rXYZ'
+      Image.fromarray(img).save(sys.argv[2], icc_profile=bytes(srgb_bytes))
+
+      mask = np.zeros((64, 64), dtype=np.uint8)
+      mask[16:48, 16:48] = 255
+      Image.fromarray(mask).save(sys.argv[3])
+      " "$tmpdir/skin_srgb.png" "$tmpdir/skin_swapped_icc.png" "$tmpdir/mask.png"
+      out_srgb="$(HOME=/sys colour-derm ita "$tmpdir/skin_srgb.png" --mask "$tmpdir/mask.png" --json)"
+      out_icc="$(HOME=/sys colour-derm ita "$tmpdir/skin_swapped_icc.png" --mask "$tmpdir/mask.png" --json)"
+      HOME=/sys /opt/colour-science/bin/python -c "
+      import json, sys
+      srgb = json.loads(sys.argv[1])
+      icc = json.loads(sys.argv[2])
+      assert srgb['icc_converted_to_srgb'] is False and srgb['pixels'] == 1024, srgb
+      assert 70.0 < srgb['cielab_d65']['L'] < 80.0, srgb
+      assert 40.0 < srgb['ita_degrees'] < 65.0, srgb
+      assert srgb['ita_category'] in ('Light', 'Very Light'), srgb
+      assert 'srgb_melanin_index_proxy' in srgb and 'srgb_erythema_index_proxy' in srgb, srgb
+      assert icc['icc_converted_to_srgb'] is True, icc
+      # Raw image had R=215 > B=145; after R/B-swapped ICC->sRGB transform, B must exceed R.
+      assert srgb['mean_srgb'][0] > srgb['mean_srgb'][2] + 0.2, srgb
+      assert icc['mean_srgb'][2] > icc['mean_srgb'][0] + 0.2, icc
+      print('ita ok:', srgb['ita_category'], 'icc_transform=verified')
+      " "$out_srgb" "$out_icc"
+    expected_output_contains: "ita ok:"
+
+  - name: classical ColorChecker segmentation detector runs offline
+    description: Render a synthetic ColorChecker Classic 24-patch chart and verify colour-derm check-chart detects all 24 swatches.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      HOME=/sys /opt/colour-science/bin/python -c "
+      import sys, colour, numpy as np
+      from PIL import Image
+      cc = colour.CCS_COLOURCHECKERS['ColorChecker24 - After November 2014']
+      xyY = np.array(list(cc.data.values()))
+      xyz = colour.xyY_to_XYZ(xyY)
+      srgb = np.clip(colour.XYZ_to_sRGB(xyz), 0.0, 1.0)
+      canvas = np.full((600, 860, 3), 235, dtype=np.uint8)
+      canvas[60:540, 70:790] = 25
+      idx = 0
+      for row in range(4):
+          for col in range(6):
+              y0 = 90 + row * 110
+              x0 = 100 + col * 115
+              canvas[y0:y0 + 90, x0:x0 + 95] = np.round(srgb[idx] * 255).astype(np.uint8)
+              idx += 1
+      Image.fromarray(canvas).save(sys.argv[1])
+      " "$tmpdir/chart.png"
+      out="$(HOME=/sys colour-derm check-chart "$tmpdir/chart.png" --json)"
+      printf '%s\n' "$out"
+      HOME=/sys /opt/colour-science/bin/python -c "
+      import json, sys
+      data = json.loads(sys.argv[1])
+      assert data['charts_detected'] >= 1, data
+      assert data['charts'][0]['swatch_count'] == 24, data
+      print('chart ok: 24 swatches')
+      " "$out"
+    expected_output_contains: "chart ok: 24 swatches"

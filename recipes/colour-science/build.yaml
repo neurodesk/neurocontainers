@@ -1,0 +1,356 @@
+name: colour-science
+version: 0.4.7
+
+description: Color science, classical ColorChecker chart detection, CIELAB/ITA skin-tone quantification, and clinical photography colorimetry toolkit.
+
+copyright:
+  - license: BSD-3-Clause
+    name: Colour license
+    url: https://github.com/colour-science/colour/blob/v{{ context.upstream_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: Colour - Checker Detection license
+    url: https://github.com/colour-science/colour-checker-detection/blob/v{{ context.colour_checker_detection_version }}/LICENSE
+  - license: MIT-CMU
+    name: Pillow license
+    url: https://github.com/python-pillow/Pillow/blob/{{ context.pillow_version }}/LICENSE
+  - license: Apache-2.0
+    name: OpenImageIO license
+    url: https://github.com/AcademySoftwareFoundation/OpenImageIO/blob/v{{ context.openimageio_version }}/LICENSE.md
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.4.7"
+  colour_checker_detection_version: "0.2.3"
+  pillow_version: "13.0.0"
+  openimageio_version: "3.2.2.0"
+
+auto_update:
+  method: sources
+  container_version: colour-science
+  sources:
+    - id: colour-science
+      method: pypi
+      package: colour-science
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: colour-checker-detection
+      method: pypi
+      package: colour-checker-detection
+      dependency: true
+      target:
+        variable: colour_checker_detection_version
+        fulltest_variable: colour_checker_detection_version
+    - id: pillow
+      method: pypi
+      package: pillow
+      dependency: true
+      target:
+        variable: pillow_version
+        fulltest_variable: pillow_version
+    - id: openimageio
+      method: pypi
+      package: openimageio
+      dependency: true
+      target:
+        variable: openimageio_version
+        fulltest_variable: openimageio_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PIP_NO_CACHE_DIR: "1"
+        MPLCONFIGDIR: /tmp/colour-science-mpl
+        XDG_CACHE_HOME: /tmp/colour-science-cache
+        XDG_CONFIG_HOME: /tmp/colour-science-config
+        PATH: /opt/colour-science/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-numpy
+        - python3-opencv
+        - python3-scipy
+        - python3-venv
+
+    - run:
+        # Inherit Ubuntu's system python3-opencv (compiled against NumPy 2.x on 26.04)
+        # so we avoid shipping PyPI opencv-python wheels with bundled LGPL FFmpeg/Qt.
+        - python3 -m venv --system-site-packages /opt/colour-science
+        - /opt/colour-science/bin/python -m pip install --no-cache-dir --no-deps "colour-science=={{ context.upstream_version }}" "colour-checker-detection=={{ context.colour_checker_detection_version }}" "pillow=={{ context.pillow_version }}" "openimageio=={{ context.openimageio_version }}"
+        - /opt/colour-science/bin/python -m pip install --no-cache-dir "typing-extensions>=4,<5"
+        - install -m 0755 {{ get_file("colour-derm") }} /opt/colour-science/bin/colour-derm
+        - mkdir -p /opt/colour-science/share/licenses
+        - install -m 0644 /opt/colour-science/lib/python*/site-packages/colour_science-{{ context.upstream_version }}.dist-info/licenses/LICENSE /opt/colour-science/share/licenses/COLOUR-LICENSE.txt
+        - install -m 0644 /opt/colour-science/lib/python*/site-packages/colour_checker_detection-{{ context.colour_checker_detection_version }}.dist-info/licenses/LICENSE /opt/colour-science/share/licenses/COLOUR-CHECKER-DETECTION-LICENSE.txt
+        - install -m 0644 /opt/colour-science/lib/python*/site-packages/pillow-{{ context.pillow_version }}.dist-info/licenses/LICENSE /opt/colour-science/share/licenses/PILLOW-LICENSE.txt
+        - install -m 0644 /opt/colour-science/lib/python*/site-packages/openimageio-{{ context.openimageio_version }}.dist-info/licenses/LICENSE.md /opt/colour-science/share/licenses/OPENIMAGEIO-LICENSE.md
+        - chmod -R a+rX /opt/colour-science
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: colour-derm
+    executable: true
+    contents: |
+      #!/opt/colour-science/bin/python
+      """Clinical photography colorimetry CLI built on colour-science."""
+
+      from __future__ import annotations
+
+      import argparse
+      import importlib.metadata
+      import io
+      import json
+      import math
+      from pathlib import Path
+
+      import colour
+      from colour_checker_detection import detect_colour_checkers_segmentation
+      import numpy as np
+      from PIL import Image, ImageCms
+
+
+      def classify_ita(ita_deg: float | None) -> str:
+          """Classify Individual Typology Angle (Chardon et al., 1991)."""
+          if ita_deg is None:
+              return "Undefined"
+          if ita_deg > 55.0:
+              return "Very Light"
+          if ita_deg > 41.0:
+              return "Light"
+          if ita_deg > 28.0:
+              return "Intermediate"
+          if ita_deg > 10.0:
+              return "Tan"
+          if ita_deg > -30.0:
+              return "Brown"
+          return "Dark"
+
+
+      def compute_ita(l_star: float, b_star: float) -> tuple[float | None, str | None]:
+          """Compute Chardon ITA = arctan((L* - 50) / b*) in degrees.
+
+          Returns (ita_degrees, warning). When |b*| < 1e-6, ITA is undefined.
+          When b* < 0, the standard arctan formula is returned with a warning
+          because normal skin reflectance has b* > 0.
+          """
+          if abs(b_star) < 1e-6:
+              return None, "b* is near zero; Individual Typology Angle is undefined."
+          ita_deg = math.degrees(math.atan((l_star - 50.0) / b_star))
+          warning = None
+          if b_star < 0.0:
+              warning = "b* is negative; verify white balance/ROI because typical skin reflectance has b* > 0."
+          return ita_deg, warning
+
+
+      def load_srgb_float(path: Path) -> tuple[np.ndarray, bool]:
+          """Load an image as float64 sRGB in [0, 1], transforming embedded ICC profiles."""
+          with Image.open(path) as img:
+              icc_bytes = img.info.get("icc_profile")
+              icc_applied = False
+              rgb_img = img.convert("RGB")
+              if icc_bytes:
+                  try:
+                      src_profile = ImageCms.ImageCmsProfile(io.BytesIO(icc_bytes))
+                      dst_profile = ImageCms.createProfile("sRGB")
+                      rgb_img = ImageCms.profileToProfile(
+                          rgb_img, src_profile, dst_profile, outputMode="RGB"
+                      )
+                      icc_applied = True
+                  except ImageCms.PyCMSError as exc:
+                      raise SystemExit(
+                          f"Failed to convert embedded ICC profile in {path} to sRGB: {exc}"
+                      ) from exc
+              arr = np.asarray(rgb_img, dtype=np.float64) / 255.0
+          return arr, icc_applied
+
+
+      def cmd_ita(args: argparse.Namespace) -> int:
+          rgb, icc_applied = load_srgb_float(Path(args.image))
+          if args.mask:
+              with Image.open(args.mask) as m_img:
+                  mask = np.asarray(m_img.convert("L")) > 0
+              if mask.shape != rgb.shape[:2]:
+                  raise SystemExit(
+                      f"Mask shape {mask.shape} does not match image shape {rgb.shape[:2]}"
+                  )
+              pixels = rgb[mask]
+          else:
+              pixels = rgb.reshape(-1, 3)
+
+          if pixels.size == 0:
+              raise SystemExit("No foreground pixels selected for ITA calculation.")
+
+          mean_srgb = pixels.mean(axis=0)
+          xyz = colour.sRGB_to_XYZ(mean_srgb)
+          lab = colour.XYZ_to_Lab(xyz)
+          l_star, a_star, b_star = (float(lab[0]), float(lab[1]), float(lab[2]))
+          ita_deg, ita_warning = compute_ita(l_star, b_star)
+
+          lin_rgb = np.clip(colour.models.eotf_sRGB(mean_srgb), 1e-6, 1.0)
+          srgb_melanin_proxy = float(100.0 * math.log10(1.0 / float(lin_rgb[0])))
+          srgb_erythema_proxy = float(
+              100.0 * (math.log10(1.0 / float(lin_rgb[1])) - math.log10(1.0 / float(lin_rgb[0])))
+          )
+
+          result = {
+              "image": str(args.image),
+              "icc_converted_to_srgb": icc_applied,
+              "pixels": int(pixels.shape[0]),
+              "mean_srgb": [round(float(v), 6) for v in mean_srgb],
+              "cielab_d65": {
+                  "L": round(l_star, 4),
+                  "a": round(a_star, 4),
+                  "b": round(b_star, 4),
+              },
+              "ita_degrees": None if ita_deg is None else round(ita_deg, 4),
+              "ita_category": classify_ita(ita_deg),
+              "ita_warning": ita_warning,
+              "srgb_melanin_index_proxy": round(srgb_melanin_proxy, 4),
+              "srgb_erythema_index_proxy": round(srgb_erythema_proxy, 4),
+          }
+
+          if args.json:
+              print(json.dumps(result, indent=2))
+          else:
+              ita_txt = "Undefined" if result["ita_degrees"] is None else f"{result['ita_degrees']:.2f} deg"
+              print(
+                  f"L*={result['cielab_d65']['L']:.2f} "
+                  f"a*={result['cielab_d65']['a']:.2f} "
+                  f"b*={result['cielab_d65']['b']:.2f} "
+                  f"ITA={ita_txt} ({result['ita_category']}) "
+                  f"MI_proxy={result['srgb_melanin_index_proxy']:.2f} "
+                  f"EI_proxy={result['srgb_erythema_index_proxy']:.2f}"
+              )
+              if ita_warning:
+                  print(f"Warning: {ita_warning}")
+          return 0
+
+
+      def cmd_check_chart(args: argparse.Namespace) -> int:
+          rgb, icc_applied = load_srgb_float(Path(args.image))
+          detected = detect_colour_checkers_segmentation(rgb)
+          charts = []
+          for swatches in detected:
+              xyz = colour.sRGB_to_XYZ(np.clip(swatches, 0.0, 1.0))
+              lab = colour.XYZ_to_Lab(xyz)
+              charts.append(
+                  {
+                      "swatch_count": int(swatches.shape[0]),
+                      "mean_cielab_d65": [round(float(v), 4) for v in lab.mean(axis=0)],
+                  }
+              )
+          payload = {
+              "image": str(args.image),
+              "icc_converted_to_srgb": icc_applied,
+              "charts_detected": len(charts),
+              "charts": charts,
+          }
+          if args.json:
+              print(json.dumps(payload, indent=2))
+          else:
+              print(f"Detected {len(charts)} ColorChecker chart(s)")
+              for idx, chart in enumerate(charts, start=1):
+                  print(
+                      f"  Chart {idx}: {chart['swatch_count']} swatches, "
+                      f"mean Lab={chart['mean_cielab_d65']}"
+                  )
+          return 0
+
+
+      def main() -> int:
+          parser = argparse.ArgumentParser(
+              prog="colour-derm",
+              description="Clinical photography colorimetry and ColorChecker chart detection.",
+          )
+          parser.add_argument(
+              "--version",
+              action="version",
+              version=(
+                  f"colour-derm (colour-science {importlib.metadata.version('colour-science')}, "
+                  f"colour-checker-detection {importlib.metadata.version('colour-checker-detection')})"
+              ),
+          )
+          subparsers = parser.add_subparsers(dest="command", required=True)
+
+          ita_p = subparsers.add_parser(
+              "ita",
+              help="Compute CIELAB (D65), Individual Typology Angle (ITA), and sRGB melanin/erythema proxy indices.",
+          )
+          ita_p.add_argument("image", help="Path to an RGB clinical or dermoscopic image (ICC profiles are converted to sRGB).")
+          ita_p.add_argument("--mask", help="Optional binary mask image selecting skin ROI pixels.")
+          ita_p.add_argument("--json", action="store_true", help="Emit JSON output.")
+          ita_p.set_defaults(func=cmd_ita)
+
+          chart_p = subparsers.add_parser(
+              "check-chart",
+              help="Detect ColorChecker 24-patch reference charts via classical segmentation.",
+          )
+          chart_p.add_argument("image", help="Path to an RGB image containing a ColorChecker chart.")
+          chart_p.add_argument("--json", action="store_true", help="Emit JSON output.")
+          chart_p.set_defaults(func=cmd_check_chart)
+
+          args = parser.parse_args()
+          return int(args.func(args))
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - colour-derm
+
+domains:
+  - microscopy
+
+categories:
+  - "optical imaging"
+  - "quantitative imaging"
+  - "quality control"
+
+readme: |-
+  ----------------------------------
+  ## colour-science/{{ context.version }} ##
+
+  Provides `colour-science` ({{ context.upstream_version }}) and
+  `colour-checker-detection` ({{ context.colour_checker_detection_version }})
+  using the classical BSD-3-Clause segmentation detector (backed by Ubuntu's
+  system `python3-opencv` package and excluding the optional AGPL Ultralytics
+  extra), together with the `colour-derm` CLI for dermatology colorimetry,
+  CIELAB/ITA skin-tone quantification, and ColorChecker reference chart
+  detection.
+
+  ### Included CLI Tool
+  ```
+  colour-derm ita <image> [--mask <mask>] [--json]     CIELAB (D65), ITA angle/category, sRGB MI/EI proxies
+  colour-derm check-chart <image> [--json]             Classical 24-patch ColorChecker detection
+  ```
+
+  ### Example
+  ```
+  ml colour-science/{{ context.version }}
+  colour-derm ita skin_roi.png --mask roi_mask.png --json
+  colour-derm check-chart calibration_shot.png --json
+  ```
+
+  Embedded ICC profiles are converted to sRGB via LittleCMS (`PIL.ImageCms`).
+  Untagged images are assumed to be sRGB. Reported melanin and erythema values
+  are sRGB image-derived proxies rather than narrowband spectrometer readings;
+  quantitative color calibration requires controlled illumination, reference
+  chart color-correction transforms, and documented ROI selection.
+
+  Documentation: https://colour.readthedocs.org
+  License texts are installed under `/opt/colour-science/share/licenses`.
+  ----------------------------------
+
+icon: data:image/png;base64,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
