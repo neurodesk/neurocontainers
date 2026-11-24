@@ -1,0 +1,426 @@
+name: labelme
+version: 7.11.0
+
+description: Offline 2D polygon, mask, and contour annotation GUI for dermoscopic lesions, clinical photography, and chronic wounds.
+
+copyright:
+  - license: GPL-3.0-only
+    name: Labelme license
+    url: https://github.com/wkentaro/labelme/blob/v{{ context.upstream_version }}/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "7.11.0"
+
+auto_update:
+  method: sources
+  container_version: labelme
+  sources:
+    - id: labelme
+      method: pypi
+      package: labelme
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/labelme/wrappers:/opt/labelme/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libdbus-1-3
+        - libegl-mesa0
+        - libegl1
+        - libfontconfig1
+        - libgl1
+        - libgl1-mesa-dri
+        - libglib2.0-0
+        - libglx-mesa0
+        - libxcb-cursor0
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-shape0
+        - libxcb-xfixes0
+        - libxcb-xinerama0
+        - libxkbcommon-x11-0
+        - libxkbcommon0
+        - python3
+        - python3-numpy
+        - python3-pip
+        - python3-pyside6.qtcore
+        - python3-pyside6.qtgui
+        - python3-pyside6.qtnetwork
+        - python3-pyside6.qtsvg
+        - python3-pyside6.qtwidgets
+        - python3-scipy
+        - python3-skimage
+        - python3-venv
+        - xauth
+        - xvfb
+
+    - run:
+        # Inherit Ubuntu 26.04's system python3-pyside6.*, python3-numpy,
+        # python3-scipy, and python3-skimage so we satisfy runtime dependencies
+        # without shipping PyPI wheels bundling LGPL Qt or GCC libquadmath/libgfortran.
+        - python3 -m venv --system-site-packages /opt/labelme
+        # Upgrade pip inside the venv so PEP 440 handles Ubuntu 26.04 kernel
+        # platform_release markers in labelme's osam[webgpu] dependency.
+        - /opt/labelme/bin/python -m pip install --no-cache-dir --upgrade pip
+        - /opt/labelme/bin/python -m pip install --no-cache-dir "labelme=={{ context.upstream_version }}"
+        - /opt/labelme/bin/python -m pip check
+        # Guard: PySide6 and SciPy must come from system APT (no bundled LGPL/GPL/MPL
+        # shared libs under /opt/labelme), no proprietary CUDA wheels, and no baked
+        # pretrained model weights inside /opt/labelme.
+        - >-
+          /opt/labelme/bin/python -c "import importlib.metadata as md, pathlib, PySide6, scipy;
+          assert PySide6.__file__.startswith('/usr/lib/python3/dist-packages/'), PySide6.__file__;
+          assert scipy.__file__.startswith('/usr/lib/python3/dist-packages/'), scipy.__file__;
+          bad = [d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad, bad;
+          bad_libs = [str(p) for p in pathlib.Path('/opt/labelme').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libzmq'))];
+          assert not bad_libs, bad_libs;
+          weights = [str(p) for p in pathlib.Path('/opt/labelme').rglob('*') if p.is_file() and (p.suffix.lower() in {'.pth', '.pt', '.ckpt', '.safetensors'} or (p.suffix.lower() == '.onnx' and p.stat().st_size > 1_000_000))];
+          assert not weights, weights"
+        - mkdir -p /opt/labelme/wrappers /opt/labelme/share/licenses
+        - install -m 0755 {{ get_file("labelme_wrapper") }} /opt/labelme/wrappers/labelme
+        - install -m 0644 {{ get_file("labelme_license") }} /opt/labelme/share/licenses/LABELME-LICENSE.txt
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/labelme/share/licenses/GPL-3.0.txt
+        - install -m 0644 {{ get_file("gpl_source_notice") }} /opt/labelme/share/licenses/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/labelme
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: labelme_license
+    url: https://raw.githubusercontent.com/wkentaro/labelme/v{{ context.upstream_version }}/LICENSE
+  - name: gpl_source_notice
+    contents: |
+      Labelme {{ context.upstream_version }} Container — License & Source Notice
+      ==========================================================================
+      Labelme {{ context.upstream_version }} is licensed under the GNU General
+      Public License v3.0 only (GPL-3.0-only). Its complete Python source code
+      is installed directly inside /opt/labelme/lib/python*/site-packages/labelme/.
+      The license text is installed at /opt/labelme/share/licenses/LABELME-LICENSE.txt
+      and /opt/labelme/share/licenses/GPL-3.0.txt.
+
+      Qt / PySide6 bindings are provided by Ubuntu 26.04 (resolute) APT packages
+      (python3-pyside6.*); Ubuntu copyright notices are located under
+      /usr/share/doc/python3-pyside6.qtcore/copyright.
+  - name: labelme_wrapper
+    executable: true
+    contents: |
+      #!/opt/labelme/bin/python
+      """Run Labelme with private non-/home XDG/Qt runtime and cache paths."""
+
+      from __future__ import annotations
+
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("XDG_CONFIG_HOME", "config"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_DATA_HOME", "data"),
+          ("XDG_RUNTIME_DIR", "runtime"),
+          ("MPLCONFIGDIR", "mpl"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              fd, probe = tempfile.mkstemp(prefix=".labelme-write-check-", dir=path_str)
+              os.close(fd)
+              os.unlink(probe)
+              return True
+          except OSError:
+              return False
+
+
+      def main() -> int:
+          cmd = ["/opt/labelme/bin/labelme", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="labelme.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              # Place the child in its own process group so a group SIGINT is delivered
+              # once; transfer foreground terminal ownership only when this job owns
+              # the TTY, and propagate job-control stops (Ctrl-Z/bg/fg/tostop) cleanly.
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - labelme
+
+gui_apps:
+  - name: "LabelMe"
+    exec: "labelme"
+
+domains:
+  - microscopy
+
+categories:
+  - "image segmentation"
+  - "optical imaging"
+  - "visualization"
+
+readme: |-
+  ----------------------------------
+  ## labelme/{{ context.version }} ##
+
+  Labelme is an open-source graphical image annotation tool for polygon,
+  rectangle, circle, line, point, and mask labeling — well suited for offline
+  dermoscopic lesion delineation, clinical macro photography, and chronic wound
+  boundary annotation.
+
+  This container ships code only (no pre-downloaded AI/SAM weights) and uses
+  Ubuntu 26.04 system `PySide6` packages.
+
+  ### Included GUI Tool
+  ```
+  labelme    Launch the Labelme Qt6 annotation GUI
+  ```
+
+  ### Example
+  ```
+  ml labelme/{{ context.version }}
+  labelme ./dermoscopy_images/ --output ./annotations/ --labels lesion,ruler,hair
+  ```
+
+  Documentation: https://github.com/wkentaro/labelme
+  License texts (`LABELME-LICENSE.txt`, `GPL-3.0.txt`, and `GPL-SOURCE-NOTICE.txt`)
+  are installed under `/opt/labelme/share/licenses/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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
