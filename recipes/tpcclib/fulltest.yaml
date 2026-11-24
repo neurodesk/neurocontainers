@@ -1,0 +1,134 @@
+name: tpcclib
+version: "0.8.2"
+
+tests:
+  - name: Key TPCCLIB executables on PATH
+    description: Verify core v1 and v2 TPCCLIB binaries are installed on PATH.
+    command: |
+      set -eu
+      for bin in taccalc tacmean patlak logan fitk2 fitk3 sim_3tcm img2dft imgflow imgdim; do
+        command -v "$bin"
+      done
+    expected_output_contains: "/opt/tpcclib/bin/patlak"
+
+  - name: Reports installed version
+    description: Verify installed TPCCLIB version matches container version.
+    command: taccalc --version && patlak --version
+    expected_output_contains: "tpcclib version: ${version}"
+
+  - name: License metadata present
+    description: Verify upstream GPL-3.0-or-later license documents are installed.
+    command: test -s /opt/tpcclib/share/licenses/license.md && test -s /opt/tpcclib/share/licenses/copying.md && echo "licenses ok"
+    expected_output_contains: "licenses ok"
+
+  - name: Irreversible 2TCM simulation and Patlak graphical analysis
+    description: Simulate an irreversible 2-tissue compartmental TAC (Ki=0.025) and recover Ki via patlak.
+    command: |
+      set -eu
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      cat > "$work/plasma.tac" <<'EOF'
+      time[min]	plasma[kBq/mL]
+      0.0	0.0
+      0.5	5.0
+      1.0	20.0
+      2.0	18.0
+      3.0	15.0
+      5.0	12.0
+      10.0	9.0
+      15.0	7.5
+      20.0	6.5
+      30.0	5.2
+      45.0	4.0
+      60.0	3.2
+      EOF
+      cat > "$work/irrev.par" <<'EOF'
+      parameters	K1	k2	k3	k4	Vb
+      region1	0.10	0.15	0.05	0.0	0.0
+      EOF
+      sim_3tcm "$work/irrev.par" "$work/plasma.tac" none "$work/tissue_irrev.tac"
+      tacunit -xset=min -yset=kBq/mL "$work/tissue_irrev.tac"
+      patlak "$work/tissue_irrev.tac" "$work/plasma.tac" 20 60 "$work/patlak.res"
+      awk '
+        $1 == "region" {
+          ki = $2 + 0; r = $4 + 0;
+          if (ki < 0.024 || ki > 0.026) { print "unexpected Ki:", ki; exit 1 }
+          if (r < 0.999) { print "unexpected r:", r; exit 1 }
+          print "patlak passed Ki=" ki " r=" r
+          found = 1
+        }
+        END { if (!found) { print "missing region row"; exit 1 } }
+      ' "$work/patlak.res"
+    expected_output_contains: "patlak passed"
+
+  - name: Reversible 1TCM simulation with Logan plot and fitk2
+    description: Simulate a reversible 1-tissue compartmental TAC (K1=0.20, k2=0.10, DV=2.0) and verify logan and fitk2 recovery.
+    command: |
+      set -eu
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      cat > "$work/plasma.tac" <<'EOF'
+      time[min]	plasma[kBq/mL]
+      0.0	0.0
+      0.5	5.0
+      1.0	20.0
+      2.0	18.0
+      3.0	15.0
+      5.0	12.0
+      10.0	9.0
+      15.0	7.5
+      20.0	6.5
+      30.0	5.2
+      45.0	4.0
+      60.0	3.2
+      EOF
+      cat > "$work/rev.par" <<'EOF'
+      parameters	K1	k2	k3	k4	Vb
+      region1	0.20	0.10	0.0	0.0	0.0
+      EOF
+      sim_3tcm "$work/rev.par" "$work/plasma.tac" none "$work/tissue_rev.tac"
+      tacunit -xset=min -yset=kBq/mL "$work/tissue_rev.tac"
+      logan "$work/tissue_rev.tac" "$work/plasma.tac" 15 60 "$work/logan.res"
+      fitk2 -Vb=0 "$work/plasma.tac" none "$work/tissue_rev.tac" 60 "$work/fitk2.res"
+      awk '
+        $1 == "region" {
+          dv = $2 + 0;
+          if (dv < 1.99 || dv > 2.01) { print "unexpected Logan DV:", dv; exit 1 }
+          print "logan passed DV=" dv
+          found = 1
+        }
+        END { if (!found) { print "missing logan region row"; exit 1 } }
+      ' "$work/logan.res"
+      awk '
+        $1 == "region" {
+          k1 = $2 + 0; dv = $3 + 0;
+          if (k1 < 0.195 || k1 > 0.205) { print "unexpected fitk2 K1:", k1; exit 1 }
+          if (dv < 1.99 || dv > 2.01) { print "unexpected fitk2 K1/k2:", dv; exit 1 }
+          print "fitk2 passed K1=" k1 " K1/k2=" dv
+          found = 1
+        }
+        END { if (!found) { print "missing fitk2 region row"; exit 1 } }
+      ' "$work/fitk2.res"
+    expected_output_contains: "fitk2 passed"
+
+  - name: TAC arithmetic and NIfTI image pipeline
+    description: Verify taccalc/tacmean TAC processing and simboxes/flat2nii/imgdim NIfTI I/O.
+    command: |
+      set -eu
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      cat > "$work/a.tac" <<'EOF'
+      time[min]	roi1[kBq/mL]
+      0.0	0.0
+      10.0	4.0
+      20.0	8.0
+      EOF
+      taccalc "$work/a.tac" x 2 "$work/b.tac"
+      tacmean "$work/b.tac" "$work/mean.tac"
+      awk '$1 == "20.00000" { val = $2 + 0; if (val < 15.99 || val > 16.01) exit 1; ok = 1 } END { if (!ok) exit 1 }' "$work/mean.tac"
+      simboxes -format=float 8 4 4 2 "$work/boxes.bin"
+      flat2nii "$work/boxes.bin" 8 8 4 1 "$work/boxes"
+      dims=$(imgdim "$work/boxes.nii")
+      test "$dims" = "8 8 4 1"
+      echo "tac and nifti pipeline passed dims=$dims"
+    expected_output_contains: "tac and nifti pipeline passed dims=8 8 4 1"
