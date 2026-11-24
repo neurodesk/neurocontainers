@@ -1,0 +1,135 @@
+name: petpvc
+version: "1.2.12"
+
+tests:
+  - name: Deployed PETPVC executables on PATH
+    description: Verify all deployed PETPVC CLI binaries are installed and executable on PATH.
+    command: |
+      set -eu
+      for bin in petpvc pvc_diy pvc_gtm pvc_iy pvc_labbe pvc_make4d pvc_mg pvc_mtc pvc_rbv pvc_relabel pvc_rl pvc_simulate pvc_stc pvc_vc; do
+        command -v "$bin"
+      done
+    expected_output_contains: "/opt/petpvc/bin/petpvc"
+
+  - name: Reports installed version
+    description: Verify petpvc reports the packaged upstream version.
+    command: petpvc -version
+    expected_output_contains: "Version: ${version}"
+
+  - name: Synthetic PET phantom simulation and partial volume correction
+    description: >-
+      Build a synthetic 3D NIfTI PET phantom and label map, convert to a 4D mask
+      with pvc_make4d, blur with pvc_simulate, and verify activity recovery with
+      GTM, RBV, Iterative Yang (IY), and Richardson-Lucy (RL) via petpvc.
+    command: |
+      set -eu
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+
+      perl - "$work/truth.nii" "$work/labels.nii" <<'PERL'
+      use strict;
+      use warnings;
+      my ($truth_path, $label_path) = @ARGV;
+      my ($nx, $ny, $nz) = (16, 16, 16);
+
+      sub make_nifti_hdr {
+          my ($datatype, $bitpix) = @_;
+          my $hdr = "\0" x 352;
+          substr($hdr, 0, 4)   = pack("V", 348);
+          substr($hdr, 40, 16) = pack("v8", 3, $nx, $ny, $nz, 1, 1, 1, 1);
+          substr($hdr, 70, 4)  = pack("v2", $datatype, $bitpix);
+          substr($hdr, 76, 32) = pack("f8", 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0);
+          substr($hdr, 108, 4) = pack("f", 352.0);
+          substr($hdr, 112, 8) = pack("f2", 1.0, 0.0);
+          substr($hdr, 252, 4) = pack("v2", 1, 1);
+          substr($hdr, 280, 16)= pack("f4", 2.0, 0.0, 0.0, 0.0);
+          substr($hdr, 296, 16)= pack("f4", 0.0, 2.0, 0.0, 0.0);
+          substr($hdr, 312, 16)= pack("f4", 0.0, 0.0, 2.0, 0.0);
+          substr($hdr, 344, 4) = "n+1\0";
+          return $hdr;
+      }
+
+      open my $tf, ">:raw", $truth_path or die $!;
+      open my $lf, ">:raw", $label_path or die $!;
+      print $tf make_nifti_hdr(16, 32);
+      print $lf make_nifti_hdr(4, 16);
+      for my $z (0 .. $nz - 1) {
+          for my $y (0 .. $ny - 1) {
+              for my $x (0 .. $nx - 1) {
+                  my $hot = ($x >= 5 && $x <= 10 && $y >= 5 && $y <= 10 && $z >= 5 && $z <= 10) ? 1 : 0;
+                  print $tf pack("f", $hot ? 10.0 : 1.0);
+                  print $lf pack("s", $hot ? 2 : 1);
+              }
+          }
+      }
+      close $tf;
+      close $lf;
+      PERL
+
+      pvc_make4d -i "$work/labels.nii" -o "$work/mask4d.nii"
+      pvc_simulate -x 4.0 -y 4.0 -z 4.0 "$work/truth.nii" "$work/blurred.nii"
+      petpvc -i "$work/blurred.nii" -m "$work/mask4d.nii" -o "$work/gtm.txt" --pvc GTM -x 4.0 -y 4.0 -z 4.0
+      petpvc -i "$work/blurred.nii" -m "$work/mask4d.nii" -o "$work/rbv.nii" --pvc RBV -x 4.0 -y 4.0 -z 4.0
+      petpvc -i "$work/blurred.nii" -m "$work/mask4d.nii" -o "$work/iy.nii" --pvc IY -n 5 -x 4.0 -y 4.0 -z 4.0
+      petpvc -i "$work/blurred.nii" -o "$work/rl.nii" --pvc RL -k 5 -x 4.0 -y 4.0 -z 4.0
+
+      awk '
+        $1 == 1 { r1 = $2 + 0; seen1 = 1 }
+        $1 == 2 { r2 = $2 + 0; seen2 = 1 }
+        END {
+          if (!seen1 || !seen2) { print "missing GTM rows"; exit 1 }
+          if (r1 < 0.95 || r1 > 1.05 || r2 < 9.95 || r2 > 10.05) {
+            printf "unexpected GTM recovery: r1=%.4f r2=%.4f\n", r1, r2; exit 1
+          }
+          printf "GTM_OK r1=%.4f r2=%.4f\n", r1, r2
+        }
+      ' "$work/gtm.txt"
+
+      perl - "$work/blurred.nii" "$work/rbv.nii" "$work/iy.nii" "$work/rl.nii" <<'PERL'
+      use strict;
+      use warnings;
+      my %stats;
+      for my $path (@ARGV) {
+          open my $fh, "<:raw", $path or die "open $path: $!";
+          read($fh, my $hdr, 348) == 348 or die "short header in $path";
+          my ($ndim, $nx, $ny, $nz) = unpack("v4", substr($hdr, 40, 8));
+          my ($dtype) = unpack("v", substr($hdr, 70, 2));
+          my ($vox_offset) = unpack("f", substr($hdr, 108, 4));
+          die "unexpected dims ${nx}x${ny}x${nz} in $path" unless $nx == 16 && $ny == 16 && $nz == 16;
+          seek($fh, int($vox_offset), 0) or die $!;
+          my $n = $nx * $ny * $nz;
+          my $fmt = $dtype == 16 ? "f" : ($dtype == 64 ? "d" : die "unexpected dtype $dtype in $path");
+          my $bsz = $dtype == 16 ? 4 : 8;
+          read($fh, my $buf, $n * $bsz) == $n * $bsz or die "short data in $path";
+          my @v = unpack("${fmt}*", $buf);
+          my ($hot_sum, $hot_n, $bg_sum, $bg_n) = (0, 0, 0, 0);
+          my $idx = 0;
+          for my $z (0 .. $nz - 1) {
+              for my $y (0 .. $ny - 1) {
+                  for my $x (0 .. $nx - 1) {
+                      my $val = $v[$idx++];
+                      die "non-finite value in $path" if $val != $val || abs($val) > 1e30;
+                      if ($x >= 5 && $x <= 10 && $y >= 5 && $y <= 10 && $z >= 5 && $z <= 10) {
+                          $hot_sum += $val; $hot_n++;
+                      } else {
+                          $bg_sum += $val; $bg_n++;
+                      }
+                  }
+              }
+          }
+          my ($name) = ($path =~ m{([^/]+)\.nii$});
+          $stats{$name} = [$hot_sum / $hot_n, $bg_sum / $bg_n];
+      }
+      die "expected PSF blur to lower hot_mean below 8.5, got $stats{blurred}[0]"
+          unless $stats{blurred}[0] < 8.5;
+      for my $m (qw(rbv iy)) {
+          my ($hm, $bm) = @{$stats{$m}};
+          die "unexpected $m recovery: hot=$hm bg=$bm"
+              unless $hm > 9.9 && $hm < 10.1 && $bm > 0.95 && $bm < 1.05;
+      }
+      die "expected RL to improve hot_mean over blurred ($stats{blurred}[0]), got $stats{rl}[0]"
+          unless $stats{rl}[0] > $stats{blurred}[0] + 0.5 && $stats{rl}[0] < 11.0;
+      printf "PETPVC_E2E_OK blurred=%.4f rbv=%.4f iy=%.4f rl=%.4f\n",
+          $stats{blurred}[0], $stats{rbv}[0], $stats{iy}[0], $stats{rl}[0];
+      PERL
+    expected_output_contains: "PETPVC_E2E_OK"
