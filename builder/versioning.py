@@ -39,9 +39,7 @@ def source_version(recipe: dict, source: dict) -> str:
         if source["method"] == "apt":
             from .update_observations import debian_upstream_version
 
-            return re.sub(
-                r"\+(?:dfsg|ds)\d*(?:\.\d+)*$", "", debian_upstream_version(value)
-            )
+            return debian_upstream_version(value)
         if target.get("value") != "tag":
             return value
         release = parse_release_tag(
@@ -84,7 +82,45 @@ def container_version(recipe: dict) -> str:
     return software_version(value)
 
 
+def primary_apt_peer_versions(recipe: dict) -> dict[str, str]:
+    """Return upstream source identities for peer primary APT sources of the same package."""
+    from .update_observations import debian_upstream_source_version
+
+    config = recipe.get("auto_update", {})
+    driver_id = config.get("container_version")
+    if not isinstance(driver_id, str):
+        return {}
+    sources = config.get("sources") or []
+    driver = next((s for s in sources if s.get("id") == driver_id), None)
+    if not driver or driver.get("method") != "apt":
+        return {}
+    package = driver.get("package")
+    peers = [
+        s
+        for s in sources
+        if s.get("method") == "apt"
+        and s.get("package") == package
+        and not s.get("dependency")
+    ]
+    if len(peers) < 2:
+        return {}
+    variables = recipe.get("variables", {})
+    return {
+        peer["id"]: debian_upstream_source_version(
+            str(variables[peer["target"]["variable"]])
+        )
+        for peer in peers
+    }
+
+
 def validate_container_version(recipe: dict) -> None:
+    peers = primary_apt_peer_versions(recipe)
+    if peers and len(set(peers.values())) > 1:
+        details = ", ".join(f"{sid}={ver}" for sid, ver in peers.items())
+        raise ValueError(
+            "multi-architecture APT sources for the primary package must share "
+            f"the same software version ({details})"
+        )
     expected = container_version(recipe)
     if str(recipe["version"]) != expected:
         raise ValueError(

@@ -29,6 +29,42 @@ def test_software_version_preserves_upstream_components(upstream, label):
     assert software_version(upstream) == label
 
 
+@pytest.mark.parametrize(
+    "debian_version,expected",
+    [
+        ("2.10.42-1ubuntu2", "2.10.42"),
+        ("2.1.0-1~nd120+1", "2.1.0"),
+        ("2025.07~dfsg-2", "2025.07.0"),
+        ("2.13.2+git20240821+ds-4", "2.13.2"),
+        ("2.13.2+ds+git20240821-4", "2.13.2"),
+        ("2.13.3~git20240822+ds-4", "2.13.3-git20240822"),
+        ("1.0+ds~git20251231-1", "1.0.0-git20251231"),
+        ("1:3.4.1+dfsg1-1", "3.4.1"),
+    ],
+)
+def test_apt_container_version_strips_debian_repack_and_git_suffixes(
+    debian_version, expected
+):
+    recipe = {
+        "version": expected,
+        "variables": {"package_version": debian_version},
+        "auto_update": {
+            "method": "sources",
+            "container_version": "pkg",
+            "sources": [
+                {
+                    "id": "pkg",
+                    "method": "apt",
+                    "package": "demo",
+                    "urls": ["https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"],
+                    "target": {"variable": "package_version"},
+                }
+            ],
+        },
+    }
+    validate_container_version(recipe)
+
+
 def test_manual_container_bump_is_rejected():
     recipe = {
         "version": "9.21.1",

@@ -726,14 +726,44 @@ def _debian_newer(candidate: str, current: str) -> bool:
     return result.returncode == 0
 
 
-def debian_upstream_version(version: str) -> str:
-    """Return the software's own version, without the epoch or Debian revision.
+def debian_upstream_source_version(version: str) -> str:
+    """Return the upstream software identity (including VCS snapshots), without Debian revision or repack markers."""
+    upstream = version.rsplit("-", 1)[0] if "-" in version else version
+    while True:
+        stripped = re.sub(
+            r"[~+](?:dfsg|ds|repack)\d*(?:\.\d+)*(?=$|[~+])",
+            "",
+            upstream,
+        )
+        if stripped == upstream:
+            break
+        upstream = stripped
+    return upstream
 
-    A container labelled with the packaging revision would rename itself for a
-    rebuild that ships identical software.
+
+def debian_upstream_version(version: str) -> str:
+    """Return the software's own version, without epoch, Debian revision, or repack suffixes.
+
+    A container labelled with packaging revisions or Debian repack/post-release
+    markers (such as ``~dfsg``, ``+ds``, or ``+gitYYYYMMDD``) would rename
+    itself for identical software or emit invalid OCI tag characters. Stacked
+    repack and post-release VCS suffixes are stripped in any order, including
+    repack tags preceding a ``~`` prerelease (such as ``1.0+ds~git20251231-1``),
+    and any remaining Debian ``~`` or ``+`` separators are normalised to ``-``
+    so the emitted label is always OCI-tag-safe.
     """
     upstream = version.split(":", 1)[-1]
-    return upstream.rsplit("-", 1)[0] if "-" in upstream else upstream
+    upstream = upstream.rsplit("-", 1)[0] if "-" in upstream else upstream
+    while True:
+        stripped = re.sub(
+            r"[~+](?:dfsg|ds|repack)\d*(?:\.\d+)*(?=$|[~+])|\+(?:git|svn|hg|bzr)[0-9A-Za-z.]+$",
+            "",
+            upstream,
+        )
+        if stripped == upstream:
+            break
+        upstream = stripped
+    return re.sub(r"[~+]", "-", upstream)
 
 
 def _apt(config: dict, session: requests.Session) -> SourceObservation:

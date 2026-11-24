@@ -14,7 +14,7 @@ from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 from packaging.version import InvalidVersion
 
-from .versioning import container_version
+from .versioning import container_version, primary_apt_peer_versions
 
 # These sources pin exact bytes without naming a software version, so they can
 # never drive the container label.
@@ -656,8 +656,12 @@ def plan_sources(
         if updated != before_recipe or suite_updated != before_suite:
             urls.append(observation.url)
             triggered = triggered or not (source.get("dependency") or republished)
+    staged_recipe = yaml.safe_load(updated)
+    peers = primary_apt_peer_versions(staged_recipe)
+    if peers and len(set(peers.values())) > 1:
+        return None
     current_version = str(recipe["version"])
-    next_version = container_version(yaml.safe_load(updated))
+    next_version = container_version(staged_recipe)
     if current_version != next_version:
         updated = rewrite_scalar(updated, ("version",), next_version)
     suite = yaml.safe_load(suite_updated)
