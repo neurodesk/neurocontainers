@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "amide 1.0.6": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "AMIDE-amide 1.0.6": {
+      "version": "20261124",
+      "exec": "amide",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "visualization"
+  ]
+}
