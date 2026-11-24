@@ -123,6 +123,7 @@ readme: |-
 domains:
   - neuroimaging
 categories:
+  - "molecular imaging"
   - "functional imaging"
   - "image segmentation"
   - "image registration"

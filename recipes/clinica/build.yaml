@@ -81,4 +81,5 @@ readme: |-
 domains:
   - neuroimaging
 categories:
+  - molecular imaging
   - workflows

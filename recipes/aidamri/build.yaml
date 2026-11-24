@@ -181,6 +181,7 @@ deploy:
 domains:
   - neuroimaging
 categories:
+- preclinical imaging
 - rodent imaging
 - structural imaging
 - diffusion imaging

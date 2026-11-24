@@ -342,4 +342,5 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEu0lE
 domains:
   - neuroimaging
 categories:
+  - preclinical imaging
   - rodent imaging

@@ -172,6 +172,7 @@ deploy:
 domains:
   - neuroimaging
 categories:
+  - preclinical imaging
   - rodent imaging
   - functional imaging
   - workflows
