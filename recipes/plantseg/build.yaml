@@ -63,7 +63,15 @@ files:
         "${MPLCONFIGDIR}" \
         "${NUMBA_CACHE_DIR}"
 
-      if [ -z "${HOME:-}" ] || [ ! -d "${HOME}" ] || [ ! -w "${HOME}" ]; then
+      is_writable_dir() {
+        local dir="$1"
+        [ -n "${dir}" ] && [ -d "${dir}" ] || return 1
+        local probe
+        probe="$(mktemp "${dir}/.writable.XXXXXX" 2>/dev/null)" || return 1
+        rm -f "${probe}"
+      }
+
+      if ! is_writable_dir "${HOME:-}"; then
         export HOME="${cache_root}"
       fi
 

@@ -4,6 +4,9 @@ version: 5.3.0
 copyright:
   - license: MIT
     url: https://github.com/applied-systems-biology/jipipe/blob/pom-jipipe-{{ context.version }}/LICENSE
+  - license: GPL-3.0-or-later
+    name: MTrack2 2.0.1 (bundled as MTrack2_-2.0.1.jar in JIPipe {{ context.version }} prepackaged Fiji runtime) and combined GPLv3 distribution notice in /opt/jipipe/GPL-SOURCE-NOTICE.txt
+    url: https://github.com/fiji/MTrack2/tree/MTrack2_-2.0.1
   - license: GPL-2.0-or-later
     name: Bundled Fiji / ImageJ2 runtime components in JIPipe prepackaged Linux64 archive
     url: https://imagej.net/licensing
@@ -11,10 +14,22 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  upstream_version: "5.3.0"
+
 auto_update:
-  method: github_release
-  repo: applied-systems-biology/jipipe
-  version_regex: '^pom-jipipe-(?P<version>\d+\.\d+\.\d+)$'
+  method: sources
+  container_version: jipipe_archive
+  sources:
+    - id: jipipe_archive
+      method: github_release_asset
+      repo: applied-systems-biology/jipipe
+      version_regex: '^pom-jipipe-(?P<version>\d+\.\d+\.\d+)$'
+      asset: JIPipe-{version}-Prepackaged-Linux64.tar.gz
+      target:
+        file: jipipe_archive
+        variables:
+          upstream_version: version
 
 structured_readme:
   description: >-
@@ -35,27 +50,70 @@ structured_readme:
 
 files:
   - name: jipipe_archive
-    url: https://github.com/applied-systems-biology/jipipe/releases/download/pom-jipipe-{{ context.version }}/JIPipe-{{ context.version }}-Prepackaged-Linux64.tar.gz
+    url: https://github.com/applied-systems-biology/jipipe/releases/download/pom-jipipe-5.3.0/JIPipe-5.3.0-Prepackaged-Linux64.tar.gz
+    sha256: 0ba50de964bc24a03a38fb3b1fef776be656a606a8520fd855a7e4d0b62604c1
+  - name: gpl-source-notice
+    contents: |-
+      JIPipe {{ context.version }} Container — License & Corresponding Source Notice
+      ==============================================================================
+      This container redistributes the unmodified upstream JIPipe prepackaged Linux64 archive:
+        https://github.com/applied-systems-biology/jipipe/releases/download/pom-jipipe-{{ context.version }}/JIPipe-{{ context.version }}-Prepackaged-Linux64.tar.gz
+
+      JIPipe itself is licensed under MIT:
+        https://github.com/applied-systems-biology/jipipe/blob/pom-jipipe-{{ context.version }}/LICENSE
+
+      The prepackaged Fiji/ImageJ2 runtime includes components under GPL-3.0-or-later
+      and GPL-2.0-or-later, along with permissively licensed plugins and a bundled
+      OpenJDK runtime:
+
+      - MTrack2_-2.0.1.jar (GPL-3.0-or-later) corresponding source revision:
+        https://github.com/fiji/MTrack2/tree/MTrack2_-2.0.1
+        https://github.com/fiji/MTrack2/archive/refs/tags/MTrack2_-2.0.1.tar.gz
+      - Fiji / ImageJ2 core source repositories:
+        https://github.com/fiji/fiji
+        https://imagej.net/licensing
+      - Exact release-pinned Maven POM metadata and SCM source coordinates for bundled
+        JARs are embedded under META-INF/maven/ inside /opt/jipipe/bin/jars/ and
+        /opt/jipipe/bin/plugins/, with corresponding source artifacts published at
+        https://maven.scijava.org/ and https://repo1.maven.org/maven2/.
   - name: jipipe-wrapper
     executable: true
     contents: |-
       #!/usr/bin/env bash
       set -euo pipefail
 
-      if [ -n "${JIPIPE_USER_DIR:-}" ]; then
+      is_writable_dir() {
+        local dir="$1"
+        [ -n "${dir}" ] && [ -d "${dir}" ] || return 1
+        local probe
+        probe="$(mktemp "${dir}/.writable.XXXXXX" 2>/dev/null)" || return 1
+        rm -f "${probe}"
+      }
+
+      if [ -n "${JIPIPE_OVERRIDE_USER_DIR_BASE:-}" ]; then
+        jipipe_user_dir="${JIPIPE_OVERRIDE_USER_DIR_BASE}"
+      elif [ -n "${JIPIPE_USER_DIR:-}" ]; then
         jipipe_user_dir="${JIPIPE_USER_DIR}"
-      elif [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -w "${HOME}" ]; then
+      elif is_writable_dir "${HOME:-}"; then
         jipipe_user_dir="${HOME}/.jipipe"
       else
         jipipe_user_dir="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}/jipipe-$(id -u)}/jipipe"
       fi
 
+      if is_writable_dir "${HOME:-}"; then
+        user_home="${HOME}"
+      else
+        user_home="${jipipe_user_dir}"
+        export HOME="${user_home}"
+      fi
+
+      export JIPIPE_OVERRIDE_USER_DIR_BASE="${jipipe_user_dir}"
       export JIPIPE_USER_DIR="${jipipe_user_dir}"
       prefs_root="${jipipe_user_dir}/java-prefs"
       tmp_root="${TMPDIR:-/tmp}/jipipe-$(id -u)-tmp"
       mkdir -p "${jipipe_user_dir}" "${prefs_root}" "${tmp_root}"
 
-      export JAVA_TOOL_OPTIONS="-Djava.util.prefs.userRoot=${prefs_root} -Djava.io.tmpdir=${tmp_root} ${JAVA_TOOL_OPTIONS:-}"
+      export JAVA_TOOL_OPTIONS="\"-Duser.home=${user_home}\" \"-Djava.util.prefs.userRoot=${prefs_root}\" \"-Djava.io.tmpdir=${tmp_root}\" ${JAVA_TOOL_OPTIONS:-}"
 
       fiji_bin="/opt/jipipe/bin/ImageJ-linux64"
       if [ ! -x "${fiji_bin}" ]; then
@@ -109,6 +167,7 @@ build:
     - run:
         - mkdir -p /opt/jipipe
         - tar -xzf {{ get_file("jipipe_archive") }} -C /opt/jipipe --strip-components=1
+        - install -m 0644 {{ get_file("gpl-source-notice") }} /opt/jipipe/GPL-SOURCE-NOTICE.txt
         - chmod -R a+rX /opt/jipipe
         - install -m 0755 {{ get_file("jipipe-wrapper") }} /usr/local/bin/jipipe
         - ln -sf jipipe /usr/local/bin/jipipe-cli

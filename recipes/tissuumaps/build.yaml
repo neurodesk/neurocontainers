@@ -3,7 +3,7 @@ version: 3.2.1.14
 
 copyright:
   - license: MIT
-    url: https://github.com/TissUUmaps/TissUUmaps/blob/main/LICENSE
+    url: https://github.com/TissUUmaps/TissUUmaps3/blob/master/LICENSE
 
 architectures:
   - x86_64
@@ -45,6 +45,19 @@ files:
       export XDG_DATA_HOME="${XDG_DATA_HOME:-${cache_root}/data}"
       export MPLCONFIGDIR="${MPLCONFIGDIR:-${cache_root}/matplotlib}"
       mkdir -p "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${MPLCONFIGDIR}"
+
+      is_writable_dir() {
+        local dir="$1"
+        [ -n "${dir}" ] && [ -d "${dir}" ] || return 1
+        local probe
+        probe="$(mktemp "${dir}/.writable.XXXXXX" 2>/dev/null)" || return 1
+        rm -f "${probe}"
+      }
+
+      if ! is_writable_dir "${HOME:-}"; then
+        export HOME="${cache_root}"
+      fi
+      mkdir -p "${HOME}/.tissuumaps"
 
       # Keep conda env's glib/vips first so PySide6's bundled Qt and pyvips share one glib
       export LD_LIBRARY_PATH="${E}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"

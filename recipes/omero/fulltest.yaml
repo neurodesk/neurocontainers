@@ -7,27 +7,36 @@ tests:
     command: command -v omero-insight
     expected_output_contains: "omero-insight"
 
-  - name: OMERO.insight JAR, manifest version, and config assets installed
-    description: Verify the packaged OMERO.insight version JAR, MANIFEST Implementation-Version, and configuration XML files exist.
+  - name: OMERO.insight JAR, manifest version, license, and config assets installed
+    description: Verify the packaged OMERO.insight version JAR, MANIFEST Implementation-Version, GPL license notice, and configuration XML files exist.
     command: |
       set -euo pipefail
       test -x /opt/omero-insight/bin/omero-insight
       test -f "/opt/omero-insight/lib/omero-insight-${version}.jar"
       test -f /opt/omero-insight/config/container.xml
+      test -f /opt/omero-insight/LICENSE.txt
+      test -f /opt/omero-insight/GPL-SOURCE-NOTICE.txt
+      grep -q "GNU GENERAL PUBLIC LICENSE" /opt/omero-insight/LICENSE.txt
       unzip -p "/opt/omero-insight/lib/omero-insight-${version}.jar" META-INF/MANIFEST.MF
     expected_output_contains: "Implementation-Version: ${version}"
 
-  - name: OpenJDK runtime and OMERO.insight startup classpath work without HOME
-    description: Verify OpenJDK 17 is installed and OMERO.insight parses its bundled container configuration when launched without HOME.
+  - name: OMERO.insight starts on OpenJDK with read-only HOME and spaced user dir
+    description: Verify JAVA_TOOL_OPTIONS handles paths with spaces and OMERO.insight starts up past configuration loading on OpenJDK 17 when HOME=/proc.
     command: |
       set -euo pipefail
-      java -version 2>&1
-      out="$(env -u HOME JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" omero-insight 2>&1 || true)"
-      printf '%s\n' "${out}" | head -n 30
-      # In headless mode without X11, OMERO.insight initializes ContainerConfigInit and fails only on AWT display creation
-      if printf '%s\n' "${out}" | grep -q "FileNotFoundException"; then
-        echo "ERROR: OMERO.insight failed to find config files" >&2
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      spaced_dir="${workdir}/omero user dir"
+      out="$(HOME=/proc OMERO_USER_DIR="${spaced_dir}" JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" omero-insight 2>&1 || true)"
+      printf '%s\n' "${out}" | head -n 40
+      # Must NOT fail JVM option parsing or config file discovery
+      if printf '%s\n' "${out}" | grep -qE "Unrecognized option|Could not create the Java Virtual Machine|FileNotFoundException"; then
+        echo "ERROR: OMERO.insight failed JVM option parsing or config loading" >&2
         exit 1
       fi
-      echo "OMERO_JVM_OK"
-    expected_output_contains: "OMERO_JVM_OK"
+      # Must positively reach OMERO.insight Java startup (Container/Shoola initialization or HeadlessException)
+      printf '%s\n' "${out}" | grep -qE "org\.openmicroscopy\.shoola|HeadlessException"
+      test -d "${spaced_dir}/omero"
+      test -d "${spaced_dir}/.java-prefs"
+      echo "OMERO_SPACED_STARTUP_OK"
+    expected_output_contains: "OMERO_SPACED_STARTUP_OK"

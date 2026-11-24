@@ -12,14 +12,22 @@ tests:
     command: rclone version
     expected_output_contains: "rclone v${version}"
 
+  - name: rclone MIT license notice retained
+    description: Verify the upstream README carrying rclone's MIT license notice is installed.
+    command: |
+      set -euo pipefail
+      test -f /usr/share/doc/rclone/README.txt
+      grep -m 1 -F "MIT license" /usr/share/doc/rclone/README.txt
+    expected_output_contains: "MIT license"
+
   - name: rclone copies local files cleanly without HOME
-    description: Run a real local file copy with HOME unset to verify runtime behavior in NeuroDesk containers.
+    description: Run a real local file copy with HOME unset using an explicit writable config path.
     command: |
       set -euo pipefail
       workdir="$(mktemp -d)"
       trap 'rm -rf "${workdir}"' EXIT
       mkdir -p "${workdir}/src" "${workdir}/dst"
       printf 'neurocontainers-rclone-smoke\n' > "${workdir}/src/sample.txt"
-      env -u HOME rclone --config "${workdir}/rclone.conf" copy "${workdir}/src" "${workdir}/dst"
+      env -u HOME RCLONE_CONFIG="${workdir}/rclone.conf" rclone copy "${workdir}/src" "${workdir}/dst"
       cat "${workdir}/dst/sample.txt"
     expected_output_contains: "neurocontainers-rclone-smoke"

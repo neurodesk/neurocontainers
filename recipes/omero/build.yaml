@@ -7,11 +7,22 @@ copyright:
 
 architectures:
   - x86_64
-  - aarch64
+
+variables:
+  upstream_version: "5.8.6"
 
 auto_update:
-  method: github_release
-  repo: ome/omero-insight
+  method: sources
+  container_version: omero_insight_archive
+  sources:
+    - id: omero_insight_archive
+      method: github_release_asset
+      repo: ome/omero-insight
+      asset: OMERO.insight-{version}.zip
+      target:
+        file: omero_insight_archive
+        variables:
+          upstream_version: version
 
 structured_readme:
   description: >-
@@ -33,16 +44,45 @@ structured_readme:
 
 files:
   - name: omero_insight_archive
-    url: https://github.com/ome/omero-insight/releases/download/v{{ context.version }}/OMERO.insight-{{ context.version }}.zip
+    url: https://github.com/ome/omero-insight/releases/download/v5.8.6/OMERO.insight-5.8.6.zip
+    sha256: a45a1c31711e7fdf3e85bcce41e51cca8a8078429e0a875c3d9d6f59f6d67b9d
+  - name: omero_license
+    filename: LICENSE.txt
+  - name: gpl-source-notice
+    contents: |-
+      OMERO.insight {{ context.version }} Container — License & Corresponding Source Notice
+      ====================================================================================
+      This container redistributes the unmodified upstream OMERO.insight release archive:
+        https://github.com/ome/omero-insight/releases/download/v{{ context.version }}/OMERO.insight-{{ context.version }}.zip
+
+      OMERO.insight is licensed under the GNU General Public License v2.0 or later
+      (GPL-2.0-or-later). The full GPL-2.0 license text is installed at:
+        /opt/omero-insight/LICENSE.txt
+
+      Corresponding source code for this exact release tag (v{{ context.version }}):
+        https://github.com/ome/omero-insight/tree/v{{ context.version }}
+        https://github.com/ome/omero-insight/archive/refs/tags/v{{ context.version }}.tar.gz
+
+      Bundled OME / Bio-Formats JARs under /opt/omero-insight/lib/ include release-pinned
+      version metadata and corresponding source repositories under https://github.com/ome/
+      and Maven Central (https://repo1.maven.org/maven2/).
   - name: omero-insight-wrapper
     executable: true
     contents: |-
       #!/usr/bin/env bash
       set -euo pipefail
 
+      is_writable_dir() {
+        local dir="$1"
+        [ -n "${dir}" ] && [ -d "${dir}" ] || return 1
+        local probe
+        probe="$(mktemp "${dir}/.writable.XXXXXX" 2>/dev/null)" || return 1
+        rm -f "${probe}"
+      }
+
       if [ -n "${OMERO_USER_DIR:-}" ]; then
         user_root="${OMERO_USER_DIR}"
-      elif [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -w "${HOME}" ]; then
+      elif is_writable_dir "${HOME:-}"; then
         user_root="${HOME}"
       else
         user_root="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}/omero-$(id -u)}"
@@ -50,7 +90,7 @@ files:
       prefs_root="${user_root}/.java-prefs"
       mkdir -p "${user_root}/omero" "${prefs_root}"
 
-      export JAVA_TOOL_OPTIONS="-Duser.home=${user_root} -Djava.util.prefs.userRoot=${prefs_root} ${JAVA_TOOL_OPTIONS:-}"
+      export JAVA_TOOL_OPTIONS="\"-Duser.home=${user_root}\" \"-Djava.util.prefs.userRoot=${prefs_root}\" ${JAVA_TOOL_OPTIONS:-}"
       exec /opt/omero-insight/bin/omero-insight "$@"
 
 build:
@@ -77,7 +117,9 @@ build:
         - unzip
     - run:
         - unzip -q {{ get_file("omero_insight_archive") }} -d /opt
-        - mv /opt/OMERO.insight-{{ context.version }} /opt/omero-insight
+        - mv /opt/OMERO.insight-{{ context.upstream_version }} /opt/omero-insight
+        - install -m 0644 {{ get_file("omero_license") }} /opt/omero-insight/LICENSE.txt
+        - install -m 0644 {{ get_file("gpl-source-notice") }} /opt/omero-insight/GPL-SOURCE-NOTICE.txt
         - chmod -R a+rX /opt/omero-insight
         - chmod 0755 /opt/omero-insight/bin/omero-insight
         - install -m 0755 {{ get_file("omero-insight-wrapper") }} /usr/local/bin/omero-insight

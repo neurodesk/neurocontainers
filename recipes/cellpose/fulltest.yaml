@@ -22,6 +22,19 @@ tests:
     command: env -u HOME cellpose --help
     expected_output_contains: "--Zstack"
 
+  - name: cellpose logging works with a read-only HOME
+    description: Verify the wrapper redirects HOME to a writable fallback so logger_setup() (used by GUI and --verbose CLI) writes .cellpose/run.log cleanly when HOME=/proc.
+    command: |
+      set -euo pipefail
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      # Run verbose CLI via the wrapper with read-only HOME=/proc and an empty input dir
+      mkdir -p "${workdir}/empty"
+      HOME=/proc CELLPOSE_CACHE_DIR="${workdir}/cache" cellpose --verbose --dir "${workdir}/empty" || true
+      test -f "${workdir}/cache/.cellpose/run.log"
+      echo "CELLPOSE_RO_HOME_LOG_OK"
+    expected_output_contains: "CELLPOSE_RO_HOME_LOG_OK"
+
   - name: cellpose Python, PyTorch, and Qt6 GUI dependencies import cleanly
     description: Verify pip consistency, pinned package versions, PyTorch, Cellpose-SAM, and offscreen Qt6 GUI widgets.
     command: |

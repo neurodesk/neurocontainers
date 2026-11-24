@@ -9,9 +9,21 @@ architectures:
   - x86_64
   - aarch64
 
+variables:
+  upstream_version: "26.10.7"
+
 auto_update:
-  method: github_release
-  repo: nextflow-io/nextflow
+  method: sources
+  container_version: nextflow_dist
+  sources:
+    - id: nextflow_dist
+      method: github_release_asset
+      repo: nextflow-io/nextflow
+      asset: nextflow-{version}-dist
+      target:
+        file: nextflow_dist
+        variables:
+          upstream_version: version
 
 structured_readme:
   description: >-
@@ -32,15 +44,24 @@ structured_readme:
 
 files:
   - name: nextflow_dist
-    url: https://github.com/nextflow-io/nextflow/releases/download/v{{ context.version }}/nextflow-{{ context.version }}-dist
+    url: https://github.com/nextflow-io/nextflow/releases/download/v26.10.7/nextflow-26.10.7-dist
+    sha256: c54cd4b7be058e8954180b378a8efa6d61085bc433d7d9b06ec2cad2ad6580a6
   - name: nextflow-wrapper
     executable: true
     contents: |-
       #!/usr/bin/env bash
       set -euo pipefail
 
+      is_writable_dir() {
+        local dir="$1"
+        [ -n "${dir}" ] && [ -d "${dir}" ] || return 1
+        local probe
+        probe="$(mktemp "${dir}/.writable.XXXXXX" 2>/dev/null)" || return 1
+        rm -f "${probe}"
+      }
+
       if [ -z "${NXF_HOME:-}" ]; then
-        if [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -w "${HOME}" ]; then
+        if is_writable_dir "${HOME:-}"; then
           export NXF_HOME="${HOME}/.nextflow"
         else
           export NXF_HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}/nextflow-$(id -u)}/nextflow"
@@ -48,7 +69,7 @@ files:
       fi
       mkdir -p "${NXF_HOME}"
 
-      if [ -z "${HOME:-}" ] || [ ! -d "${HOME}" ] || [ ! -w "${HOME}" ]; then
+      if ! is_writable_dir "${HOME:-}"; then
         export HOME="${NXF_HOME}"
       fi
 

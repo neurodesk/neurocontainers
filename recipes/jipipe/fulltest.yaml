@@ -10,19 +10,56 @@ tests:
       command -v jipipe-cli
     expected_output_contains: "jipipe-cli"
 
-  - name: jipipe installation files present
-    description: Verify the prepackaged JIPipe directory and packaged JIPipe JARs exist.
+  - name: jipipe installation files and license notice present
+    description: Verify the prepackaged JIPipe directory, packaged JIPipe JARs, and GPL source notice exist.
     command: |
       set -euo pipefail
       test -x /opt/jipipe/bin/ImageJ-linux64
       test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-core-${version}.jar"
       test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-cli-${version}.jar"
+      test -f /opt/jipipe/GPL-SOURCE-NOTICE.txt
       echo "JIPIPE_ASSETS_OK=${version}"
     expected_output_contains: "JIPIPE_ASSETS_OK=${version}"
 
-  - name: jipipe CLI responds without HOME
-    description: Verify JIPipe CLI starts headlessly with HOME unset using a writable JIPIPE_USER_DIR.
-    command: env -u HOME jipipe --help
-    expected_output_contains:
-      - "JIPipe CLI"
-      - "run <options>"
+  - name: jipipe CLI writes versioned profile with read-only HOME and spaced path
+    description: Verify JIPIPE_OVERRIDE_USER_DIR_BASE, JIPIPE_USER_DIR compatibility, and quoted JAVA_TOOL_OPTIONS work when HOME=/proc and the profile base path contains spaces.
+    command: |
+      set -euo pipefail
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      spaced_dir="${workdir}/jipipe profile dir"
+      # 1. Verify CLI help succeeds with a spaced profile path and read-only HOME
+      out="$(HOME=/proc JIPIPE_USER_DIR="${spaced_dir}" jipipe --help 2>&1)"
+      printf '%s\n' "${out}" | head -n 30
+      printf '%s\n' "${out}" | grep -q "JIPipe CLI"
+      if printf '%s\n' "${out}" | grep -qE "Unrecognized option|Could not create the Java Virtual Machine"; then
+        echo "ERROR: JVM rejected JAVA_TOOL_OPTIONS with spaced path" >&2
+        exit 1
+      fi
+      # 2. Verify a real headless JIPipe CLI run creates the versioned profile directory under spaced_dir/${version}
+      cat > "${workdir}/smoke.jip" <<'JSON'
+      {
+        "jipipe:project-type": "project",
+        "jipipe:project-format-version": 1,
+        "metadata": {
+          "name": "Smoke",
+          "description": ""
+        },
+        "dependencies": [],
+        "additional-metadata": {},
+        "graph": {
+          "nodes": {},
+          "edges": []
+        },
+        "compartments": {
+          "compartment-graph": {
+            "nodes": {},
+            "edges": []
+          }
+        }
+      }
+      JSON
+      HOME=/proc JIPIPE_USER_DIR="${spaced_dir}" jipipe run --project "${workdir}/smoke.jip" --output-folder "${workdir}/out"
+      test -d "${spaced_dir}/${version}"
+      echo "JIPIPE_PROFILE_OK=${version}"
+    expected_output_contains: "JIPIPE_PROFILE_OK=${version}"
