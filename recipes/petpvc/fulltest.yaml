@@ -128,8 +128,8 @@ tests:
                   }
               }
           }
-          my ($name) = ($path =~ m{([^/]+)\.nii$});
-          $stats{$name} = [$hot_sum / $hot_n, $bg_sum / $bg_n];
+          my ($img_key) = ($path =~ m{([^/]+)\.nii$});
+          $stats{$img_key} = [$hot_sum / $hot_n, $bg_sum / $bg_n];
       }
       die "expected PSF blur to lower hot_mean below 8.5, got $stats{blurred}[0]"
           unless $stats{blurred}[0] < 8.5;
