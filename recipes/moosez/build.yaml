@@ -1,0 +1,256 @@
+name: moosez
+version: "3.2.2"
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/ENHANCE-PET/MOOSE/blob/main/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+auto_update:
+  method: pypi
+  package: moosez
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PYTHONNOUSERSITE: "1"
+        PATH: /opt/moosez/bin:/opt/moosez/venv/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - mkdir -p /opt/moosez/bin /opt/moosez/share/licenses
+        - python3 -m venv /opt/moosez/venv
+        - /opt/moosez/venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        - /opt/moosez/venv/bin/python -m pip install --no-cache-dir "moosez=={{ context.version }}"
+        # Pre-install MOOSE custom nnU-Net v2 trainers into site-packages at build time
+        # so runtime execution on read-only Apptainer images does not attempt writes.
+        - /opt/moosez/venv/bin/python -c "from moosez.nnUNet_custom_trainer.utility import add_custom_trainers_to_local_nnunetv2; msg = add_custom_trainers_to_local_nnunetv2(); print(msg); assert 'Custom trainer added to' in msg or 'already installed' in msg, msg"
+        - /opt/moosez/venv/bin/python -c "from nnunetv2.training.nnUNetTrainer.variants.MOOSE_custom_trainers import nnUNetTrainer_2000_epochs_DA5NoMirroring; print('Verified trainer:', nnUNetTrainer_2000_epochs_DA5NoMirroring.__name__)"
+        # Redirect MODELS_DIRECTORY_PATH away from read-only site-packages to MOOSEZ_MODELS_DIR
+        # (falling back to a per-UID private /tmp/moosez-<uid>/models/nnunet_trained_models).
+        - SYSMOD="$(/opt/moosez/venv/bin/python -c 'import pathlib, moosez.system as s; print(pathlib.Path(s.__file__))')"
+        - test -f "${SYSMOD}"
+        - cat {{ get_file("models_dir_override.py") }} >> "${SYSMOD}"
+        # Install .pth startup hook so direct Python API callers also avoid writing to $HOME
+        # (Ubuntu 24.04 ships /usr/lib/python3.12/sitecustomize.py which shadows venv sitecustomize.py).
+        - SITEPKG="$(/opt/moosez/venv/bin/python -c 'import site; print(site.getsitepackages()[0])')"
+        - install -m 0644 {{ get_file("_moosez_runtime_cache.py") }} "${SITEPKG}/_moosez_runtime_cache.py"
+        - printf 'import _moosez_runtime_cache\n' > "${SITEPKG}/_moosez_runtime_cache.pth"
+        - chmod 0644 "${SITEPKG}/_moosez_runtime_cache.pth"
+        # Install upstream Apache-2.0 license notice from installed wheel metadata.
+        - /opt/moosez/venv/bin/python -c "import importlib.metadata as md, shutil; dist = md.distribution('moosez'); src = dist.locate_file('moosez-' + dist.version + '.dist-info/licenses/LICENSE'); shutil.copyfile(src, '/opt/moosez/share/licenses/LICENSE.txt')"
+        - test -s /opt/moosez/share/licenses/LICENSE.txt
+        # Install CLI launcher wrapper with per-UID private writable cache defaults.
+        - install -m 0755 {{ get_file("launch.py") }} /opt/moosez/launch.py
+        - ln -sf /opt/moosez/launch.py /opt/moosez/bin/moosez
+        - chmod -R a+rX /opt/moosez
+        - rm -rf /root/.cache/pip /tmp/moosez-*
+
+    - workdir: /opt
+
+files:
+  - name: launch.py
+    filename: launch.py
+
+  - name: models_dir_override.py
+    contents: |
+
+      # Appended by NeuroContainers recipe so MODELS_DIRECTORY_PATH resolves to a
+      # writable directory on read-only Apptainer images instead of site-packages.
+      def _neurocontainers_resolve_models_dir() -> str:
+          import stat as _stat
+          from pathlib import Path as _Path
+
+          override = os.environ.get("MOOSEZ_MODELS_DIR", "").strip()
+          if override:
+              base = os.path.abspath(override)
+              base_name = os.path.basename(base)
+              parent_name = os.path.basename(os.path.dirname(base))
+              if base_name == "nnunet_trained_models" and parent_name == "models":
+                  return base
+              if base_name == "models":
+                  return os.path.join(base, "nnunet_trained_models")
+              return os.path.join(base, "models", "nnunet_trained_models")
+
+          cache = _Path(f"/tmp/moosez-{os.geteuid()}")
+          try:
+              cache.mkdir(mode=0o700)
+          except FileExistsError:
+              pass
+          info = cache.lstat()
+          if (
+              not _stat.S_ISDIR(info.st_mode)
+              or info.st_uid != os.geteuid()
+              or _stat.S_IMODE(info.st_mode) != 0o700
+          ):
+              raise SystemExit(
+                  f"Unsafe cache directory: {cache}. "
+                  "Set MOOSEZ_MODELS_DIR to a private writable directory."
+              )
+          return str(cache / "models" / "nnunet_trained_models")
+
+
+      MODELS_DIRECTORY_PATH: str = _neurocontainers_resolve_models_dir()
+
+  - name: _moosez_runtime_cache.py
+    contents: |
+      """Ensure matplotlib, XDG, and PyTorch caches avoid unwritable $HOME paths."""
+      import os
+      import stat
+      from pathlib import Path
+
+
+      def _configure_runtime_caches() -> None:
+          targets = (
+              ("MPLCONFIGDIR", "mpl"),
+              ("XDG_CACHE_HOME", "xdg"),
+              ("TORCH_HOME", "torch"),
+          )
+          missing = [(var, sub) for var, sub in targets if not os.environ.get(var)]
+          if not missing:
+              return
+          cache = Path(f"/tmp/moosez-{os.geteuid()}")
+          try:
+              cache.mkdir(mode=0o700)
+          except FileExistsError:
+              pass
+          info = cache.lstat()
+          if (
+              not stat.S_ISDIR(info.st_mode)
+              or info.st_uid != os.geteuid()
+              or stat.S_IMODE(info.st_mode) != 0o700
+          ):
+              return
+          for var, sub in missing:
+              os.environ[var] = str(cache / sub)
+
+
+      _configure_runtime_caches()
+
+deploy:
+  bins:
+    - moosez
+
+domains:
+  - neuroimaging
+
+categories:
+  - molecular imaging
+  - preclinical imaging
+  - image segmentation
+  - machine learning
+
+structured_readme:
+  description: >-
+    MOOSE (Multi-Organ Objective Segmentation, moosez) is an nnU-Net v2 deep
+    learning segmentation suite from the ENHANCE-PET initiative providing
+    clinical whole-body CT and clinical MR segmentation models, clinical
+    FDG-PET brain and face models, and preclinical CT leg-muscle and
+    preclinical multi-organ MR segmentation models.
+  example: |-
+    # Download models to a persistent directory and run segmentation
+    export MOOSEZ_MODELS_DIR=/path/to/persistent/moosez_models
+    moosez -md clin_ct_organs
+    moosez -d /path/to/subjects_dir -m clin_ct_organs
+  documentation: |-
+    This container installs `moosez` {{ context.version }} with PyTorch,
+    nnU-Net v2, SimpleITK, nibabel, and dcm2niix in `/opt/moosez/venv`, with
+    MOOSE's custom nnU-Net trainers pre-installed at build time for read-only
+    container compatibility.
+
+    Model weights are not baked into the image and are downloaded on demand.
+    By default, models and runtime caches are stored in a private per-user
+    directory `/tmp/moosez-<uid>`. Set `MOOSEZ_MODELS_DIR` to a writable
+    persistent directory to retain downloaded models across runs (both
+    `moosez -md` and inference resolve `<MOOSEZ_MODELS_DIR>/models/nnunet_trained_models`),
+    or pre-fetch models with `moosez -md <model_name> -md-out <directory>`.
+    For ENHANCE 1.6k training-data downloads without a writable `$HOME`, pass
+    `moosez -dtd -dd <writable-directory>`.
+
+    Upstream documentation: https://github.com/ENHANCE-PET/MOOSE
+  citation: >-
+    Shiyam Sundar, L. K., Yu, J., Muzik, O., Kulterer, O., Fueger, B. J.,
+    Kifjak, D., Nakuz, T., Shin, H. M., Sima, A. K., Kitzmantl, D., Badawi,
+    R. D., Nardo, L., Cherry, S. R., Spencer, B. A., Hacker, M., & Beyer, T.
+    (2022). Fully-automated, semantic segmentation of whole-body 18F-FDG
+    PET/CT images based on data-centric artificial intelligence. Journal of
+    Nuclear Medicine. https://doi.org/10.2967/jnumed.122.264063
+
+readme: |
+  ## moosez/{{ context.version }}
+
+  MOOSE (Multi-Organ Objective Segmentation, `moosez`) is an nnU-Net v2
+  segmentation tool from the ENHANCE-PET initiative supporting automated
+  multi-organ segmentation across clinical and preclinical imaging datasets.
+
+  ### Available Model Families
+
+  - **Clinical CT, PET, and MR models**: whole-body CT organ, lung, rib, muscle,
+    vertebrae, peripheral bone, cardiac, digestive, body-composition, dental,
+    face, PUMA, and ALPACA models (e.g., `clin_ct_organs`, `clin_ct_body`,
+    `clin_ct_lungs`, `clin_ct_cardiac`, `clin_ct_body_composition`,
+    `clin_ct_fast_organs`), FDG-PET brain and face models (`clin_pt_fdg_brain_v1`,
+    `clin_pt_fdg_face`), and clinical MR models (`clin_mr_FVM`).
+  - **Preclinical imaging models**: preclinical CT leg-muscle segmentation
+    (`preclin_ct_legs`: right and left leg muscles) and preclinical whole-body
+    multi-organ MR segmentation (`preclin_mr_all`: 21 anatomical structures
+    including brain, liver, kidneys, heart, lungs, spleen, bladder, stomach,
+    pancreas, thyroid, aorta, adipose depots, and muscles).
+
+  ### Model Storage & Read-Only Containers
+
+  Model weights are not baked into this image and are downloaded on demand.
+  Because Apptainer/Singularity images are read-only and `$HOME` is not
+  assumed to be writable, this container redirects segmentation model storage
+  and runtime caches (`MPLCONFIGDIR`, `XDG_CACHE_HOME`, `TORCH_HOME`) to a
+  private per-user directory `/tmp/moosez-<uid>` by default.
+
+  To keep downloaded model weights across sessions, set `MOOSEZ_MODELS_DIR` to
+  a writable persistent directory (both `moosez -md` and inference resolve
+  `<MOOSEZ_MODELS_DIR>/models/nnunet_trained_models`):
+
+  ```bash
+  export MOOSEZ_MODELS_DIR=/path/to/persistent/moosez_models
+  moosez -md clin_ct_organs
+  moosez -d /path/to/subjects_dir -m clin_ct_organs
+  ```
+
+  If you download the ENHANCE 1.6k training dataset (`-dtd`), pass `-dd` so it
+  does not default to `$HOME/Downloads`:
+
+  ```bash
+  moosez -dtd -dd /path/to/writable_download_dir
+  ```
+
+  Preclinical example:
+
+  ```bash
+  export MOOSEZ_MODELS_DIR=/path/to/persistent/moosez_models
+  moosez -d /path/to/preclinical_subjects -m preclin_mr_all
+  ```
+
+  ### Documentation & Licensing
+
+  - Code license: Apache-2.0 (`/opt/moosez/share/licenses/LICENSE.txt`)
+  - Upstream repository: https://github.com/ENHANCE-PET/MOOSE
+  - Documentation: https://moosez.rtfd.io/
+
+icon: "data:image/png;base64,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"
