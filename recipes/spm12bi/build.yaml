@@ -105,6 +105,7 @@ readme: |-
 
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - molecular imaging
   - functional imaging

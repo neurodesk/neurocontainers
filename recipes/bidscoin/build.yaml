@@ -3,6 +3,7 @@ version: 4.6.2
 
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - "data organisation"
   - "bids apps"

@@ -89,6 +89,7 @@ files:
     url: https://github.com/AMYPAD/CuVec/archive/{{ context.cuvec_commit }}.tar.gz
 domains:
   - neuroimaging
+  - preclinical
 categories:
   - molecular imaging
   - image reconstruction

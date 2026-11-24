@@ -66,6 +66,7 @@ files:
 domains:
   - neuroimaging
   - microscopy
+  - preclinical
 categories:
   - image registration
   - structural imaging

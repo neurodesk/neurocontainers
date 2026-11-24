@@ -123,6 +123,7 @@ gui_apps:
 
 domains:
   - microscopy
+  - preclinical
 
 categories:
   - visualization

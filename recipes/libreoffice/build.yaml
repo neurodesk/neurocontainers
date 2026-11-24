@@ -136,6 +136,7 @@ gui_apps:
 domains:
   - neuroimaging
   - microscopy
+  - preclinical
 categories:
   - data organisation
 
