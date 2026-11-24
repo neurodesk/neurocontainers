@@ -1,0 +1,562 @@
+name: open3d
+version: 0.20.0
+
+description: Open-source 3D point-cloud and mesh processing library for 3D total-body photography (3D-TBP) surface registration, reconstruction, and wound morphometry.
+
+copyright:
+  - license: MIT
+    name: Open3D license
+    url: https://github.com/isl-org/Open3D/blob/v{{ context.upstream_version }}/LICENSE
+  - license: Apache-2.0
+    name: oneTBB license (x86_64 v2021.5.0 / aarch64 v2021.12.0)
+    url: https://github.com/uxlfoundation/oneTBB/blob/v2021.12.0/LICENSE.txt
+  - license: BSD-3-Clause
+    name: Intel ITT (bundled in oneTBB v2021.5.0 on x86_64)
+    url: https://github.com/uxlfoundation/oneTBB/blob/v2021.5.0/third-party-programs.txt
+  - license: BSD-3-Clause
+    name: Intel ITT (bundled in oneTBB v2021.12.0 on aarch64)
+    url: https://github.com/uxlfoundation/oneTBB/blob/v2021.12.0/third-party-programs.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.20.0"
+  open3d_package:
+    try:
+      - value: "open3d-cpu"
+        condition: arch=="x86_64"
+      - value: "open3d"
+        condition: arch=="aarch64"
+  onetbb_version:
+    try:
+      - value: "2021.5.0"
+        condition: arch=="x86_64"
+      - value: "2021.12.0"
+        condition: arch=="aarch64"
+
+auto_update:
+  method: sources
+  container_version: open3d
+  sources:
+    - id: open3d
+      method: pypi
+      package: open3d
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/open3d/wrappers:/opt/open3d/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libegl1
+        - libgl1
+        - libgomp1
+        - libusb-1.0-0
+        - libx11-6
+        - patchelf
+        - python3
+        - python3-configargparse
+        - python3-flask
+        - python3-nbformat
+        - python3-numpy
+        - python3-pip
+        - python3-venv
+        - python3-werkzeug
+        - python3-zmq
+
+    - run:
+        # Inherit Ubuntu 26.04 system numpy/zmq/flask/werkzeug/nbformat/ipywidgets so no
+        # PyPI bundled GNU/ZeroMQ runtime libraries ship; install CPU-only Open3D wheel.
+        - python3 -m venv --system-site-packages /opt/open3d
+        - /opt/open3d/bin/python -m pip install --no-cache-dir "{{ context.open3d_package }}=={{ context.upstream_version }}"
+        - /opt/open3d/bin/python -m pip check
+        # Relink any bundled libgomp in Open3D wheels against Ubuntu's system libgomp1.
+        - >-
+          for f in $(find /opt/open3d/lib/python*/site-packages/open3d /opt/open3d/lib/python*/site-packages/open3d*.libs -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libgomp-' || true); do
+          patchelf --replace-needed "$need" libgomp.so.1 "$f";
+          done;
+          done
+          && find /opt/open3d/lib/python*/site-packages -name 'libgomp*.so*' -delete
+        - /opt/open3d/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/open3d/bin/python -c "import importlib.metadata as md, pathlib, numpy, open3d, zmq;
+          assert numpy.__file__.startswith('/usr/lib/python3/dist-packages/'), numpy.__file__;
+          assert zmq.__file__.startswith('/usr/lib/python3/dist-packages/'), zmq.__file__;
+          bad_libs = [str(p) for p in pathlib.Path('/opt/open3d').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libzmq'))];
+          assert not bad_libs, bad_libs;
+          bad_pkgs = [d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad_pkgs, bad_pkgs;
+          assert open3d.__version__ == '{{ context.upstream_version }}', open3d.__version__"
+        - mkdir -p /opt/open3d/wrappers /opt/open3d/share/licenses
+        - install -m 0755 {{ get_file("open3d_wrapper") }} /opt/open3d/wrappers/open3d
+        - install -m 0644 {{ get_file("open3d_license") }} /opt/open3d/share/licenses/OPEN3D-LICENSE.txt
+        - install -m 0644 {{ get_file("onetbb_license") }} /opt/open3d/share/licenses/ONETBB-LICENSE.txt
+        - install -m 0644 {{ get_file("onetbb_third_party_programs") }} /opt/open3d/share/licenses/ONETBB-THIRD-PARTY-PROGRAMS.txt
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/open3d
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: open3d_license
+    url: https://raw.githubusercontent.com/isl-org/Open3D/v{{ context.upstream_version }}/LICENSE
+  - name: onetbb_license
+    url: https://raw.githubusercontent.com/uxlfoundation/oneTBB/v{{ context.onetbb_version }}/LICENSE.txt
+  - name: onetbb_third_party_programs
+    url: https://raw.githubusercontent.com/uxlfoundation/oneTBB/v{{ context.onetbb_version }}/third-party-programs.txt
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/open3d/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_open3d_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for Open3D caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".open3d-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="open3d-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                      ("OPEN3D_DATA_ROOT", "data"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_open3d_runtime.pth").write_text(
+          "import _open3d_runtime\n",
+          encoding="utf-8",
+      )
+  - name: open3d_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run Open3D CLI with private non-/home cache paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+          ("OPEN3D_DATA_ROOT", "data"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".open3d-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/open3d/bin/open3d", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="open3d.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - open3d
+
+domains:
+  - microscopy
+
+categories:
+  - "image reconstruction"
+  - "shape analysis"
+  - "visualization"
+  - "body"
+
+readme: |-
+  ----------------------------------
+  ## open3d/{{ context.version }} ##
+
+  Open3D is an open-source 3D data processing library (CPU build) for point-cloud
+  and triangle-mesh registration (ICP, FPFH), surface reconstruction, normal
+  estimation, and morphometric measurement in 3D total-body photography (3D-TBP)
+  and wound/scar imaging.
+
+  ### Included CLI & Python Environment
+  ```
+  open3d                  Open3D command-line tool
+  /opt/open3d/bin/python  Python environment with open3d {{ context.upstream_version }}
+  ```
+
+  ### Example
+  ```
+  ml open3d/{{ context.version }}
+  open3d --version
+  /opt/open3d/bin/python -c "import open3d as o3d; print(o3d.__version__)"
+  ```
+
+  Documentation: https://www.open3d.org/docs/release/
+  License texts (`OPEN3D-LICENSE.txt`, `ONETBB-LICENSE.txt`,
+  `ONETBB-THIRD-PARTY-PROGRAMS.txt`) are installed under
+  `/opt/open3d/share/licenses/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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
