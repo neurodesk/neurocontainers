@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "tpcclib 0.8.2": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "quantitative imaging"
+  ]
+}

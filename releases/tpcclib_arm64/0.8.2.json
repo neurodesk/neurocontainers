@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "tpcclib_arm64 0.8.2": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "quantitative imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "tpcclib"
+}
