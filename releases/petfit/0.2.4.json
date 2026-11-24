@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "petfit 0.2.4": {
+      "version": "20261124",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular imaging",
+    "preclinical imaging",
+    "quantitative imaging",
+    "bids apps"
+  ]
+}
