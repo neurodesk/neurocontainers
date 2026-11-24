@@ -44,6 +44,7 @@ domains:
   - neuroimaging
   - microscopy
   - preclinical
+  - molecular-imaging
 categories:
   - visualization
 readme: |-

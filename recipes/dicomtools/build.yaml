@@ -119,6 +119,7 @@ domains:
   - neuroimaging
   - microscopy
   - preclinical
+  - molecular-imaging
 categories:
   - "molecular imaging"
   - "data organisation"

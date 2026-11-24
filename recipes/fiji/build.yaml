@@ -124,6 +124,7 @@ gui_apps:
 domains:
   - microscopy
   - preclinical
+  - molecular-imaging
 
 categories:
   - visualization
