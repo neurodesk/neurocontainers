@@ -1,0 +1,143 @@
+name: omero
+version: 5.8.6
+
+copyright:
+  - license: GPL-2.0-or-later
+    url: https://github.com/ome/omero-insight/blob/v{{ context.version }}/LICENSE.txt
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "5.8.6"
+
+auto_update:
+  method: sources
+  container_version: omero_insight_archive
+  sources:
+    - id: omero_insight_archive
+      method: github_release_asset
+      repo: ome/omero-insight
+      asset: OMERO.insight-{version}.zip
+      target:
+        file: omero_insight_archive
+        variables:
+          upstream_version: version
+
+structured_readme:
+  description: >-
+    OMERO.insight is the official desktop client for the Open Microscopy
+    Environment (OMERO), enabling biologists and imaging facilities to browse,
+    annotate, import, and visualize multi-dimensional microscopy image datasets
+    managed on an OMERO server.
+  example: |
+    # Launch the OMERO.insight desktop client
+    omero-insight
+  documentation: https://omero-guides.readthedocs.io/en/latest/introduction/docs/omero_insight.html
+  citation: |-
+    Allan, C., Burel, J.-M., Moore, J., Blackburn, C., Linkert, M., Loynton, S.,
+    MacDonald, D., Moore, W. J., Neves, C., Patterson, A., Porter, M., Tarkowska,
+    A., Loranger, B., Avondo, J., Lagerstedt, I., Lianas, L., Leo, S., Hands, K.,
+    Hay, R. T., ... Swedlow, J. R. (2012). OMERO: flexible, model-driven data
+    management for experimental biology. Nature Methods, 9(3), 245-253.
+    https://doi.org/10.1038/nmeth.1896
+
+files:
+  - name: omero_insight_archive
+    url: https://github.com/ome/omero-insight/releases/download/v5.8.6/OMERO.insight-5.8.6.zip
+    sha256: a45a1c31711e7fdf3e85bcce41e51cca8a8078429e0a875c3d9d6f59f6d67b9d
+  - name: omero_license
+    filename: LICENSE.txt
+  - name: gpl-source-notice
+    contents: |-
+      OMERO.insight {{ context.version }} Container — License & Corresponding Source Notice
+      ====================================================================================
+      This container redistributes the unmodified upstream OMERO.insight release archive:
+        https://github.com/ome/omero-insight/releases/download/v{{ context.version }}/OMERO.insight-{{ context.version }}.zip
+
+      OMERO.insight is licensed under the GNU General Public License v2.0 or later
+      (GPL-2.0-or-later). The full GPL-2.0 license text is installed at:
+        /opt/omero-insight/LICENSE.txt
+
+      Corresponding source code for this exact release tag (v{{ context.version }}):
+        https://github.com/ome/omero-insight/tree/v{{ context.version }}
+        https://github.com/ome/omero-insight/archive/refs/tags/v{{ context.version }}.tar.gz
+
+      Bundled OME / Bio-Formats JARs under /opt/omero-insight/lib/ include release-pinned
+      version metadata and corresponding source repositories under https://github.com/ome/
+      and Maven Central (https://repo1.maven.org/maven2/).
+  - name: omero-insight-wrapper
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      is_writable_dir() {
+        local dir="$1"
+        [ -n "${dir}" ] && [ -d "${dir}" ] || return 1
+        local probe
+        probe="$(mktemp "${dir}/.writable.XXXXXX" 2>/dev/null)" || return 1
+        rm -f "${probe}"
+      }
+
+      if [ -n "${OMERO_USER_DIR:-}" ]; then
+        user_root="${OMERO_USER_DIR}"
+      elif is_writable_dir "${HOME:-}"; then
+        user_root="${HOME}"
+      else
+        user_root="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}/omero-$(id -u)}"
+      fi
+      prefs_root="${user_root}/.java-prefs"
+      mkdir -p "${user_root}/omero" "${prefs_root}"
+
+      export JAVA_TOOL_OPTIONS="\"-Duser.home=${user_root}\" \"-Djava.util.prefs.userRoot=${prefs_root}\" ${JAVA_TOOL_OPTIONS:-}"
+      exec /opt/omero-insight/bin/omero-insight "$@"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - ca-certificates
+        - fontconfig
+        - fonts-dejavu-core
+        - libasound2t64
+        - libfreetype6
+        - libgtk-3-0
+        - libx11-6
+        - libxext6
+        - libxi6
+        - libxrandr2
+        - libxrender1
+        - libxtst6
+        - openjdk-17-jre
+        - unzip
+    - run:
+        - unzip -q {{ get_file("omero_insight_archive") }} -d /opt
+        - mv /opt/OMERO.insight-{{ context.upstream_version }} /opt/omero-insight
+        - install -m 0644 {{ get_file("omero_license") }} /opt/omero-insight/LICENSE.txt
+        - install -m 0644 {{ get_file("gpl-source-notice") }} /opt/omero-insight/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/omero-insight
+        - chmod 0755 /opt/omero-insight/bin/omero-insight
+        - install -m 0755 {{ get_file("omero-insight-wrapper") }} /usr/local/bin/omero-insight
+
+deploy:
+  path: []
+  bins:
+    - omero-insight
+
+gui_apps:
+  - name: "OMERO.insight"
+    exec: "omero-insight"
+
+domains:
+  - microscopy
+
+categories:
+  - visualization
+  - data organisation
+
+icon: data:image/png;base64,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

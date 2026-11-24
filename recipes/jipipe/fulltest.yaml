@@ -1,0 +1,124 @@
+name: jipipe
+version: 5.3.0
+
+tests:
+  - name: jipipe launchers available
+    description: Verify the jipipe and jipipe-cli wrappers are installed on PATH.
+    command: |
+      set -euo pipefail
+      command -v jipipe
+      command -v jipipe-cli
+    expected_output_contains: "jipipe-cli"
+
+  - name: jipipe installation files, license notice, and restricted JAR exclusions verified
+    description: Verify the prepackaged JIPipe JARs and GPL source notice exist and redistribution-restricted ImageScience JARs are excluded.
+    command: |
+      set -euo pipefail
+      test -x /opt/jipipe/bin/ImageJ-linux64
+      test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-core-${version}.jar"
+      test -f "/opt/jipipe/bin/plugins/JIPipe/jipipe-cli-${version}.jar"
+      test -f /opt/jipipe/GPL-SOURCE-NOTICE.txt
+      restricted="$(find /opt/jipipe -type f \( -name 'FeatureJ_*.jar' -o -name 'MTrackJ_*.jar' -o -name 'NeuronJ_*.jar' -o -name 'RandomJ_*.jar' -o -name 'TransformJ_*.jar' -o -name 'imagescience*.jar' \))"
+      test -z "${restricted}"
+      echo "JIPIPE_ASSETS_OK=${version}"
+    expected_output_contains: "JIPIPE_ASSETS_OK=${version}"
+
+  - name: jipipe CLI executes a supported workflow node cleanly without class-loading errors and rejects excluded ImageScience nodes
+    description: Verify JIPIPE_OVERRIDE_USER_DIR_BASE, quoted JAVA_TOOL_OPTIONS with spaced path and HOME=/proc, clean execution of a supported ImageJAlgorithmsPlugin node with zero NoClassDefFoundError/ClassNotFoundException, and explicit unavailability of excluded ImageScience nodes.
+    command: |
+      set -euo pipefail
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      spaced_dir="${workdir}/jipipe profile dir"
+
+      # 1. Verify CLI help succeeds with a spaced profile path and read-only HOME
+      help_out="$(HOME=/proc JIPIPE_USER_DIR="${spaced_dir}" jipipe --help 2>&1)"
+      head -n 30 <<< "${help_out}"
+      grep -q "JIPipe CLI" <<< "${help_out}"
+      if grep -qE "Unrecognized option|Could not create the Java Virtual Machine" <<< "${help_out}"; then
+        echo "ERROR: JVM rejected JAVA_TOOL_OPTIONS with spaced path" >&2
+        exit 1
+      fi
+
+      # 2. Verify a real workflow with a supported ImageJAlgorithmsPlugin node runs cleanly with zero class-loading errors
+      cat > "${workdir}/supported.jip" <<'JSON'
+      {
+        "jipipe:project-type": "project",
+        "jipipe:project-format-version": 1,
+        "metadata": {
+          "name": "SupportedNodeSmoke",
+          "description": ""
+        },
+        "dependencies": [],
+        "additional-metadata": {},
+        "graph": {
+          "nodes": {
+            "00000000-0000-4000-8000-000000000001": {
+              "jipipe:node-info-id": "ij1-generate-zero-image",
+              "jipipe:algorithm:enabled": true,
+              "jipipe:graph-compartment": "00000000-0000-4000-8000-000000000002",
+              "jipipe:node:name": "Zero image",
+              "jipipe:slot-configuration": {
+                "input": {},
+                "output": {
+                  "Output": {
+                    "slot-data-type": "imagej-imgplus",
+                    "slot-type": "Output",
+                    "inherited-slot": null,
+                    "name": "Output",
+                    "custom-name": null,
+                    "description": "",
+                    "is-virtual": false,
+                    "save-outputs": true,
+                    "is-optional": false,
+                    "inheritance-conversions": {}
+                  }
+                }
+              },
+              "width": 16,
+              "height": 16,
+              "size-z": 1,
+              "size-c": 1,
+              "size-t": 1
+            }
+          },
+          "edges": []
+        },
+        "compartments": {
+          "compartment-graph": {
+            "nodes": {
+              "00000000-0000-4000-8000-000000000002": {
+                "jipipe:node-info-id": "jipipe:project-compartment",
+                "jipipe:graph-compartment": "",
+                "jipipe:node:name": "Analysis",
+                "jipipe:slot-configuration": {
+                  "input": {},
+                  "output": {}
+                }
+              }
+            },
+            "edges": []
+          }
+        }
+      }
+      JSON
+      run_out="$(HOME=/proc JIPIPE_USER_DIR="${spaced_dir}" jipipe run --project "${workdir}/supported.jip" --output-folder "${workdir}/out" 2>&1)"
+      tail -n 30 <<< "${run_out}"
+      if grep -qE "NoClassDefFoundError|ClassNotFoundException" <<< "${run_out}"; then
+        echo "ERROR: Unexpected class-loading error during JIPipe workflow execution" >&2
+        exit 1
+      fi
+      test -d "${spaced_dir}/${version}"
+      generated_tif="$(find "${workdir}/out" -type f -name '*.tif' -print -quit)"
+      test -n "${generated_tif}"
+
+      # 3. Verify an excluded ImageScience node is explicitly unavailable
+      sed 's/ij1-generate-zero-image/threshold-hessian2d/' "${workdir}/supported.jip" > "${workdir}/excluded.jip"
+      excl_out="$(HOME=/proc JIPIPE_USER_DIR="${spaced_dir}" jipipe run --project "${workdir}/excluded.jip" --output-folder "${workdir}/out_excl" 2>&1 || true)"
+      if grep -qE "NoClassDefFoundError|ClassNotFoundException" <<< "${excl_out}"; then
+        echo "ERROR: Unexpected class-loading error when checking excluded node" >&2
+        exit 1
+      fi
+      grep -q "Unable to find node type with ID 'threshold-hessian2d'" <<< "${excl_out}"
+      echo "JIPIPE_WORKFLOW_AND_EXCLUSION_OK=${version}"
+    expected_output_contains: "JIPIPE_WORKFLOW_AND_EXCLUSION_OK=${version}"

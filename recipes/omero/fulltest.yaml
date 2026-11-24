@@ -1,0 +1,43 @@
+name: omero
+version: 5.8.6
+
+tests:
+  - name: omero-insight launcher available
+    description: Verify the omero-insight wrapper is installed on PATH.
+    command: command -v omero-insight
+    expected_output_contains: "omero-insight"
+
+  - name: OMERO.insight JAR, manifest version, license, and config assets installed
+    description: Verify the packaged OMERO.insight version JAR, MANIFEST Implementation-Version, GPL license notice, and configuration XML files exist.
+    command: |
+      set -euo pipefail
+      test -x /opt/omero-insight/bin/omero-insight
+      test -f "/opt/omero-insight/lib/omero-insight-${version}.jar"
+      test -f /opt/omero-insight/config/container.xml
+      test -f /opt/omero-insight/LICENSE.txt
+      test -f /opt/omero-insight/GPL-SOURCE-NOTICE.txt
+      grep -q "GNU GENERAL PUBLIC LICENSE" /opt/omero-insight/LICENSE.txt
+      unzip -p "/opt/omero-insight/lib/omero-insight-${version}.jar" META-INF/MANIFEST.MF
+    expected_output_contains: "Implementation-Version: ${version}"
+
+  - name: OMERO.insight starts on OpenJDK with read-only HOME and spaced user dir
+    description: Verify JAVA_TOOL_OPTIONS handles paths with spaces and OMERO.insight starts up past configuration loading on OpenJDK 17 when HOME=/proc.
+    command: |
+      set -euo pipefail
+      workdir="$(mktemp -d)"
+      trap 'rm -rf "${workdir}"' EXIT
+      spaced_dir="${workdir}/omero user dir"
+      out="$(HOME=/proc OMERO_USER_DIR="${spaced_dir}" JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" omero-insight 2>&1 || true)"
+      head -n 40 <<< "${out}"
+      # Must NOT fail JVM launch, class loading, or config file discovery
+      if grep -qE "ClassNotFoundException|NoClassDefFoundError|Unrecognized option|Could not create the Java Virtual Machine|FileNotFoundException" <<< "${out}"; then
+        echo "ERROR: OMERO.insight failed JVM startup, class loading, or config loading" >&2
+        exit 1
+      fi
+      # Must positively reach OMERO.insight Java startup past config loading (HeadlessException with a Shoola stack frame)
+      grep -q "java.awt.HeadlessException" <<< "${out}"
+      grep -q "at org.openmicroscopy.shoola." <<< "${out}"
+      test -d "${spaced_dir}/omero"
+      test -d "${spaced_dir}/.java-prefs"
+      echo "OMERO_SPACED_STARTUP_OK"
+    expected_output_contains: "OMERO_SPACED_STARTUP_OK"
