@@ -21,7 +21,7 @@ and the multi-domain tagging list for a future `preclinical` or
 | [clinica](../recipes/clinica/build.yaml) | Clinical neuroimaging PET pipelines (`pet-linear`, `pet-volume`, `pet-surface`) |
 | [freesurfer](../recipes/freesurfer/build.yaml) | Bundles PETSurfer (`gtmseg`, `mri_gtmpvc`, `mri_coreg`) |
 | [spm12](../recipes/spm12/build.yaml), [spm25](../recipes/spm25/build.yaml) | Native PET/SPECT spatial normalization and voxel-wise statistics |
-| [dcm2niix](../recipes/dcm2niix/build.yaml), [dicomtools](../recipes/dicomtools/build.yaml), [bidstools](../recipes/bidstools/build.yaml), [ezbids](../recipes/ezbids/build.yaml), [bidscoin](../recipes/bidscoin/build.yaml) | DICOM/ECAT/Interfile conversion (`dcm2niix`, `dcmtk`, `xmedcon`/`medcon`) and BIDS curation |
+| [dcm2niix](../recipes/dcm2niix/build.yaml), [dicomtools](../recipes/dicomtools/build.yaml), [bidstools](../recipes/bidstools/build.yaml), [ezbids](../recipes/ezbids/build.yaml), [bidscoin](../recipes/bidscoin/build.yaml) | DICOM/ECAT/Interfile conversion (`dcm2niix`, `dcmtk`, `xmedcon`/`medcon`), Bruker conversion (`Bru2Nii` in `bidstools`), and BIDS curation (`ezbids` already bundles `pypet2bids` with `dcm2niix4pet`) |
 | [totalsegmentator](../recipes/totalsegmentator/build.yaml) | CT/MR whole-body organ segmentation commonly paired with PET/CT |
 | [slicer](../recipes/slicer/build.yaml), [mipav](../recipes/mipav/build.yaml), [itksnap](../recipes/itksnap/build.yaml), [quantiphyse](../recipes/quantiphyse/build.yaml) | Visualization, multimodal overlay, ROI delineation, and quantitative analysis |
 | [ants](../recipes/ants/build.yaml), [elastix](../recipes/elastix/build.yaml), [niftyreg](../recipes/niftyreg/build.yaml) | Multimodal PET-to-MR/CT registration |
@@ -35,16 +35,17 @@ and the multi-domain tagging list for a future `preclinical` or
 | [rabies](../recipes/rabies/build.yaml) | Rodent fMRI preprocessing, confound correction, and connectivity | `rodent imaging` |
 | [samri](../recipes/samri/build.yaml) | Small-animal MRI BIDS preprocessing and workflows (includes `Bru2Nii`) | `rodent imaging`, `functional imaging`, `workflows` |
 | [brkraw](../recipes/brkraw/build.yaml) | Bruker preclinical MRI raw-data conversion to NIfTI/JSON | `data organisation` |
+| [bidstools](../recipes/bidstools/build.yaml) | BIDS conversion bundle including `Bru2Nii` for Bruker studies alongside `heudiconv`, `dcm2niix`, `dcmtk`, and `xmedcon` | `data organisation` |
 
 ## First-Wave PET Container Additions
 
 | Recipe | Upstream | License | Primary Role |
 | --- | --- | --- | --- |
-| `pypet2bids` | [openneuropet/PET2BIDS](https://github.com/openneuropet/PET2BIDS) (PyPI `pypet2bids`) | `MIT` | PET DICOM/ECAT + blood/injection metadata conversion to PET-BIDS |
+| `pypet2bids` | [openneuropet/PET2BIDS](https://github.com/openneuropet/PET2BIDS) (PyPI `pypet2bids`) | `MIT` | Standalone CLI/Python packaging for PET DICOM/ECAT + blood/injection metadata conversion to PET-BIDS (complements the older version bundled inside `ezbids`) |
 | `petpvc` | [UCL/PETPVC](https://github.com/UCL/PETPVC) | `Apache-2.0` | Standalone partial volume correction CLI suite (GTM, RBV, Labbe, MG, IY, RL) |
 | `tpcclib` | [vesoik/tpcclib](https://gitlab.utu.fi/vesoik/tpcclib) | `GPL-3.0-or-later` | Turku PET Centre C CLI suite for dynamic PET, TACs, input functions, and kinetic modeling |
 | `amide` | [ferdymercury/amide](https://github.com/ferdymercury/amide) / Ubuntu `amide` | `GPL-2.0-or-later` | Multimodal clinical and preclinical microPET/microCT/MRI viewer and ROI/SUV analyzer |
-| `moosez` | [ENHANCE-PET/MOOSE](https://github.com/ENHANCE-PET/MOOSE) (PyPI `moosez`) | `Apache-2.0` | nnU-Net multi-organ segmentation for whole-body clinical and preclinical mouse PET/CT |
+| `moosez` | [ENHANCE-PET/MOOSE](https://github.com/ENHANCE-PET/MOOSE) (PyPI `moosez`) | `Apache-2.0` | nnU-Net multi-organ segmentation covering clinical whole-body PET/CT/MR models plus preclinical CT leg-muscle and preclinical multi-organ MR models |
 | `kinfitr` | [mathesong/kinfitr](https://github.com/mathesong/kinfitr) + [mathesong/bloodstream](https://github.com/mathesong/bloodstream) | `MIT` | R pharmacokinetic modeling and arterial blood processing for dynamic PET / PET-BIDS |
 
 ## Category Rollout
@@ -52,17 +53,19 @@ and the multi-domain tagging list for a future `preclinical` or
 Two categories are added to `CATEGORIES` in `builder/validation.py`:
 
 * `preclinical imaging` — broadens coverage beyond `rodent imaging` to include
-  Bruker conversion (`brkraw`), small-animal microPET/microCT (`amide`,
-  `moosez`), phantoms, and non-rodent preclinical models. `rodent imaging` is
-  retained for backwards compatibility.
+  Bruker conversion (`brkraw`, `bidstools`), small-animal microPET/microCT
+  (`amide`), preclinical CT/MR segmentation (`moosez`), phantoms, and
+  non-rodent preclinical models. `rodent imaging` is retained for backwards
+  compatibility.
 * `molecular imaging` — gives PET, SPECT, nuclear medicine, and tracer kinetic
   modeling containers a dedicated discovery category alongside modality-agnostic
   categories such as `image reconstruction` and `quantitative imaging`.
 
 Registry sync note: [NeuroContainers UI](https://github.com/neurodesk/neurocontainers-ui)
-maintains a matching `CATEGORIES` table in `components/common.ts` and
-`lib/zodSchema.ts`. Add both categories there as well so the web recipe editor
-recognizes them alongside `builder/validation.py`.
+maintains the `CATEGORIES` map in `components/common.ts`, and `lib/zodSchema.ts`
+derives its category enum from `Object.keys(CATEGORIES)`. Add both entries to
+`components/common.ts` (and verify the derived schema accepts them) before
+opening recipes with the new categories in the web editor.
 
 ## Multi-Domain Tagging List for a Future Preclinical / Molecular Imaging Desktop
 
@@ -91,7 +94,7 @@ so Neurodesktop users retain seamless access to them.
 ### 3. Shared dual-use recipes already in `neuroimaging` / `microscopy`
 
 * **DICOM, BIDS & data management:** `bidscoin`, `bidstools`, `datalad`, `dcm2niix`, `dicomtools`, `ezbids`, `globus`, `xnat`
-* **Visualization & manual ROI tools:** `fiji`, `itksnap`, `mipav`, `napari`, `slicer`, `voreen`
+* **Visualization & manual ROI tools:** `fiji`, `itksnap`, `mipav`, `napari`, `quantiphyse`, `slicer`, `voreen`
 * **Registration & general image math:** `ants`, `cmtk`, `convert3d`, `elastix`, `niftyreg`, `niimath`
 * **Organ & vessel segmentation:** `totalsegmentator`, `vesselvio`, `vmtk`
 * **Physics, statistics & scripting:** `irkernel`, `jamovi`, `libreoffice`, `root`, `rstudio`
