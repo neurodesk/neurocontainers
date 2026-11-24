@@ -9,7 +9,7 @@ copyright:
     url: https://github.com/openneuropet/PET2BIDS/blob/main/LICENSE
   - license: BSD-2-Clause
     name: dcm2niix license
-    url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
+    url: https://github.com/rordenlab/dcm2niix/blob/{{ context.dcm2niix_tag }}/license.txt
 
 architectures:
   - x86_64
@@ -52,32 +52,61 @@ build:
         PATH: /opt/pypet2bids/bin:/opt/dcm2niix-{{ context.dcm2niix_tag }}/bin:$PATH
 
     - install:
+        - libopenjp2-7
         - pigz
         - python3
         - python3-venv
 
     - run:
         - apt-get update -qq
-        - apt-get install -y -q --no-install-recommends cmake g++ make zlib1g-dev
-        - mkdir -p /tmp/dcm2niix-src/build
+        - apt-get install -y -q --no-install-recommends cmake g++ libopenjp2-7-dev make
+        - mkdir -p /tmp/dcm2niix-src/build /opt/pypet2bids/share/licenses
         - tar -xz -C /tmp/dcm2niix-src --strip-components 1 -f {{ get_file("dcm2niix_source") }}
-        - cmake -S /tmp/dcm2niix-src/console -B /tmp/dcm2niix-src/build -DCMAKE_INSTALL_PREFIX=/opt/dcm2niix-{{ context.dcm2niix_tag }}
+        - cmake -S /tmp/dcm2niix-src/console -B /tmp/dcm2niix-src/build -DCMAKE_INSTALL_PREFIX=/opt/dcm2niix-{{ context.dcm2niix_tag }} -DUSE_OPENJPEG=ON -DUSE_JPEGLS=ON
         - cmake --build /tmp/dcm2niix-src/build -j "$(nproc)"
         - cmake --install /tmp/dcm2niix-src/build
+        - install -m 0644 /tmp/dcm2niix-src/license.txt /opt/pypet2bids/share/licenses/dcm2niix-license.txt
+        - if [ -f /tmp/dcm2niix-src/console/charls/License.txt ]; then install -m 0644 /tmp/dcm2niix-src/console/charls/License.txt /opt/pypet2bids/share/licenses/charls-license.txt; fi
         - chmod -R a+rX /opt/dcm2niix-{{ context.dcm2niix_tag }}
         - rm -rf /tmp/dcm2niix-src
-        - apt-get purge -y --auto-remove cmake g++ make zlib1g-dev
+        - apt-get purge -y --auto-remove cmake g++ libopenjp2-7-dev make
         - rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
     - run:
         - python3 -m venv /opt/pypet2bids
         - /opt/pypet2bids/bin/python -m pip install --no-cache-dir "pypet2bids=={{ context.upstream_version }}"
+        - rm -rf /opt/pypet2bids/lib/python*/site-packages/pypet2bids/dcm2niix_binaries
+        - install -m 0644 {{ get_file("pet2bids_license") }} /opt/pypet2bids/share/licenses/PET2BIDS-LICENSE.txt
+        - /opt/pypet2bids/bin/python -c 'from pathlib import Path; import pypet2bids; p = Path(pypet2bids.__file__).parent / "dcm2niix4pet.py"; src = p.read_text(encoding="utf-8"); old = "    helper_functions.modify_config_file(\n        \"DEFAULT_METADATA_JSON\", module_folder / \"template_json.json\"\n    )"; new = "    try:\n        helper_functions.modify_config_file(\n            \"DEFAULT_METADATA_JSON\", module_folder / \"template_json.json\"\n        )\n    except OSError:\n        pass"; assert old in src, "Expected config init snippet not found in dcm2niix4pet.py"; p.write_text(src.replace(old, new, 1), encoding="utf-8")'
         - chmod -R a+rX /opt/pypet2bids
         - rm -rf /root/.cache/pip
 
 files:
   - name: dcm2niix_source
     url: https://github.com/rordenlab/dcm2niix/archive/refs/tags/{{ context.dcm2niix_tag }}.tar.gz
+  - name: pet2bids_license
+    contents: |
+      MIT License
+
+      Copyright (c) 2021 OPenNeuro PET team
+
+      Permission is hereby granted, free of charge, to any person obtaining a copy
+      of this software and associated documentation files (the "Software"), to deal
+      in the Software without restriction, including without limitation the rights
+      to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+      copies of the Software, and to permit persons to whom the Software is
+      furnished to do so, subject to the following conditions:
+
+      The above copyright notice and this permission notice shall be included in all
+      copies or substantial portions of the Software.
+
+      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+      IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+      FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+      AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+      LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+      OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+      SOFTWARE.
 
 deploy:
   bins:
@@ -135,10 +164,11 @@ readme: |-
 
   ### Citation
   ```
-  Galassi A, Norgaard M, Gonzalez-Escamilla G, Svarer C, Rorden C, Matheson GJ, Knudsen GM, Innis RB, Ganz M, Eierud C, Bilgel M, Pernet C. PET2BIDS: a library for converting Positron Emission Tomography data to BIDS. Journal of Open Source Software. 2024;9(100):6067. doi:10.21105/joss.06067
+  Galassi A, Norgaard M, Thomas AG, Gonzalez-Escamilla G, Svarer C, Rorden C, Matheson GJ, Knudsen GM, Innis RB, Ganz M, Eierud C, Bilgel M, Pernet C. PET2BIDS: a library for converting Positron Emission Tomography data to BIDS. Journal of Open Source Software. 2024;9(100):6067. doi:10.21105/joss.06067
 
   Li X, Morgan PS, Ashburner J, Smith J, Rorden C. The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 2016;264:47-56. doi:10.1016/j.jneumeth.2016.03.001
   ```
+  License texts are installed under `/opt/pypet2bids/share/licenses`.
   ----------------------------------
 
 icon: data:image/png;base64,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
