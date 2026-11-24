@@ -90,6 +90,7 @@ files:
 domains:
   - neuroimaging
 categories:
+  - molecular imaging
   - image reconstruction
 readme: |
   ## stir/{{ context.version }}
