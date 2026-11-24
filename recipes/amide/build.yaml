@@ -77,6 +77,7 @@ gui_apps:
 domains:
   - neuroimaging
   - preclinical
+  - molecular-imaging
 
 categories:
   - "molecular imaging"

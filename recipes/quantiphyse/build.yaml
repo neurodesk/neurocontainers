@@ -627,6 +627,7 @@ gui_apps:
 domains:
   - neuroimaging
   - preclinical
+  - molecular-imaging
 categories:
 - arterial spin labelling
 - quantitative imaging

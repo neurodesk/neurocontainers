@@ -34,6 +34,7 @@ domains:
   - neuroimaging
   - microscopy
   - preclinical
+  - molecular-imaging
 categories:
   - data organisation
 structured_readme:

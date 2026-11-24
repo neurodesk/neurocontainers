@@ -133,6 +133,7 @@ files:
 domains:
   - neuroimaging
   - preclinical
+  - molecular-imaging
 
 categories:
   - molecular imaging

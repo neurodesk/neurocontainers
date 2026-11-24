@@ -67,6 +67,7 @@ domains:
   - neuroimaging
   - microscopy
   - preclinical
+  - molecular-imaging
 categories:
   - image registration
   - structural imaging
