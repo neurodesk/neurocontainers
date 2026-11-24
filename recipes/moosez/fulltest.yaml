@@ -1,0 +1,150 @@
+name: moosez
+version: "3.2.2"
+
+tests:
+  - name: moosez launcher on PATH
+    description: Verify the moosez CLI wrapper is installed on PATH.
+    command: command -v moosez
+    expected_output_contains: "/opt/moosez/bin/moosez"
+
+  - name: Package version matches container version
+    description: Verify installed moosez Python distribution version matches container version.
+    command: python -c "import importlib.metadata as md; print(md.version('moosez'))"
+    expected_output_contains: "${version}"
+
+  - name: License notice present
+    description: Verify upstream Apache-2.0 license notice is installed.
+    command: test -s /opt/moosez/share/licenses/LICENSE.txt && grep -q "Apache License" /opt/moosez/share/licenses/LICENSE.txt && echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: Custom nnU-Net trainers pre-installed
+    description: Verify MOOSE custom trainers are pre-installed inside nnunetv2 and runtime check is read-only safe.
+    command: |
+      HOME=/sys python - <<'PYTEST'
+      from moosez.nnUNet_custom_trainer.utility import add_custom_trainers_to_local_nnunetv2
+      from nnunetv2.training.nnUNetTrainer.variants.MOOSE_custom_trainers import (
+          nnUNetTrainer_2000_epochs_DA5NoMirroring,
+      )
+
+      status = add_custom_trainers_to_local_nnunetv2()
+      assert "Custom trainer already installed" in status, status
+      assert nnUNetTrainer_2000_epochs_DA5NoMirroring is not None
+      print("custom trainers ok:", status)
+      PYTEST
+    expected_output_contains: "custom trainers ok:"
+
+  - name: CLI help works without HOME
+    description: Verify moosez --help runs cleanly with an unwritable HOME and lists clinical and preclinical models.
+    command: HOME=/sys moosez --help
+    expected_output_contains: "clin_ct_organs"
+
+  - name: Clinical and preclinical model registry
+    description: Verify moosez.models.AVAILABLE_MODELS includes clinical whole-body and preclinical models.
+    command: |
+      HOME=/sys python - <<'PYTEST'
+      from moosez import models
+
+      available = set(models.AVAILABLE_MODELS)
+      required = {
+          "clin_ct_organs",
+          "clin_ct_body",
+          "clin_pt_fdg_brain_v1",
+          "clin_mr_FVM",
+          "preclin_mr_all",
+          "preclin_ct_legs",
+      }
+      missing = required - available
+      assert not missing, f"Missing expected models: {missing}"
+      print(f"models ok: {len(available)} models registered")
+      PYTEST
+    expected_output_contains: "models ok:"
+
+  - name: Read-only runtime caches, MOOSEZ_MODELS_DIR override, and NIfTI pipeline
+    description: Verify read-only HOME=/sys execution, private default cache, MOOSEZ_MODELS_DIR override, device check, core imports, and NIfTI image processing in a temp dir.
+    command: |
+      env -u MOOSEZ_MODELS_DIR -u MPLCONFIGDIR -u XDG_CACHE_HOME -u TORCH_HOME HOME=/sys python - <<'PYTEST'
+      import os
+      import shutil
+      import stat
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import nibabel as nib
+      import nnunetv2
+      import numpy as np
+      import SimpleITK as sitk
+      import torch
+
+      from moosez import file_utilities, image_processing, models, system
+      from moosez.nnUNet_custom_trainer.utility import add_custom_trainers_to_local_nnunetv2
+
+      assert shutil.which("dcm2niix"), "dcm2niix not found on PATH"
+
+      # Verify private per-UID default cache and non-site-packages MODELS_DIRECTORY_PATH.
+      cache = Path(f"/tmp/moosez-{os.geteuid()}")
+      info = cache.lstat()
+      assert stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+      assert stat.S_IMODE(info.st_mode) == 0o700
+      for env_var in ("MPLCONFIGDIR", "XDG_CACHE_HOME", "TORCH_HOME"):
+          val = os.environ.get(env_var, "")
+          assert val.startswith(str(cache) + "/"), f"{env_var}={val!r}"
+      assert "site-packages" not in system.MODELS_DIRECTORY_PATH, system.MODELS_DIRECTORY_PATH
+      assert system.MODELS_DIRECTORY_PATH.endswith("models/nnunet_trained_models"), system.MODELS_DIRECTORY_PATH
+
+      # Verify MOOSEZ_MODELS_DIR override propagates cleanly to system and Model defaults.
+      with tempfile.TemporaryDirectory(prefix="moosez-test-") as tmp:
+          custom_models = Path(tmp) / "custom_models"
+          env = {**os.environ, "HOME": "/sys", "MOOSEZ_MODELS_DIR": str(custom_models)}
+          check_code = (
+              "import inspect; from moosez import models, system; "
+              "default_dir = inspect.signature(models.Model.__init__).parameters['base_directory'].default; "
+              "assert system.MODELS_DIRECTORY_PATH == default_dir; "
+              "print(system.MODELS_DIRECTORY_PATH)"
+          )
+          out = subprocess.check_output([sys.executable, "-c", check_code], env=env, text=True).strip()
+          expected_models = str(custom_models / "models" / "nnunet_trained_models")
+          assert out == expected_models, f"{out} != {expected_models}"
+
+          # Verify custom trainer check and accelerator detection without writing to site-packages or HOME.
+          trainer_status = add_custom_trainers_to_local_nnunetv2()
+          assert "Custom trainer already installed" in trainer_status, trainer_status
+          accel, _ = system.check_device()
+          assert accel in {"cpu", "cuda", "mps"}, accel
+
+          # Exercise NIfTI I/O, orientation, chunking, resampling, and subject directory helpers.
+          subject_dir = Path(tmp) / "sub01"
+          subject_dir.mkdir()
+          arr = np.zeros((16, 16, 16), dtype=np.float32)
+          arr[4:12, 4:12, 4:12] = 100.0
+          nifti_path = subject_dir / "CT_synthetic.nii.gz"
+          nib.save(nib.Nifti1Image(arr, np.diag([2.0, 2.0, 2.0, 1.0])), str(nifti_path))
+
+          found = file_utilities.get_modality_NIFTI_files(str(subject_dir), "CT_")
+          assert found == [str(nifti_path)], found
+          assert file_utilities.get_nifti_file_stem(str(nifti_path)) == "CT_synthetic"
+
+          img = image_processing.image_read(str(nifti_path))
+          orient = image_processing.image_get_orientation_code(img)
+          assert len(orient) == 3, orient
+          reoriented = image_processing.image_reorient(img, "RAS")
+          assert image_processing.image_get_orientation_code(reoriented) == "RAS"
+
+          resampled = image_processing.ImageResampler.resample_image_SimpleITK_DASK_array(
+              reoriented, "linear", output_spacing_zyx=(2.0, 2.0, 2.0)
+          )
+          assert resampled.shape == (16, 16, 16), resampled.shape
+
+          vol_4d = resampled[None, ...]
+          splits = image_processing.ImageChunker.determine_splits(vol_4d)
+          chunks, locs = image_processing.ImageChunker.array_to_chunks(vol_4d, splits, (0, 2, 2, 2))
+          rebuilt = image_processing.ImageChunker.chunks_to_array(chunks, locs, vol_4d.shape)
+          assert rebuilt.shape == vol_4d.shape and np.allclose(rebuilt, vol_4d)
+
+          moose_dir, seg_dir, stats_dir = file_utilities.moose_folder_structure(str(subject_dir))
+          assert Path(moose_dir).is_dir() and Path(seg_dir).is_dir() and Path(stats_dir).is_dir()
+
+      print(f"read-only runtime and pipeline ok: accel={accel} torch={torch.__version__} sitk={sitk.Version_VersionString()} nnunetv2={nnunetv2.__name__}")
+      PYTEST
+    expected_output_contains: "read-only runtime and pipeline ok:"
