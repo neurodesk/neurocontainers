@@ -1,0 +1,658 @@
+name: histoqc
+version: 2.0.0
+
+description: Automated whole-slide image (WSI) quality control and artifact detection (pen marks, blur, tissue folds, coverslip edges) for digital dermatopathology.
+
+copyright:
+  - license: BSD-3-Clause-Clear
+    name: HistoQC license
+    url: https://github.com/choosehappy/HistoQC/blob/{{ context.source_commit }}/LICENSE.txt
+  - license: BSD-3-Clause-Clear
+    name: CohortFinder license
+    url: https://github.com/choosehappy/CohortFinder/blob/02cc538ee4de47dbbeb63ced95f38f8ba8a40ba6/LICENSE
+  - license: MIT
+    name: lazy-property license
+    url: https://github.com/jackmaney/lazy-property/blob/a412bf3d3042eeeb6df72d0ccf5bb45464b90ef4/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "2.0"
+  source_commit: "376f49a53a8d3891b3f2cf2bd16aa62f6c71f5f5"
+  source_sha256: "140edc2421f051db6470a7f98acb0279c00519fdfabee8ec493c4e3bdee1466f"
+  cohortfinder_version: "1.0.1"
+  geojson_version: "3.3.0"
+  lazy_property_version: "0.0.1"
+  # umap-learn >= 0.5.8 imports ClassNamePrefixFeaturesOutMixin, absent in Ubuntu 22.04 sklearn 0.23.2.
+  umap_learn_version: "0.5.7"
+
+auto_update:
+  method: sources
+  container_version: histoqc
+  sources:
+    - id: histoqc
+      method: github_commit
+      repo: choosehappy/HistoQC
+      ref: master
+      version_file: pyproject.toml
+      version_regex: 'version = "(?P<version>[0-9.]+)"'
+      target:
+        variable: source_commit
+        fulltest_variable: source_commit
+        variables:
+          upstream_version: version
+    - id: histoqc_source_digest
+      method: http_digest
+      url: https://github.com/choosehappy/HistoQC/archive/{{ context.source_commit }}.tar.gz
+      target:
+        variable: source_sha256
+    - id: cohortfinder
+      method: pypi
+      package: cohortfinder
+      dependency: true
+      target:
+        variable: cohortfinder_version
+    - id: geojson
+      method: pypi
+      package: geojson
+      dependency: true
+      target:
+        variable: geojson_version
+    - id: lazy_property
+      method: pypi
+      package: lazy-property
+      dependency: true
+      target:
+        variable: lazy_property_version
+    - id: umap_learn
+      method: pypi
+      package: umap-learn
+      version_regex: '^(?P<version>0\.5\.[0-7])$'
+      dependency: true
+      target:
+        variable: umap_learn_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/histoqc/wrappers:/opt/histoqc/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libopenslide0
+        - libtk8.6
+        - procps
+        - python3
+        - python3-dill
+        - python3-flask
+        - python3-matplotlib
+        - python3-numba
+        - python3-numpy
+        - python3-opencv
+        - python3-openslide
+        - python3-pandas
+        - python3-pil
+        - python3-pip
+        - python3-pynndescent
+        - python3-pytest
+        - python3-requests
+        - python3-scipy
+        - python3-shapely
+        - python3-skimage
+        - python3-sklearn
+        - python3-tqdm
+        - python3-venv
+
+    - run:
+        # Ubuntu 22.04 provides Python 3.10 (upstream HistoQC's target) and system APT
+        # OpenSlide + scientific stack so zero bundled native .so wheels ship under /opt/histoqc.
+        - python3 -m venv --system-site-packages /opt/histoqc
+        - /opt/histoqc/bin/python -m pip install --no-cache-dir --upgrade pip
+        - >-
+          /opt/histoqc/bin/python -m pip install --no-cache-dir
+          "geojson=={{ context.geojson_version }}"
+          "lazy-property=={{ context.lazy_property_version }}"
+        - >-
+          /opt/histoqc/bin/python -m pip install --no-cache-dir --no-deps
+          "cohortfinder=={{ context.cohortfinder_version }}"
+          "umap-learn=={{ context.umap_learn_version }}"
+        - >-
+          mkdir -p /tmp/histoqc-src
+          && tar -xzf {{ get_file("histoqc_source") }} --strip-components=1 -C /tmp/histoqc-src
+          && /opt/histoqc/bin/python -c 'from pathlib import Path; p = Path("/tmp/histoqc-src/pyproject.toml"); s = p.read_text(); old = "packages = [\"histoqc\", \"histoqc.ui\", \"histoqc.data\", \"histoqc.config\"]"; new = "packages = [\"histoqc\", \"histoqc.ui\", \"histoqc.data\", \"histoqc.config\", \"histoqc.import_wrapper\", \"histoqc.annotations\", \"histoqc.annotations.annotation\", \"histoqc.annotations.io_utils\"]"; assert old in s, s; p.write_text(s.replace(old, new, 1))'
+          && SETUPTOOLS_SCM_PRETEND_VERSION="{{ context.upstream_version }}" /opt/histoqc/bin/python -m pip install --no-cache-dir --no-deps /tmp/histoqc-src
+          && pkg_dir="$(/opt/histoqc/bin/python -c 'import pathlib, histoqc; print(pathlib.Path(histoqc.__file__).parent)')"
+          && cp -a /tmp/histoqc-src/histoqc/config/*.ini "$pkg_dir/config/"
+          && cp -a /tmp/histoqc-src/histoqc/data/. "$pkg_dir/data/"
+          && cp -a /tmp/histoqc-src/histoqc/ui/. "$pkg_dir/ui/"
+          && mkdir -p /opt/histoqc/wrappers /opt/histoqc/share/licenses
+          && install -m 0644 /tmp/histoqc-src/LICENSE.txt /opt/histoqc/share/licenses/HISTOQC-LICENSE.txt
+          && install -m 0644 {{ get_file("cohortfinder_license") }} /opt/histoqc/share/licenses/COHORTFINDER-LICENSE.txt
+          && install -m 0644 {{ get_file("lazy_property_license") }} /opt/histoqc/share/licenses/LAZY-PROPERTY-LICENSE.txt
+          && rm -rf /tmp/histoqc-src
+        - /opt/histoqc/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/histoqc/bin/python -c "import pathlib, histoqc, histoqc.__main__, histoqc.BaseImage, histoqc.annotations, histoqc.config.__main__, histoqc.data.__main__, histoqc.ui.__main__, numpy, openslide, scipy, shapely, skimage, sklearn, umap;
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (numpy, openslide, scipy, shapely, skimage, sklearn));
+          so_files = list(pathlib.Path('/opt/histoqc').rglob('*.so*'));
+          assert not so_files, so_files"
+        - install -m 0755 {{ get_file("histoqc_launcher") }} /opt/histoqc/wrappers/_histoqc_launcher.py
+        - >-
+          for cmd in histoqc histoqc.config histoqc.data histoqc.ui; do
+          test -x "/opt/histoqc/bin/$cmd";
+          ln -sf _histoqc_launcher.py "/opt/histoqc/wrappers/$cmd";
+          done
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/histoqc
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: histoqc_source
+    url: https://github.com/choosehappy/HistoQC/archive/{{ context.source_commit }}.tar.gz
+    sha256: "{{ context.source_sha256 }}"
+  - name: cohortfinder_license
+    url: https://raw.githubusercontent.com/choosehappy/CohortFinder/02cc538ee4de47dbbeb63ced95f38f8ba8a40ba6/LICENSE
+  - name: lazy_property_license
+    url: https://raw.githubusercontent.com/jackmaney/lazy-property/a412bf3d3042eeeb6df72d0ccf5bb45464b90ef4/LICENSE
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/histoqc/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_histoqc_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for HistoQC caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".histoqc-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="histoqc-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+
+
+              def resolve_tmp_parent() -> str:
+                  cwd = os.getcwd()
+                  if is_writable_dir(cwd):
+                      return cwd
+                  return tempfile.gettempdir()
+
+
+              def resolve_log_path(filename: str = "error.log") -> str:
+                  ensure_runtime_env()
+                  p = Path(filename)
+                  if p.is_absolute():
+                      return filename
+                  if is_writable_dir(os.getcwd()):
+                      return filename
+                  for key in ("HISTOQC_LOG_DIR", "XDG_CACHE_HOME"):
+                      env_dir = os.environ.get(key)
+                      if is_writable_dir(env_dir):
+                          assert env_dir is not None
+                          return str(Path(env_dir) / filename)
+                  return str(_private_subdir("logs") / filename)
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_histoqc_runtime.pth").write_text(
+          "import _histoqc_runtime\n",
+          encoding="utf-8",
+      )
+      pipeline_py = site_packages / "histoqc" / "_pipeline.py"
+      src = pipeline_py.read_text(encoding="utf-8")
+      replacements = (
+          ("'filename': DEFAULT_LOG_FN,", "'filename': _histoqc_runtime.resolve_log_path(DEFAULT_LOG_FN),"),
+          ("if handler.baseFilename != os.path.join(os.getcwd(), DEFAULT_LOG_FN):", "if os.path.basename(handler.baseFilename) != DEFAULT_LOG_FN:"),
+          ("destination = os.path.join(destination, os.path.relpath(handler.baseFilename, os.getcwd()))", "destination = os.path.join(destination, os.path.basename(handler.baseFilename))"),
+      )
+      for old, new in replacements:
+          assert src.count(old) == 1, f"Expected unique line {old!r} in {pipeline_py}"
+          src = src.replace(old, new, 1)
+      pipeline_py.write_text("import _histoqc_runtime\n" + src, encoding="utf-8")
+
+      data_init_py = site_packages / "histoqc" / "data" / "__init__.py"
+      data_src = data_init_py.read_text(encoding="utf-8")
+      old_tmp = 'TemporaryDirectory(prefix=".histoqc_pkg_data_tmp", dir=os.getcwd())'
+      assert data_src.count(old_tmp) == 1, f"Expected unique TemporaryDirectory line in {data_init_py}"
+      data_init_py.write_text(
+          "import _histoqc_runtime\n"
+          + data_src.replace(
+              old_tmp,
+              'TemporaryDirectory(prefix=".histoqc_pkg_data_tmp", dir=_histoqc_runtime.resolve_tmp_parent())',
+              1,
+          ),
+          encoding="utf-8",
+      )
+  - name: histoqc_launcher
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run HistoQC CLIs with private non-/home cache paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ALLOWED_BINS = {"histoqc", "histoqc.config", "histoqc.data", "histoqc.ui"}
+      ENV_SUBDIRS = (
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".histoqc-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          prog = os.path.basename(sys.argv[0])
+          if prog not in ALLOWED_BINS:
+              prog = "histoqc"
+          cmd = [f"/opt/histoqc/bin/{prog}", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="histoqc.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, preexec_fn=os.setpgrp)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - histoqc
+    - histoqc.config
+    - histoqc.data
+    - histoqc.ui
+
+domains:
+  - microscopy
+
+categories:
+  - "digital pathology"
+  - "quality control"
+  - "optical imaging"
+
+readme: |-
+  ----------------------------------
+  ## histoqc/{{ context.version }} ##
+
+  HistoQC (commit `{{ context.source_commit }}`) is an open-source quality control
+  pipeline for digital pathology whole-slide images (WSIs), detecting tissue area,
+  pen markings, out-of-focus blur, air bubbles, and staining outliers.
+
+  ### Included CLI Tools
+  ```
+  histoqc          Run WSI quality-control pipeline
+  histoqc.config   Inspect or export built-in HistoQC pipeline configurations
+  histoqc.data     Inspect bundled HistoQC data assets
+  histoqc.ui       Launch the local HTML/Flask QC review dashboard
+  ```
+
+  ### Example
+  ```
+  ml histoqc/{{ context.version }}
+  histoqc -c default -o /tmp/histoqc_out /data/*.svs
+  ```
+
+  Documentation: https://histoqc.readthedocs.io/
+  License texts (`HISTOQC-LICENSE.txt`, `COHORTFINDER-LICENSE.txt`,
+  `LAZY-PROPERTY-LICENSE.txt`) are installed under `/opt/histoqc/share/licenses/`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACYElEQVR42u2bPUsDQRCGN0uqgJXapU0hKAQrhWCTMkr+QCBF/oKCRUqLQAL+ghRCsA/E0kaEWIkQCyGdCBbRSkir1cp5tzv7kY03+zGVmNmD5533ZibkjpAYYUdBJ3l36+DbBajnj4eCVQFcATcRouAjuI4Q1Hd4GQv1HV7GREOAh9ho6GOQhlJ9EWN0QEjV57FGB0QBogBhR1El6Xoy0r7w68t7blDnp2dhO6A36JPeoG/PASZxdLyfmwB3k8ewHcDEV3FBnAJxCiCIt4tb4Wflbt1fASDwdM66hKCY4VfJR+2ANMzoaZnJaVVL3HO2nUAxwkP/t+0EihH+P0XIrQfI4HXz0Atg27q2rhc3wShAFCCf4M35VfLQL0Llbj3TuFrVEtjlRfA7lyfCM1+fS5wCQJCqmyAEzmJjs4RXAJ4LVG2ehq+MO5mceXP4+3ejXSM3V/f4eoDJLp+Er4w7XHjeZ412DWcT1BGBwUPgIjEIIWS2mOKcAioiqNzzotsgeTtAIuS6B5S7dSUhVCufhHZmCojcoNvNRcIxUWaLKdnbPnRvEzStPjsnO+/cKsyzuYn1nRSA1+B48DrTgrpaeVHVdeCdEkC2+ZnAr3UK6PxAyQu2xc2bwz8NTfd+l+WjdYBoj4fWYCh4I5CQxMPSGJ8SS25waUDmjKRDoOqnBWAPUKPuAaKq6cx52XVQO0DFCbqVTzvACQF4X2hUpgJU+YwALopgavvkCxRF4lAwKEgICBzsAa64YNVIvz4TfxeQKeRz9YUO8FEEERPVPeATPLcJ8iLYFyddFcLnPhbDdvwA0ikNxcV6/BkAAAAASUVORK5CYII=

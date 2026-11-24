@@ -1,0 +1,262 @@
+name: histoqc
+version: 2.0.0
+upstream_version: "2.0"
+source_commit: "376f49a53a8d3891b3f2cf2bd16aa62f6c71f5f5"
+
+tests:
+  - name: histoqc wrappers available on PATH and all subcommand CLIs launch cleanly
+    description: Verify all four deployed histoqc wrappers resolve on PATH and execute --help/--list cleanly.
+    command: |
+      set -e
+      command -v histoqc
+      command -v histoqc.config
+      command -v histoqc.data
+      command -v histoqc.ui
+      env -u HOME -u USER -u LOGNAME histoqc.ui --help | grep -q "resultsfilepath"
+      env -u HOME -u USER -u LOGNAME histoqc.config --list | grep -q "light"
+      env -u HOME -u USER -u LOGNAME histoqc.data --help | grep -q "out_dir"
+    expected_output_contains: "/opt/histoqc/wrappers/histoqc"
+
+  - name: package version matches recipe, system APT libs used, and zero bundled .so files
+    description: Verify histoqc matches upstream_version, OpenSlide and scientific stack come from Ubuntu APT, and zero native .so libraries are bundled under /opt/histoqc.
+    command: |
+      set -e
+      /opt/histoqc/bin/python - <<'PY'
+      import importlib.metadata as md
+      import pathlib
+      import histoqc
+      import numpy
+      import openslide
+      import scipy
+      import shapely
+      import skimage
+      import sklearn
+
+      assert md.version("histoqc") == "${upstream_version}", md.version("histoqc")
+      for mod in (numpy, openslide, scipy, shapely, skimage, sklearn):
+          assert mod.__file__.startswith("/usr/lib/python3/dist-packages/"), mod.__file__
+      so_files = list(pathlib.Path("/opt/histoqc").rglob("*.so*"))
+      assert not so_files, so_files
+      print(f"histoqc={md.version('histoqc')} openslide={openslide.__library_version__}")
+      PY
+    expected_output_contains: "histoqc=${upstream_version}"
+
+  - name: license notices installed
+    description: Verify HistoQC, CohortFinder, and lazy-property license files are installed.
+    command: |
+      set -e
+      test -s /opt/histoqc/share/licenses/HISTOQC-LICENSE.txt
+      grep -q "Clear BSD License" /opt/histoqc/share/licenses/HISTOQC-LICENSE.txt
+      test -s /opt/histoqc/share/licenses/COHORTFINDER-LICENSE.txt
+      grep -q "Clear BSD License" /opt/histoqc/share/licenses/COHORTFINDER-LICENSE.txt
+      grep -q "Copyright (c) 2019 Andrew Janowczyk" /opt/histoqc/share/licenses/COHORTFINDER-LICENSE.txt
+      test -s /opt/histoqc/share/licenses/LAZY-PROPERTY-LICENSE.txt
+      grep -q "Copyright (c) 2015 Jack Maney" /opt/histoqc/share/licenses/LAZY-PROPERTY-LICENSE.txt
+      grep -q "Permission is hereby granted, free of charge" /opt/histoqc/share/licenses/LAZY-PROPERTY-LICENSE.txt
+      echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: wrapper isolates process-group signals, cleans up on SIGHUP, and preserves piped and PTY stdin
+    description: Verify the installed histoqc wrapper handles SIGINT/SIGHUP cleanup, noexec /tmp, and foreground PTY stdin cleanly.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, sys, tempfile, termios, time
+
+      src = open("/opt/histoqc/wrappers/_histoqc_launcher.py").read()
+      py = sys.executable
+
+      def make_wrapper(path, stub_path):
+          patched = src.replace(
+              'cmd = [f"/opt/histoqc/bin/{prog}", *sys.argv[1:]]',
+              f'cmd = [{py!r}, {stub_path!r}, *sys.argv[1:]]',
+          )
+          assert patched != src
+          open(path, "w").write(patched)
+
+      def run_in_pty(argv, env, on_ready=None, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if on_ready:
+              on_ready()
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('XDG_CACHE_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          wrapper = os.path.join(td, "histoqc")
+          make_wrapper(wrapper, stub)
+
+          env = os.environ.copy()
+          for k in ("MPLCONFIGDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
+              env.pop(k, None)
+
+          r = subprocess.run([py, wrapper, "stdin"], input="histoqc-pipe\n", capture_output=True, text=True, env=env, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:histoqc-pipe", (r.returncode, r.stdout, r.stderr)
+
+          rc, out = run_in_pty([py, wrapper, "stdin"], env=env, send_bytes=b"histoqc-pty\n")
+          assert rc == 0 and "GOT:histoqc-pty" in out, (rc, out)
+
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([py, wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_dir = open(ready_hup).read().strip()
+          assert scratch_dir and os.path.isdir(scratch_dir), scratch_dir
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_dir)), scratch_dir
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: offline HistoQC run on synthetic H&E skin-biopsy TIFF under unset/read-only HOME
+    description: Synthesize a tiled TIFF readable by OpenSlide simulating an H&E skin biopsy with background and tissue, run histoqc CLI offline, and verify results.tsv and output masks.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      /opt/histoqc/bin/python - "$tmpdir" <<'PY'
+      import os
+      import sys
+      import numpy as np
+      import tifffile
+      import openslide
+
+      td = sys.argv[1]
+      # 1024x1024 synthetic H&E biopsy slide on white glass background
+      img = np.full((1024, 1024, 3), 245, dtype=np.uint8)
+      yy, xx = np.ogrid[:1024, :1024]
+      tissue = ((xx - 512) ** 2 + (yy - 512) ** 2) < 320 ** 2
+      # Eosin pink dermis + hematoxylin purple epidermis band
+      img[tissue] = [215, 135, 175]
+      epidermis = tissue & (yy < 330)
+      img[epidermis] = [120, 75, 165]
+      # Add texture so blur/contrast metrics are well-defined
+      rng = np.random.default_rng(7)
+      noise = rng.integers(-18, 19, size=(1024, 1024, 3))
+      img = np.clip(img.astype(np.int16) + noise * tissue[..., None], 0, 255).astype(np.uint8)
+
+      tif_path = os.path.join(td, "skin_biopsy.tif")
+      tifffile.imwrite(tif_path, img, tile=(256, 256), photometric="rgb")
+      with openslide.OpenSlide(tif_path) as slide:
+          assert slide.dimensions == (1024, 1024), slide.dimensions
+      PY
+
+      env -u HOME -u USER -u LOGNAME -u MPLCONFIGDIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME \
+        histoqc --help | grep -q "outputdir"
+      sed "s/^image_work_size = 1.25x/image_work_size = 512\nbase_mag = 20/" \
+        /opt/histoqc/lib/python3.10/site-packages/histoqc/config/config_light.ini > "$tmpdir/light_20x.ini"
+      HOME=/sys MPLCONFIGDIR=/sys/unwritable-mpl XDG_CACHE_HOME=/sys/unwritable-cache \
+        histoqc -n 1 -c "$tmpdir/light_20x.ini" -o "$tmpdir/out" "$tmpdir/skin_biopsy.tif"
+      test -s "$tmpdir/out/results.tsv"
+      test -f "$tmpdir/out/error.log"
+      test -s "$tmpdir/out/skin_biopsy.tif/skin_biopsy.tif_mask_use.png"
+      grep -q "skin_biopsy.tif" "$tmpdir/out/results.tsv"
+      echo "histoqc offline workflow ok"
+    expected_output_contains: "histoqc offline workflow ok"
+
+  - name: runtime hook preserves cache across fork and cleans up on SIGTERM/SIGHUP (including PID 1)
+    description: Verify direct /opt/histoqc/bin/python keeps parent cache across os.fork()+sys.exit(0), cleans up on SIGTERM/SIGHUP, and exits cleanly under the PID 1 signal path.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import os, pathlib, signal, subprocess, tempfile
+
+      py = "/opt/histoqc/bin/python"
+      with tempfile.TemporaryDirectory() as td:
+          env = {"PATH": os.environ["PATH"], "TMPDIR": td}
+
+          fork_code = (
+              "import os, sys, _histoqc_runtime as rt\n"
+              "root = rt._CACHE_ROOT\n"
+              "assert root is not None and root.is_dir(), root\n"
+              "pid = os.fork()\n"
+              "if pid == 0:\n"
+              "    sys.exit(0)\n"
+              "_, st = os.waitpid(pid, 0)\n"
+              "assert os.WIFEXITED(st) and os.WEXITSTATUS(st) == 0, st\n"
+              "assert root.is_dir(), root\n"
+              "print(root)\n"
+          )
+          r = subprocess.run([py, "-c", fork_code], env=env, capture_output=True, text=True, timeout=30)
+          assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+          assert not pathlib.Path(r.stdout.strip()).exists(), r.stdout
+
+          for sig in (signal.SIGTERM, signal.SIGHUP):
+              sp = subprocess.Popen(
+                  [py, "-c", "import time, _histoqc_runtime as rt; print(rt._CACHE_ROOT, flush=True); time.sleep(30)"],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir = sp.stdout.readline().strip()
+              assert cdir and os.path.isdir(cdir), cdir
+              os.kill(sp.pid, sig)
+              rc = sp.wait(timeout=10)
+              assert rc == -sig.value, (sig, rc, sp.stderr.read())
+              assert not os.path.exists(cdir), cdir
+
+              pid1_code = (
+                  "import os, time, _histoqc_runtime as rt\n"
+                  "rt._CACHE_OWNER_PID = 1\n"
+                  "os.getpid = lambda: 1\n"
+                  "print(rt._CACHE_ROOT, flush=True)\n"
+                  "time.sleep(30)\n"
+              )
+              sp1 = subprocess.Popen(
+                  [py, "-c", pid1_code],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir1 = sp1.stdout.readline().strip()
+              assert cdir1 and os.path.isdir(cdir1), cdir1
+              os.kill(sp1.pid, sig)
+              rc1 = sp1.wait(timeout=10)
+              assert rc1 == 128 + sig.value, (sig, rc1, sp1.stderr.read())
+              assert not os.path.exists(cdir1), cdir1
+          assert os.listdir(td) == [], os.listdir(td)
+      print("runtime hook signal and fork ok")
+      PY
+    expected_output_contains: "runtime hook signal and fork ok"
