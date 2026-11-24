@@ -1,5 +1,5 @@
 name: hnncore
-version: "0.6.1"
+version: "1.0.0"
 
 copyright:
   - license: BSD-3-Clause
@@ -10,7 +10,7 @@ architectures:
   - aarch64
 
 variables:
-  hnn_core_version: "0.6.1"
+  hnn_core_version: "1.0.0"
   neuron_commit: 34cf696c4ba947a070abc008b1fc58939d3e6418
 
 auto_update:
