@@ -82,6 +82,7 @@ tests:
 domains:
   - neuroimaging
   - microscopy
+  - dermatology
 categories:
   - quality control
   - image segmentation

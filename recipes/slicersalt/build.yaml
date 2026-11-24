@@ -101,6 +101,7 @@ readme: |
 domains:
   - neuroimaging
   - microscopy
+  - dermatology
 categories:
   - "quantitative imaging"
   - "structural imaging"

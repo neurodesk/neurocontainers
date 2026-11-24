@@ -104,6 +104,7 @@ domains:
   - microscopy
   - neuroimaging
   - datascience
+  - dermatology
 
 categories:
   - workflows
