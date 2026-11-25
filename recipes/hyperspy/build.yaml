@@ -1,0 +1,635 @@
+name: hyperspy
+version: 2.5.0
+
+description: Multi-dimensional hyperspectral and spectroscopic data analysis for Raman, reflectance, and fluorescence optical skin imaging.
+
+copyright:
+  - license: GPL-3.0-or-later
+    name: HyperSpy license
+    url: https://github.com/hyperspy/hyperspy/blob/v{{ context.upstream_version }}/COPYING.txt
+  - license: GPL-3.0-or-later
+    name: RosettaSciIO license
+    url: https://github.com/hyperspy/rosettasciio/blob/v{{ context.rosettasciio_version }}/COPYING.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "2.5.0"
+  # Coordinated GPL-3.0-or-later native extension pin (rsciio/bruker/unbcf_fast)
+  # paired with its matching PyPI sdist SHA-256 corresponding source archive.
+  rosettasciio_version: "0.15.0"
+  rosettasciio_source_sha256: "fcf6e6e3675d766231e6eae59b951d2850e3363fd1c9a23957d8408f2833132f"
+
+auto_update:
+  method: sources
+  container_version: hyperspy
+  sources:
+    - id: hyperspy
+      method: pypi
+      package: hyperspy
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: rosettasciio
+      method: pypi
+      package: rosettasciio
+      dependency: true
+      target:
+        variable: rosettasciio_version
+        fulltest_variable: rosettasciio_version
+    - id: rosettasciio_source_digest
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/source/r/rosettasciio/rosettasciio-{{ context.rosettasciio_version }}.tar.gz
+      dependency: true
+      target:
+        variable: rosettasciio_source_sha256
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/hyperspy/wrappers:/opt/hyperspy/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-h5py
+        - python3-matplotlib
+        - python3-numpy
+        - python3-pil
+        - python3-pip
+        - python3-scipy
+        - python3-skimage
+        - python3-venv
+
+    - run:
+        # Inherit Ubuntu 26.04 system numpy/scipy/h5py/matplotlib/skimage so no
+        # PyPI bundled GNU runtime libraries (libquadmath/libgfortran/libgomp) ship.
+        - python3 -m venv --system-site-packages /opt/hyperspy
+        - /opt/hyperspy/bin/python -m pip install --no-cache-dir "hyperspy=={{ context.upstream_version }}" "rosettasciio=={{ context.rosettasciio_version }}"
+        - /opt/hyperspy/bin/python -m pip check
+        - /opt/hyperspy/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/hyperspy/bin/python -c "import pathlib, h5py, hyperspy, matplotlib, numpy, rsciio, scipy, skimage;
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (numpy, scipy, h5py, matplotlib, skimage));
+          bad_libs = [str(p) for p in pathlib.Path('/opt/hyperspy').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libzmq'))];
+          assert not bad_libs, bad_libs"
+        - mkdir -p /opt/hyperspy/wrappers /opt/hyperspy/share/licenses /opt/hyperspy/share/src
+        - install -m 0755 {{ get_file("hyperspy_info_cli") }} /opt/hyperspy/bin/hyperspy-info
+        - install -m 0755 {{ get_file("hyperspy_info_wrapper") }} /opt/hyperspy/wrappers/hyperspy-info
+        - install -m 0644 {{ get_file("hyperspy_license") }} /opt/hyperspy/share/licenses/HYPERSPY-COPYING.txt
+        - install -m 0644 {{ get_file("rosettasciio_license") }} /opt/hyperspy/share/licenses/ROSETTASCIIO-COPYING.txt
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/hyperspy/share/licenses/GPL-3.0.txt
+        - install -m 0644 {{ get_file("rosettasciio_source") }} /opt/hyperspy/share/src/rosettasciio-{{ context.rosettasciio_version }}.tar.gz
+        - install -m 0644 {{ get_file("gpl_source_notice") }} /opt/hyperspy/share/licenses/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/hyperspy
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: hyperspy_license
+    url: https://raw.githubusercontent.com/hyperspy/hyperspy/v{{ context.upstream_version }}/COPYING.txt
+  - name: rosettasciio_license
+    url: https://raw.githubusercontent.com/hyperspy/rosettasciio/v{{ context.rosettasciio_version }}/COPYING.txt
+  - name: rosettasciio_source
+    url: https://files.pythonhosted.org/packages/source/r/rosettasciio/rosettasciio-{{ context.rosettasciio_version }}.tar.gz
+    sha256: "{{ context.rosettasciio_source_sha256 }}"
+  - name: gpl_source_notice
+    contents: |
+      HyperSpy {{ context.upstream_version }} Container — License & Source Notice
+      ===========================================================================
+      HyperSpy {{ context.upstream_version }} (GPL-3.0-or-later) is pure Python;
+      its complete source code is installed directly under
+      /opt/hyperspy/lib/python*/site-packages/hyperspy/.
+      Container modification notice (GPL-3.0 section 5a): hyperspy/defaults_parser.py
+      was patched during container build to resolve config_path via
+      _hyperspy_runtime.resolve_hyperspy_config_dir() (honoring HYPERSPY_CONFIG_DIR
+      and XDG_CONFIG_HOME with a private temporary fallback) so HyperSpy runs when
+      /home is read-only or unavailable.
+
+      RosettaSciIO {{ context.rosettasciio_version }} (GPL-3.0-or-later) includes
+      the compiled Cython extension rsciio/bruker/unbcf_fast. Its exact matching
+      corresponding source tarball is bundled inside this image at:
+        /opt/hyperspy/share/src/rosettasciio-{{ context.rosettasciio_version }}.tar.gz
+
+      License texts are installed under /opt/hyperspy/share/licenses/.
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/hyperspy/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_hyperspy_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for HyperSpy caches and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".hyperspy-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="hyperspy-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+
+
+              def resolve_hyperspy_config_dir() -> Path:
+                  ensure_runtime_env()
+                  env_cfg = os.environ.get("HYPERSPY_CONFIG_DIR")
+                  if is_writable_dir(env_cfg):
+                      assert env_cfg is not None
+                      return Path(env_cfg)
+                  xdg_cfg = os.environ.get("XDG_CONFIG_HOME")
+                  if xdg_cfg:
+                      candidate = Path(xdg_cfg) / "hyperspy"
+                      if is_writable_dir(str(candidate)):
+                          return candidate
+                  return _private_subdir("hyperspy-config")
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_hyperspy_runtime.pth").write_text(
+          "import _hyperspy_runtime\n",
+          encoding="utf-8",
+      )
+
+      defaults_py = site_packages / "hyperspy" / "defaults_parser.py"
+      src = defaults_py.read_text(encoding="utf-8")
+      old = 'config_path = Path("~/.hyperspy").expanduser()'
+      assert src.count(old) == 1, f"Expected unique config_path line in {defaults_py}"
+      replacement = (
+          "# Modified by NeuroContainers (2026) to avoid writing to read-only /home\n"
+          "import _hyperspy_runtime\n"
+          "config_path = _hyperspy_runtime.resolve_hyperspy_config_dir()"
+      )
+      defaults_py.write_text(src.replace(old, replacement, 1), encoding="utf-8")
+  - name: hyperspy_info_cli
+    executable: true
+    contents: |
+      #!/opt/hyperspy/bin/python
+      """Inspect HyperSpy-readable multidimensional signal files (.hspy/.hdf5/.tif)."""
+
+      from __future__ import annotations
+
+      import argparse
+      import json
+
+      import hyperspy
+      import hyperspy.api as hs
+
+
+      def main(argv: list[str] | None = None) -> int:
+          parser = argparse.ArgumentParser(
+              prog="hyperspy-info",
+              description="Inspect HyperSpy signal files and emit JSON axis/shape metadata.",
+          )
+          parser.add_argument("--version", action="version", version=f"hyperspy {hyperspy.__version__}")
+          parser.add_argument("path", help="Path to a HyperSpy-supported signal file (.hspy, .hdf5, .tif, ...)")
+          args = parser.parse_args(argv)
+
+          loaded = hs.load(args.path)
+          signals = loaded if isinstance(loaded, list) else [loaded]
+          summary = []
+          for sig in signals:
+              axes = [
+                  {
+                      "name": str(ax.name),
+                      "size": int(ax.size),
+                      "units": str(ax.units),
+                      "navigate": bool(ax.navigate),
+                  }
+                  for ax in sig.axes_manager._axes
+              ]
+              summary.append(
+                  {
+                      "signal_type": sig.metadata.Signal.signal_type or sig.__class__.__name__,
+                      "shape": list(sig.data.shape),
+                      "dtype": str(sig.data.dtype),
+                      "axes": axes,
+                  }
+              )
+          print(json.dumps({"hyperspy_version": hyperspy.__version__, "signals": summary}, indent=2))
+          return 0
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+  - name: hyperspy_info_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run hyperspy-info CLI with private non-/home cache paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".hyperspy-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/hyperspy/bin/hyperspy-info", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="hyperspy.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - hyperspy-info
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "optical imaging"
+  - "spectroscopy"
+  - "quantitative imaging"
+
+readme: |-
+  ----------------------------------
+  ## hyperspy/{{ context.version }} ##
+
+  HyperSpy is an open-source Python library for multi-dimensional spectroscopic
+  and hyperspectral data analysis (decomposition, blind source separation,
+  curve fitting, and HDF5/TIFF I/O via RosettaSciIO {{ context.rosettasciio_version }})
+  — suited for Raman, reflectance, and fluorescence optical skin imaging.
+
+  ### Included CLI Tool
+  ```
+  hyperspy-info    Inspect HyperSpy-readable multidimensional signal files as JSON
+  ```
+
+  ### Example
+  ```
+  ml hyperspy/{{ context.version }}
+  hyperspy-info skin_raman.hspy
+  ```
+
+  Documentation: https://hyperspy.org/hyperspy-doc/current/index.html
+  License texts (`HYPERSPY-COPYING.txt`, `ROSETTASCIIO-COPYING.txt`,
+  `GPL-3.0.txt`, `GPL-SOURCE-NOTICE.txt`) are installed under
+  `/opt/hyperspy/share/licenses/`, and the matching RosettaSciIO corresponding
+  source archive is bundled under `/opt/hyperspy/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

@@ -1,0 +1,199 @@
+name: darktable
+version: "5.4.1"
+darktable_amd64_version: "5.4.1-1"
+darktable_arm64_version: "5.4.1-1"
+
+tests:
+  - name: darktable and darktable-cli wrappers available on PATH
+    description: Verify both deployed darktable wrappers resolve on PATH.
+    command: |
+      set -e
+      test "$(command -v darktable)" = "/opt/darktable/wrappers/darktable"
+      test "$(command -v darktable-cli)" = "/opt/darktable/wrappers/darktable-cli"
+      echo "wrappers ok"
+    expected_output_contains: "wrappers ok"
+
+  - name: installed APT package version matches recipe
+    description: Verify dpkg reports the pinned darktable package version for the container architecture.
+    command: |
+      set -e
+      arch="$(dpkg --print-architecture)"
+      case "$arch" in
+        amd64) expected="${darktable_amd64_version}" ;;
+        arm64) expected="${darktable_arm64_version}" ;;
+        *) echo "unexpected arch: $arch" >&2; exit 1 ;;
+      esac
+      actual="$(dpkg-query -W -f='${Version}\n' darktable)"
+      test "$actual" = "$expected"
+      echo "darktable=$actual"
+    expected_output_contains: "darktable=${version}"
+
+  - name: GPL-3.0-or-later license notices and Ubuntu source package installed
+    description: Verify darktable copyright, GPL-3.0 notice, and exact APT-verified Ubuntu source package (.dsc, .orig.tar.*, .debian.tar.*) are bundled.
+    command: |
+      set -e
+      test -s /usr/share/doc/darktable/copyright
+      test -s /opt/darktable/share/licenses/GPL-3.0.txt
+      test -s /opt/darktable/share/licenses/GPL-SOURCE-NOTICE.txt
+      ls /opt/darktable/share/src/darktable_*.dsc >/dev/null
+      ls /opt/darktable/share/src/darktable_*.orig.tar.* >/dev/null
+      ls /opt/darktable/share/src/darktable_*.debian.tar.* >/dev/null
+      echo "license and source ok"
+    expected_output_contains: "license and source ok"
+
+  - name: wrapper isolates process-group signals, cleans up on SIGHUP, and preserves piped and PTY stdin
+    description: Verify the installed darktable launcher handles SIGINT/SIGHUP cleanup, noexec /tmp, and foreground PTY stdin cleanly.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, sys, tempfile, termios, time
+
+      src = open("/opt/darktable/wrappers/_darktable_launcher.py").read()
+      py = sys.executable
+
+      def make_wrapper(path, stub_path):
+          patched = src.replace(
+              'cmd = [target, *sys.argv[1:]]',
+              f'cmd = [{py!r}, {stub_path!r}, *sys.argv[1:]]',
+          )
+          assert patched != src
+          open(path, "w").write(patched)
+
+      def run_in_pty(argv, env, on_ready=None, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if on_ready:
+              on_ready()
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('XDG_CONFIG_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          wrapper = os.path.join(td, "wrapper.py")
+          make_wrapper(wrapper, stub)
+
+          env = os.environ.copy()
+          for k in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR"):
+              env.pop(k, None)
+
+          r = subprocess.run([py, wrapper, "stdin"], input="dt-pipe\n", capture_output=True, text=True, env=env, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:dt-pipe", (r.returncode, r.stdout, r.stderr)
+
+          rc, out = run_in_pty([py, wrapper, "stdin"], env=env, send_bytes=b"dt-pty\n")
+          assert rc == 0 and "GOT:dt-pty" in out, (rc, out)
+
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([py, wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_dir = open(ready_hup).read().strip()
+          assert scratch_dir and os.path.isdir(scratch_dir), scratch_dir
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_dir)), scratch_dir
+
+          stub_nohup = os.path.join(td, "stub_nohup.py")
+          open(stub_nohup, "w").write(
+              "import os, signal, sys, time\n"
+              "ready, go = sys.argv[1], sys.argv[2]\n"
+              "assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN, signal.getsignal(signal.SIGHUP)\n"
+              "open(ready, 'w').write('ready\\n')\n"
+              "dl = time.time() + 5.0\n"
+              "while not os.path.exists(go) and time.time() < dl:\n"
+              "    time.sleep(0.02)\n"
+              "assert os.path.exists(go), 'go file not seen'\n"
+          )
+          wrapper_nohup = os.path.join(td, "wrapper_nohup.py")
+          make_wrapper(wrapper_nohup, stub_nohup)
+          ready_nh, go_nh = os.path.join(td, "nh.ready"), os.path.join(td, "nh.go")
+          p_nh = subprocess.Popen(["nohup", py, wrapper_nohup, ready_nh, go_nh], env=env, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_nh) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_nh), f"nohup stub not ready: {p_nh.stderr.read().decode()}"
+          os.killpg(p_nh.pid, signal.SIGHUP)
+          time.sleep(0.1)
+          open(go_nh, "w").write("go\n")
+          rc_nh = p_nh.wait(timeout=10)
+          err_nh = p_nh.stderr.read().decode()
+          assert rc_nh == 0, (rc_nh, err_nh)
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: offline darktable-cli version and image export under read-only or unset HOME
+    description: Verify darktable-cli reports version and exports a synthetic RGB PPM clinical patch to PNG offline when HOME is read-only or unset and XDG paths are unwritable.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      env -u HOME -u USER -u LOGNAME -u XDG_CONFIG_HOME -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_RUNTIME_DIR \
+        darktable-cli --version | grep -q "darktable ${version}"
+
+      # Create a minimal binary P6 PPM (64x64 RGB clinical skin + lesion patch)
+      /usr/bin/python3 - "$tmpdir/skin.ppm" <<'PY'
+      import sys
+      w, h = 64, 64
+      rows = bytearray()
+      for y in range(h):
+          for x in range(w):
+              if 16 <= x < 48 and 16 <= y < 48:
+                  rows.extend((98, 60, 44))
+              else:
+                  rows.extend((212, 172, 146))
+      with open(sys.argv[1], "wb") as f:
+          f.write(f"P6\n{w} {h}\n255\n".encode("ascii"))
+          f.write(rows)
+      PY
+
+      HOME=/sys XDG_CONFIG_HOME=/sys/unwritable-cfg XDG_CACHE_HOME=/sys/unwritable-cache \
+        darktable-cli "$tmpdir/skin.ppm" "$tmpdir/exported.png" --core --disable-opencl
+      test -s "$tmpdir/exported.png"
+      # Verify PNG signature
+      /usr/bin/python3 -c 'import sys; assert open(sys.argv[1], "rb").read(8) == b"\x89PNG\r\n\x1a\n"' "$tmpdir/exported.png"
+      echo "darktable offline export ok"
+    expected_output_contains: "darktable offline export ok"

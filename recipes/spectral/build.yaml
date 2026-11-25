@@ -1,0 +1,583 @@
+name: spectral
+version: 0.26.0
+
+description: Spectral Python (SPy) for hyperspectral and multispectral skin imaging I/O, ENVI cube inspection, PCA, and Spectral Angle Mapper classification.
+
+copyright:
+  - license: MIT
+    name: Spectral Python license
+    url: https://github.com/spectralpython/spectral/blob/master/LICENSE.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.26"
+
+auto_update:
+  method: sources
+  container_version: spectral
+  sources:
+    - id: spectral
+      method: pypi
+      package: spectral
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/spectral/wrappers:/opt/spectral/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-matplotlib
+        - python3-numpy
+        - python3-pil
+        - python3-pip
+        - python3-scipy
+        - python3-setuptools
+        - python3-venv
+
+    - run:
+        # Inherit Ubuntu 26.04 system numpy/scipy/matplotlib/pillow so /opt/spectral
+        # ships zero bundled native extensions or GNU runtime libraries.
+        - python3 -m venv --system-site-packages /opt/spectral
+        - /opt/spectral/bin/python -m pip install --no-cache-dir "spectral=={{ context.upstream_version }}"
+        - /opt/spectral/bin/python -m pip check
+        - /opt/spectral/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/spectral/bin/python -c "import pathlib, matplotlib, numpy, scipy, spectral;
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (numpy, scipy, matplotlib));
+          so_files = list(pathlib.Path('/opt/spectral').rglob('*.so*'));
+          assert not so_files, so_files"
+        - mkdir -p /opt/spectral/wrappers /opt/spectral/share/licenses
+        - install -m 0755 {{ get_file("spectral_cube_cli") }} /opt/spectral/bin/spectral-cube
+        - install -m 0755 {{ get_file("spectral_cube_wrapper") }} /opt/spectral/wrappers/spectral-cube
+        - install -m 0644 {{ get_file("spectral_license") }} /opt/spectral/share/licenses/SPECTRAL-LICENSE.txt
+        - chmod -R a+rX /opt/spectral
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: spectral_license
+    url: https://raw.githubusercontent.com/spectralpython/spectral/master/LICENSE.txt
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/spectral/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_spectral_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for Spectral Python caches and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".spectral-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="spectral-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_spectral_runtime.pth").write_text(
+          "import _spectral_runtime\n",
+          encoding="utf-8",
+      )
+  - name: spectral_cube_cli
+    executable: true
+    contents: |
+      #!/opt/spectral/bin/python
+      """Inspect ENVI hyperspectral cubes and run Spectral Angle Mapper / PCA."""
+
+      from __future__ import annotations
+
+      import argparse
+      import json
+      import sys
+
+      import numpy as np
+      import spectral
+
+
+      def main(argv: list[str] | None = None) -> int:
+          parser = argparse.ArgumentParser(
+              prog="spectral-cube",
+              description="Inspect ENVI hyperspectral cubes and run PCA or SAM using Spectral Python.",
+          )
+          parser.add_argument("--version", action="version", version=f"spectral {spectral.__version__}")
+          sub = parser.add_subparsers(dest="command", required=True)
+
+          p_info = sub.add_parser("info", help="Print JSON metadata for an ENVI header (.hdr)")
+          p_info.add_argument("header", help="Path to ENVI .hdr file")
+
+          p_pca = sub.add_parser("pca", help="Compute top PCA variance ratios for an ENVI cube")
+          p_pca.add_argument("header", help="Path to ENVI .hdr file")
+          p_pca.add_argument("--components", type=int, default=3, help="Number of leading components")
+
+          p_sam = sub.add_parser("sam", help="Compute Spectral Angle Mapper against a mean ROI spectrum")
+          p_sam.add_argument("header", help="Path to ENVI .hdr file")
+          p_sam.add_argument("--out", required=True, help="Output .npy path for spectral angles (radians)")
+
+          args = parser.parse_args(argv)
+          img = spectral.open_image(args.header)
+          cube = np.asarray(img.load(), dtype=np.float32)
+
+          if args.command == "info":
+              payload = {
+                  "spectral_version": spectral.__version__,
+                  "shape": list(cube.shape),
+                  "dtype": str(cube.dtype),
+                  "min": float(cube.min()),
+                  "max": float(cube.max()),
+              }
+              print(json.dumps(payload, indent=2))
+              return 0
+
+          if args.command == "pca":
+              pc = spectral.principal_components(cube)
+              eigs = np.asarray(pc.eigenvalues, dtype=np.float64)
+              total = float(eigs.sum()) or 1.0
+              k = max(1, min(args.components, len(eigs)))
+              ratios = [float(v / total) for v in eigs[:k]]
+              print(json.dumps({"components": k, "explained_variance_ratio": ratios}, indent=2))
+              return 0
+
+          if args.command == "sam":
+              h, w = cube.shape[:2]
+              y0, y1 = h // 4, max(h // 4 + 1, h - h // 4)
+              x0, x1 = w // 4, max(w // 4 + 1, w - w // 4)
+              ref = cube[y0:y1, x0:x1, :].mean(axis=(0, 1))[None, :]
+              angles = spectral.spectral_angles(cube, ref)
+              np.save(args.out, angles)
+              print(json.dumps({"output": args.out, "shape": list(angles.shape), "mean_rad": float(angles.mean())}))
+              return 0
+
+          return 1
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+  - name: spectral_cube_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run spectral-cube CLI with private non-/home cache paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".spectral-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/spectral/bin/spectral-cube", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="spectral.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - spectral-cube
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "optical imaging"
+  - "spectroscopy"
+  - "quantitative imaging"
+
+readme: |-
+  ----------------------------------
+  ## spectral/{{ context.version }} ##
+
+  Spectral Python (SPy) is a pure-Python module for processing hyperspectral
+  and multispectral image cubes (ENVI I/O, spectral unmixing, PCA, and Spectral
+  Angle Mapper classification) — suited for VIS-NIR skin chromophore and lesion
+  hyperspectral imaging.
+
+  ### Included CLI Tool
+  ```
+  spectral-cube    Inspect ENVI hyperspectral cubes and run PCA or SAM
+  ```
+
+  ### Examples
+  ```
+  ml spectral/{{ context.version }}
+  spectral-cube info skin_cube.hdr
+  spectral-cube pca skin_cube.hdr --components 3
+  spectral-cube sam skin_cube.hdr --out angles.npy
+  ```
+
+  Documentation: https://www.spectralpython.net/
+  License text is installed at `/opt/spectral/share/licenses/SPECTRAL-LICENSE.txt`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEqklEQVR42u2by24cRRSGv1NdPWPPjGM7dyIMcgQIsYAIReIFkMILsMg+PAALnoFHQKx5ACQeISu8IptISFwWICUgBWKwPR73pQ6L9tiD3d1VbVua2K6S2gtPV03VX+fyn79qZHNzU7nEzXDJ26UHwNb9UxUuml8IIBIIQC8RkgtmG04hK7UdAFXoWeHxbzv8spnRt4Lq+d/6olRuDCwP1kc4bQMAsAK/bmZsPB8zTM2xDudu/QKTwnF3pc8n6yO/CyiVFQxTwyCVCwFAIoYFK92CoJt5znvwc0qjK0ceEAGIAEQAIgCxFqjhAqqHjy/PhrZQVnnWY7bVNnJUDxCBzUnJbqEYqe+oQALsFo5vnv7DbuFIGt4VqTj4nVHKw3eXKT0TXbDCdz9v8fTFhEXbTsRU4eF7K9waWHKnjcCpVvXNtYXk2Bxt3ctXFy1GaIRNgURgJ3fVewE70DPC60sppbYXLIOeMOhQg9waWtZGKVmprZajQOE0zAUK114PTwHIOtBEpbIEHwC26MY+c6dkpXoBQCpWGASAHPxp91PpGHB8faSj/8/2mT4xC0QAIgARgNMTIY8oqjN19mwQagx8chjlnScLTD8/CGwBKXba7yQBtlERsiJoAwzTNKgIuVP2Cm0lQnuF4hSGqaFoSfBOYTGtjHJSKFZoTZso9PfVK2tc8yYgOFX2vKIoh5rgy0nZuCgAI9Ukbw4t1wft6JeqDFJh4/n44HuaFmSTigS9vdojNdJqiaVTfvxrjz+2C8oGExAqEIep4a2VXjsTVIXUCo9/32Hj2W6QJvjFR9dZG/XIyvodqNidYePZmK+fvGwd0whs5SWfvrPCow+usp2VtUxzlol++f0LtjLntcC7Kz0+v3/tmEU1ngsMUvECMPW/UiuGJw1mPaWgvjGNgMMgUvUptbkWYX9n+1YoVVoBSKR6r1MQDBFFg6u7I0HOFwgDiOixuTaVLlEUjTwgAhABiAB0pcIiVUryqT2vwqmZmZmrnmAtti5t7BXKduZQpJWKqpvv2aFSkaHtzJGYFiKUK+Nc/QCIVBLTh7cXeW1kvVRUFa70DKXqidSYkzbhUGd8sL5E7pHDSqcsLyS1m2WPDpw7uHdzgfu3F1H1E5JJ6eZiBQqkRvj4zZGfNAk4VSaFhrvAJNDDjczfBbrEi+AgKJyPdtoNiDwgAhABiEzwVCxv3sHytPNspsKBA8/7FlnSYQe8RGiWB5SBck8/MXPjAgqMc21Ur/+fLoV+DVr2KEKLqfDtT//yw5+TIE3ws3ur3Bn6j6fPeuGJwDh3fPXkb8a5X5Z/40rKo/dX/aLo1AJ28qoYChFF5+n/47yaqw+A3UK7xYBk/5FXvBxOZubapgoHl8Ozi1P8R2TzbhowV408IAIQAYgAdGKChJ/Pd2m+MU/ynb4LUr4xawGYPfP38YDQTOAU75hmP2cXHdJLVobdT2i60mfrJnpjYFlf6bHgubA4FSY1YPHD1HjHFKluny73w36rZATWllJ2PQBkRXVTtfbzup/OGqluVYTsb9nhhNhIyJiCQ4NPnsOKoeq2S1AxdFg1nS3NUQgssLp9b9gGaMwCEYAIQH37D5/TX2k7Sy3eAAAAAElFTkSuQmCC

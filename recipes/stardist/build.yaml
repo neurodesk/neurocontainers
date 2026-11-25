@@ -1,0 +1,589 @@
+name: stardist
+version: 0.9.2
+
+description: Star-convex polygon and polyhedron nuclear and cellular instance segmentation (CPU TensorFlow/Keras backend, code-only without baked pretrained weights) for histopathology and fluorescence dermatology microscopy.
+
+copyright:
+  - license: BSD-3-Clause
+    name: StarDist license
+    url: https://github.com/stardist/stardist/blob/{{ context.upstream_version }}/LICENSE.txt
+  - license: Apache-2.0
+    name: TensorFlow license
+    url: https://github.com/tensorflow/tensorflow/blob/v{{ context.tensorflow_version }}/LICENSE
+  - license: Apache-2.0
+    name: FlatBuffers license
+    url: https://github.com/google/flatbuffers/blob/v{{ context.flatbuffers_version }}/LICENSE
+  - license: BSD-2-Clause
+    name: libaec license (bundled in h5py)
+    url: https://github.com/Deutsches-Klimarechenzentrum/libaec/blob/v1.1.3/LICENSE.txt
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "0.9.2"
+  tensorflow_version: "2.21.0"
+  flatbuffers_version: "25.12.19"
+  # Pinned to tensorflow-cpu 2.21.0's h5py<3.15.0,>=3.11.0 ceiling (bundles libaec v1.1.3).
+  h5py_version: "3.14.0"
+
+auto_update:
+  method: sources
+  container_version: stardist
+  sources:
+    - id: stardist
+      method: pypi
+      package: stardist
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: tensorflow_cpu
+      method: pypi
+      package: tensorflow-cpu
+      dependency: true
+      target:
+        variable: tensorflow_version
+    - id: flatbuffers
+      method: pypi
+      package: flatbuffers
+      dependency: true
+      target:
+        variable: flatbuffers_version
+    - id: h5py
+      method: pypi
+      package: h5py
+      version_regex: '^(?P<version>3\.1[1-4]\.[0-9]+)$'
+      dependency: true
+      target:
+        variable: h5py_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        TF_CPP_MIN_LOG_LEVEL: "2"
+        CUDA_VISIBLE_DEVICES: ""
+        PATH: /opt/stardist/wrappers:/opt/stardist/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libgfortran5
+        - libgomp1
+        - libquadmath0
+        - patchelf
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        # Install CPU-only TensorFlow + StarDist in an isolated venv (numba >=0.68
+        # requires NumPy 2.x, newer than Ubuntu 24.04's NumPy 1.26 APT stack) and
+        # relink any bundled GNU runtime libs against Ubuntu system libraries.
+        - python3 -m venv /opt/stardist
+        - >-
+          /opt/stardist/bin/python -m pip install --no-cache-dir
+          "tensorflow-cpu=={{ context.tensorflow_version }}"
+          "flatbuffers=={{ context.flatbuffers_version }}"
+          "h5py=={{ context.h5py_version }}"
+          "stardist=={{ context.upstream_version }}"
+        - /opt/stardist/bin/python -m pip check
+        # Relink any bundled GNU runtime libs against Ubuntu system libraries.
+        - >-
+          for f in $(find /opt/stardist/lib/python*/site-packages -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep -E '^lib(gomp|gfortran|quadmath)-' || true); do
+          case "$need" in
+          libgomp-*) target=libgomp.so.1 ;;
+          libgfortran-*) target=libgfortran.so.5 ;;
+          libquadmath-*) target=libquadmath.so.0 ;;
+          *) continue ;;
+          esac;
+          patchelf --replace-needed "$need" "$target" "$f";
+          done;
+          done
+          && find /opt/stardist/lib/python*/site-packages -type f \( -name 'libgomp*.so*' -o -name 'libgfortran*.so*' -o -name 'libquadmath*.so*' \) -delete
+        - /opt/stardist/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/stardist/bin/python -c "import importlib.metadata as md, pathlib, csbdeep, numpy, scipy, skimage, stardist, tensorflow;
+          assert md.version('stardist') == '{{ context.upstream_version }}', md.version('stardist');
+          bad_libs = [str(p) for p in pathlib.Path('/opt/stardist').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp'))];
+          assert not bad_libs, bad_libs;
+          bad_pkgs = [d.metadata.get('Name', '') for d in md.distributions() if (d.metadata.get('Name') or '').lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad_pkgs, bad_pkgs"
+        - mkdir -p /opt/stardist/wrappers /opt/stardist/share/licenses
+        - install -m 0755 {{ get_file("stardist_launcher") }} /opt/stardist/wrappers/_stardist_launcher.py
+        - >-
+          for cmd in stardist-predict2d stardist-predict3d; do
+          test -x "/opt/stardist/bin/$cmd";
+          ln -sf _stardist_launcher.py "/opt/stardist/wrappers/$cmd";
+          done
+        - install -m 0644 {{ get_file("stardist_license") }} /opt/stardist/share/licenses/STARDIST-LICENSE.txt
+        - install -m 0644 {{ get_file("tensorflow_license") }} /opt/stardist/share/licenses/TENSORFLOW-LICENSE.txt
+        - install -m 0644 {{ get_file("flatbuffers_license") }} /opt/stardist/share/licenses/FLATBUFFERS-LICENSE.txt
+        - install -m 0644 {{ get_file("libaec_license") }} /opt/stardist/share/licenses/LIBAEC-LICENSE.txt
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/stardist
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: stardist_license
+    url: https://raw.githubusercontent.com/stardist/stardist/{{ context.upstream_version }}/LICENSE.txt
+  - name: tensorflow_license
+    url: https://raw.githubusercontent.com/tensorflow/tensorflow/v{{ context.tensorflow_version }}/LICENSE
+  - name: flatbuffers_license
+    url: https://raw.githubusercontent.com/google/flatbuffers/v{{ context.flatbuffers_version }}/LICENSE
+  - name: libaec_license
+    url: https://raw.githubusercontent.com/Deutsches-Klimarechenzentrum/libaec/v1.1.3/LICENSE.txt
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/stardist/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_stardist_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for StarDist/Keras/Numba caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".stardist-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="stardist-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("KERAS_HOME", "keras"),
+                      ("NUMBA_CACHE_DIR", "numba"),
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "zzz_stardist_runtime.pth").write_text(
+          "import _stardist_runtime; _stardist_runtime.ensure_runtime_env()\n",
+          encoding="utf-8",
+      )
+  - name: stardist_launcher
+    contents: |
+      #!/usr/bin/python3
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+      ALLOWED_BINS = {
+          "stardist-predict2d",
+          "stardist-predict3d",
+      }
+      ENV_SUBDIRS = (
+          ("KERAS_HOME", "keras"),
+          ("NUMBA_CACHE_DIR", "numba"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".stardist-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          prog = os.path.basename(sys.argv[0])
+          if prog not in ALLOWED_BINS:
+              prog = "stardist-predict2d"
+          cmd = [f"/opt/stardist/bin/{prog}", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="stardist.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - stardist-predict2d
+    - stardist-predict3d
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "digital pathology"
+  - "image segmentation"
+  - "machine learning"
+  - "optical imaging"
+
+readme: |-
+  ----------------------------------
+  ## stardist/{{ context.version }} ##
+
+  StarDist (CPU-only TensorFlow/Keras build, code-only without baked pretrained
+  weights) performs star-convex polygon (2D) and polyhedron (3D) instance
+  segmentation of nuclei and cells in H&E histopathology and fluorescence
+  dermatology microscopy.
+
+  ### Included CLI & Python Environment
+  ```
+  stardist-predict2d      Run 2D StarDist prediction on an input image
+  stardist-predict3d      Run 3D StarDist prediction on an input volume
+  /opt/stardist/bin/python  Python environment with stardist {{ context.upstream_version }} and TensorFlow CPU
+  ```
+
+  ### Example
+  ```
+  ml stardist/{{ context.version }}
+  stardist-predict2d --help
+  /opt/stardist/bin/python -c "import stardist; print(stardist.__version__)"
+  ```
+
+  Documentation: https://github.com/stardist/stardist
+  License texts (`STARDIST-LICENSE.txt`, `TENSORFLOW-LICENSE.txt`,
+  `FLATBUFFERS-LICENSE.txt`, `LIBAEC-LICENSE.txt`) are installed under
+  `/opt/stardist/share/licenses/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

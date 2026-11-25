@@ -1,0 +1,640 @@
+name: slideflow
+version: 3.0.2
+
+description: Apache-2.0 core digital pathology deep-learning toolkit (WSI reading via libvips, tile extraction, stain normalization, and PyTorch CPU backend; excludes slideflow-noncommercial and non-commercial triangle).
+
+copyright:
+  - license: Apache-2.0
+    name: Slideflow license
+    url: https://github.com/slideflow/slideflow/blob/{{ context.upstream_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: PyTorch license
+    url: https://github.com/pytorch/pytorch/blob/v{{ context.torch_version }}/LICENSE
+  - license: LGPL-2.1-or-later
+    name: crc32c license
+    url: https://github.com/ICRAR/crc32c/blob/v{{ context.crc32c_version }}/LICENSE
+  - license: MIT
+    name: Dear ImGui license (bundled in imgui)
+    url: https://github.com/ocornut/imgui/blob/v1.82/LICENSE.txt
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "3.0.2"
+  torch_version: "2.14.1"
+  torchvision_version: "0.29.1"
+  crc32c_version: "2.9.post0"
+  crc32c_source_sha256: "6a089e0340de8438e836a09e613c6b541675d0f3aa92b3fe34295aaba62f014f"
+  imgui_version: "2.0.0"
+
+auto_update:
+  method: sources
+  container_version: slideflow
+  sources:
+    - id: slideflow
+      method: pypi
+      package: slideflow
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: torch_cpu
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torch/
+      version_regex: 'torch-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\+|%2B)cpu-cp310-cp310-manylinux[^"]*x86_64\.whl'
+      dependency: true
+      target:
+        variable: torch_version
+    - id: torchvision_cpu
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torchvision/
+      version_regex: 'torchvision-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\+|%2B)cpu-cp310-cp310-manylinux[^"]*x86_64\.whl'
+      dependency: true
+      target:
+        variable: torchvision_version
+    - id: crc32c
+      method: pypi
+      package: crc32c
+      dependency: true
+      target:
+        variable: crc32c_version
+    - id: crc32c_source_digest
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/source/c/crc32c/crc32c-{{ context.crc32c_version }}.tar.gz
+      dependency: true
+      target:
+        variable: crc32c_source_sha256
+    - id: imgui
+      method: pypi
+      package: imgui
+      dependency: true
+      target:
+        variable: imgui_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        SF_BACKEND: torch
+        SF_SLIDE_BACKEND: libvips
+        SF_LOGGING_LEVEL: "20"
+        PATH: /opt/slideflow/wrappers:/opt/slideflow/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - g++
+        - libffi-dev
+        - libgfortran5
+        - libgl1
+        - libglfw3
+        - libgomp1
+        - libopenslide0
+        - libquadmath0
+        - libvips42
+        - patchelf
+        - python3
+        - python3-cffi
+        - python3-dev
+        - python3-opencv
+        - python3-pip
+        - python3-rasterio
+        - python3-shapely
+        - python3-tk
+        - python3-venv
+
+    - run:
+        # Ubuntu 22.04 (Python 3.10) matches slideflow 3.0.2's imgui/smac/pyrfr/protobuf<3.21
+        # requirements and supplies system libvips42 + python3-opencv (no FFmpeg-bundled wheel).
+        - python3 -m venv --system-site-packages /opt/slideflow
+        - /opt/slideflow/bin/python -m pip install --no-cache-dir --upgrade pip
+        - >-
+          /opt/slideflow/bin/python -m pip install --no-cache-dir
+          --index-url https://download.pytorch.org/whl/cpu
+          "torch=={{ context.torch_version }}+cpu"
+          "torchvision=={{ context.torchvision_version }}+cpu"
+        # Install slideflow core without deps, then install all open-licensed runtime deps
+        # except opencv-python-headless (provided by Ubuntu APT python3-opencv) and triangle
+        # (wraps non-commercial C library; only lazily imported in slideflow.util.create_triangles).
+        - /opt/slideflow/bin/python -m pip install --no-cache-dir --no-deps "slideflow=={{ context.upstream_version }}"
+        - >-
+          /opt/slideflow/bin/python -c "import importlib.metadata as md;
+          reqs = [r for r in (md.distribution('slideflow').requires or []) if '; extra ==' not in r];
+          skip = ('opencv-python-headless', 'opencv-python', 'rasterio', 'shapely', 'triangle', 'torch', 'torchvision', 'crc32c', 'imgui');
+          kept = [r for r in reqs if r.split(';')[0].split('[')[0].split('<')[0].split('>')[0].split('=')[0].strip().lower() not in skip];
+          open('/tmp/slideflow-reqs.txt', 'w').write('\n'.join(kept) + '\n')"
+        - >-
+          /opt/slideflow/bin/python -m pip install --no-cache-dir
+          "numpy<2.0.0"
+          "crc32c=={{ context.crc32c_version }}"
+          "imgui=={{ context.imgui_version }}"
+          -r /tmp/slideflow-reqs.txt
+          && rm -f /tmp/slideflow-reqs.txt
+        # Relink bundled GNU runtime libs against Ubuntu system libraries.
+        - >-
+          rm -f /opt/slideflow/lib/python*/site-packages/torch/lib/libgomp.so.1 /opt/slideflow/lib/python*/site-packages/torch/lib/libgfortran.so.5
+          && for f in $(find /opt/slideflow/lib/python*/site-packages -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep -E '^lib(gomp|gfortran|quadmath)-' || true); do
+          case "$need" in
+          libgomp-*) target=libgomp.so.1 ;;
+          libgfortran-*) target=libgfortran.so.5 ;;
+          libquadmath-*) target=libquadmath.so.0 ;;
+          *) continue ;;
+          esac;
+          patchelf --replace-needed "$need" "$target" "$f";
+          done;
+          done
+          && find /opt/slideflow/lib/python*/site-packages -type f \( -name 'libgomp*.so*' -o -name 'libgfortran*.so*' -o -name 'libquadmath*.so*' \) -delete
+        - /opt/slideflow/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/slideflow/bin/python -c "import importlib.metadata as md, pathlib, subprocess, cv2, pyvips, rasterio, shapely, slideflow, torch, torchvision;
+          assert md.version('slideflow') == '{{ context.upstream_version }}', md.version('slideflow');
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (cv2, rasterio, shapely));
+          r = subprocess.run(['/opt/slideflow/bin/python', '-m', 'pip', 'check'], capture_output=True, text=True);
+          lines = [l for l in (r.stdout + r.stderr).splitlines() if l.strip() and 'No broken requirements' not in l];
+          allowed = ('opencv-python-headless', 'triangle');
+          bad_chk = [l for l in lines if not any(a in l for a in allowed)];
+          assert not bad_chk, bad_chk;
+          bad_libs = [str(p) for p in pathlib.Path('/opt/slideflow').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libgeos', 'libgdal', 'libavcodec', 'libavformat', 'libavutil', 'libswscale', 'libswresample'))];
+          assert not bad_libs, bad_libs;
+          bad_pkgs = [d.metadata.get('Name', '') for d in md.distributions() if (d.metadata.get('Name') or '').lower().startswith(('nvidia-', 'cuda-', 'slideflow-noncommercial')) or (d.metadata.get('Name') or '').lower() == 'triangle'];
+          assert not bad_pkgs, bad_pkgs"
+        - mkdir -p /opt/slideflow/wrappers /opt/slideflow/share/licenses /opt/slideflow/share/src
+        - test -x /opt/slideflow/bin/slideflow-studio
+        - install -m 0755 {{ get_file("slideflow_launcher") }} /opt/slideflow/wrappers/slideflow-studio
+        - install -m 0644 {{ get_file("slideflow_license") }} /opt/slideflow/share/licenses/SLIDEFLOW-LICENSE.txt
+        - install -m 0644 {{ get_file("dear_imgui_license") }} /opt/slideflow/share/licenses/DEAR-IMGUI-LICENSE.txt
+        - install -m 0644 {{ get_file("crc32c_source") }} /opt/slideflow/share/src/crc32c-{{ context.crc32c_version }}.tar.gz
+        - tar -xzOf /opt/slideflow/share/src/crc32c-{{ context.crc32c_version }}.tar.gz "crc32c-{{ context.crc32c_version }}/LICENSE" > /opt/slideflow/share/licenses/CRC32C-LGPL-2.1.txt
+        - install -m 0644 {{ get_file("protobuf_license") }} /opt/slideflow/share/licenses/PROTOBUF-LICENSE.txt
+        - install -m 0644 {{ get_file("pynisher_license") }} /opt/slideflow/share/licenses/PYNISHER-LICENSE.txt
+        - install -m 0644 {{ get_file("pyopengl_license") }} /opt/slideflow/share/licenses/PYOPENGL-LICENSE.txt
+        - install -m 0644 {{ get_file("tensorboard_data_server_license") }} /opt/slideflow/share/licenses/TENSORBOARD-DATA-SERVER-LICENSE.txt
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/slideflow
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: slideflow_license
+    url: https://raw.githubusercontent.com/slideflow/slideflow/{{ context.upstream_version }}/LICENSE
+  - name: dear_imgui_license
+    url: https://raw.githubusercontent.com/ocornut/imgui/v1.82/LICENSE.txt
+  - name: crc32c_source
+    url: https://files.pythonhosted.org/packages/source/c/crc32c/crc32c-{{ context.crc32c_version }}.tar.gz
+    sha256: "{{ context.crc32c_source_sha256 }}"
+  - name: protobuf_license
+    url: https://raw.githubusercontent.com/protocolbuffers/protobuf/v3.20.3/LICENSE
+  - name: pynisher_license
+    url: https://raw.githubusercontent.com/automl/pynisher/v0.6.4/LICENSE
+  - name: pyopengl_license
+    url: https://raw.githubusercontent.com/mcfletch/pyopengl/e0e3711bcada87e22a7bbbff600c0563c2346574/license.txt
+  - name: tensorboard_data_server_license
+    url: https://raw.githubusercontent.com/tensorflow/tensorboard/data-server-v0.7.2/LICENSE
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/slideflow/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_slideflow_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for Slideflow/PyTorch/Numba/Matplotlib caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".slideflow-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="slideflow-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("TORCH_HOME", "torch"),
+                      ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+                      ("NUMBA_CACHE_DIR", "numba"),
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "zzz_slideflow_runtime.pth").write_text(
+          "import _slideflow_runtime; _slideflow_runtime.ensure_runtime_env()\n",
+          encoding="utf-8",
+      )
+  - name: slideflow_launcher
+    contents: |
+      #!/usr/bin/python3
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+      ENV_SUBDIRS = (
+          ("TORCH_HOME", "torch"),
+          ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+          ("NUMBA_CACHE_DIR", "numba"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".slideflow-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/slideflow/bin/slideflow-studio", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="slideflow.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, preexec_fn=os.setpgrp)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - slideflow-studio
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "digital pathology"
+  - "machine learning"
+  - "optical imaging"
+  - "visualization"
+
+readme: |-
+  ----------------------------------
+  ## slideflow/{{ context.version }} ##
+
+  Slideflow (Apache-2.0 core only, CPU PyTorch + libvips backend) provides
+  whole-slide image reading, tile extraction, stain normalization, and deep
+  learning workflows for computational dermatopathology. Non-commercial add-ons
+  (`slideflow-noncommercial`, `triangle`) are intentionally excluded.
+
+  ### Included CLI & Python Environment
+  ```
+  slideflow-studio           Slideflow Studio WSI viewer and model inspector
+  /opt/slideflow/bin/python  Python environment with slideflow {{ context.upstream_version }} (SF_BACKEND=torch)
+  ```
+
+  ### Example
+  ```
+  ml slideflow/{{ context.version }}
+  slideflow-studio --help
+  /opt/slideflow/bin/python -c "import slideflow as sf; print(sf.__version__, sf.backend())"
+  ```
+
+  Documentation: https://slideflow.dev/
+  License texts (`SLIDEFLOW-LICENSE.txt`, `DEAR-IMGUI-LICENSE.txt`,
+  `CRC32C-LGPL-2.1.txt`, `PROTOBUF-LICENSE.txt`, `PYNISHER-LICENSE.txt`,
+  `PYOPENGL-LICENSE.txt`, `TENSORBOARD-DATA-SERVER-LICENSE.txt`) are installed
+  under `/opt/slideflow/share/licenses/`, and the LGPL-2.1 corresponding source
+  archive for `crc32c` is installed under `/opt/slideflow/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAARNklEQVR42tVbe5QU5ZX/3e+rqn7NwDAMIIw4IIg81CCKOsaA77iJe9w9u8xZT8zu5pyox1XcaGLiZv8Yx9cmCyR7FLPRnMR9uCfrkKhn1zWIikEMEfAFCgOIMrxGHGCYZ/d0V33f3T+qurqqurpnIBhxzpmpqe7qqfnd797fvb97vyJU+GptbRX3td3HBGIAaF28sqZWJc5mG01SoIGEJJxCX6wVK40jZGLvgMzvbFt3xyAAMJjua72P2tradNznYkG0L2mXLataFAD8yxd/dg2RvAmMRQxMNYUpBYlKH/0sTQDNGra2FQH7QXiNWT31rd/d/FIUU1UDFC98uPmxhTUy/UNTJK6QJFHQBTjaBgANZuZTDD4BABEBEIYwYQkLSivYOv/qYD77ve+/efvmOCNQHPhlzY/fmZSp5aYwzZyT1QAYBEGgU23ZK/gCMxgaAKWMtLC1bQ/bue/cs/HWR6JGkH7ML2417njhDrWs+acP1ln1Dxd0Xtg6r4mEJKLPDXh3VYkI7v9cUAUFsKy1xv7JoslXmbes+ZtXWhe3Guv2rtO+B/grf8njd9Qlxz06ZA/ZDG18nkBHXCD0KzMzkXAyMmP25I8uvXfTbSuLmGnJkna5alWL+udLn5ifFsnNmhUp6FNmxUkQWDNAAHkRW5GBuMIpu0YQJLRgwcMqv/C7m295d8mSdinmzl3CACCZHjWEaSjWOGXAE8HO2iBBgAbsYQf2sOOeV2XDMPhiWCitYAjTAPAoAMydu4QJAJY1/+TKGrPulWEnp4hInhKUzoCyFU6bMwFd73cDAK5/+Ep8/F433vjFO8g0pMGKq7q+f84Auz/AzCopU7I/33fVP7z9d2sNlwmNb0iSftHzWYMnQcj1DONLSxfi0psvwLpHNqJ+Wh1mXzsDs6+dgULWxpZnOpCsTbjhMUrw3g1YkGRDGt8AsJaWnbcsY9SM6zBlYqqtC/yZun8U/C0XgJm99A4fLAnCc99egw9e7USixgIrDoe/D57jjMEGWVRw8vsP2b1zDEplZhOJRkfbONXAa8UQRRIMkOKBtz/GoW1HYCSM0HsoAxt3TuSwDUGiscHIzBYamGYKUwDQpxx4Sf57xeOxfX1ov+0FDB4ZgjQEmMsJz0de2RjaIFOAMU0YwhwvSHx21W018JGMwJpRMyGDi//2C+45B0rZkNszOA48wzUYMxMEBInxgopmPoXBlxQfw0wZGDOl1s0ANFq3DzpGyTjEksQp6fYxX1ppCENg6zM78JvW38JIGYCOrnRlt2eOhIj3u/G5AS8Ftj67Ay/evw6JjFUCVYnto4aIWoVd1hOfK/Bt62DVWIAX/1XdPpoZmAMcUDKQ+LyAX922DlbGAkCh4oers70HlMNegc8iBI6X8JhD4BMZb+U1VylyAmwfSIdx8c/kNgyMU5XtAWDLsx1Y88B6L+bD4MvzfpTtA1aJEKFvEPXHCIHjBA92r88PFvDaI5tgJAwv5sMrH+UALmN4LvOKuCzwqRuA6DjAewZjzUiOSWDWVWciP1goXV8tz4fIjUu/RwwUdR7xaYPP9uSOy+2DcvjSWxdg7JRa5AcKEFK4XhCn+riC23OkScLFQuiPkAZJEAo5G1fc3eyB11UJj0QptZHn8rUTM/izH12L5NgkhvuHIQwRZve4fMfhVWYPKAeBc6mr9OmGAAPJsYnYdlVw5YkIx/b2uVqUw62wyedMwE3/cQMa55+GbE/OfT3O7ZnLCqAyUowIJ6X0p2QAb6GttIEXH3gN77RvhzAEtNJleZ4EYeszO/Bky69w9KNjAAFaccgIdVPH4Maf/yku+Nq5yB4b9vsDUeXH0fxfXGkOE2LQe+R1Z9xwoSGM6x3tMNEfrg1IELTD0LYCSQEraWDnyx8hMz6NyedM9EEHi5w1D64Ha42DW7ox9yszYSQkWLHX2HaNIITAjEVnQCvGntcPwEwZYF0dPCKeEjhnCUM47DwvTvbK5wcKSI1NoH5aHQCgMOwgNTaBNQ+tx7urtkNIAWWHy1szZSBRm8ChbYfx3N1rUMjaIEm+xxTdXiuNxX9/Ec6/cR6yPcMQkkJlLcqYn8vcnj8tDyBBsLMOLrzpXHzl/iuw4MZzMHNREz7pOIL+Q4NI1ljY+dJHSI9LYcp5k7Dl1x148f7XkKixXLd3GFbawOEPjmHfpoOYesFkpOtT0L4nACACmHHmZVOxd2MXevf1QyZk2aoXZW+IEMOZgSWkUNp5/qQYgAShMGSj6eJGfPXBK2GlTZAg1DSkccaFk/H+/+wCa4Y0JTp/vx/dO47inae3QZoSJITrygRozTBTJnoPDGD7C7sxtrEWE86qDxuBAWEITJrbgK3P7gSBQuBGAu82S5gNMoQ6WSFARFAFhWmXnA5WDOUoP3brpo5Fw4xxsHMOhCQIKbDr5T2AoNLQI5AltKORqDFhDzt49q6X8PYvt0FIChGjVhqnzW3AF/5iNnJ9eT+9loEPfXNIOLF2e4AnjwMEMHh4CCQJYBeIy/SMXK+bw9kdsyJRG9XzYVWnHVcIJWsTWH3/eux6pdON92JXmNx7LPz6uUjWJqDtcLlXVgdUyAAnTQtorZHIWNj+wgc4vOsopCkhDAEShDef2oqezj4YlnSLEbiujhE6OUWwZtLAiw+sx9DRnK8J3KKJUT+9DmdedjrygwV/WhTr9sxeMeSd69J1x8UBRAQhvblr8JsI0hBw8gq71nYi35/HsX39eOuX7+Pdp7fBTFveqnFMD4+r1vaGJTFwaAiGJTH90tPBulQfEBGcvELH6g9hpkzXsDpa+HC4XPBOJQyhlPO8Mfo4d2dzquCUivVQOev+Y8P9eaxd/ntf1SVqLBSyDsAMM2O58erbgUfU89rRsDImtr+wG5feugBWxnT/Nrm93Mb5k5CoTUDZukwKl7k9R5oko+0HuCnORtMlp2POdTOgNYersYih/OElu+5OAJSt8cYv3sFgd9blA+bRNTM0IC2J3gMD6NrajWnNje7qe/cYM6UGNRPS6DswAGnJKhVhsDVWmiQZo2V5O6/QdEkj5l0/64S5omP1bvQeGEDC9AgxTuJGOzkABAiqoNG946hrAJQWwEwayIxPo6ezH9KiEOvFZoKAkZU6jo4QEeDkHShb+2Vs8fWSigkcOdyyhijV+JWGFqX3wpKWPYcaPJItF1KCkMiYYKXDYRV1+cD/E+wNGsdX6RKkKSBNUVkBlR0raP7YoQVC7lmmdHW8pNQcSIM6JuVFVr50Az06A2jtEtF7z+1A13vdgNewzA8WMOvq6Ti/ZZ6/GsXjhifexv43u2ClXXbWjsaR3T2u0NFcuZkRM8wgT8unx6XKQhMACkOO3yqvCD6SCRiusUbnAV75OXg4i94DAwABQhByfXlYaRPnt8wLNzdAKAwWsHPNR0jVp/yiyEwZFUrXSA8vGhYaEFJgwqz6QN/MPTjDCkNHsl6hVD3mQ+GA460EGRCmQKLWQqLGglVjITM+hf5PhnyJG1yVs66cjvT4NBIZy/8MEVUlvCBjBy9xCgq1kzJonD+ppA69Ze37eAADnwxBGLKk/qLguRz8iTVFvThkz6WFFOjd14fe/f0hUmJmTD53IibNGY/8YN79nOJIdVY+rES0g1vsEA8UMOua6UjVJVxhRCWp27XlMHK9nh7QEZChoTH79/I95Q8thYUhkOvPY8+GA6WbwGs2SkLzNxfAyavKKx8q2sMjK/ZcXBUU0vUpNN883yuAAvFPwK6XOv2w4sggpNIRJ2U05nmDYUl0/GZ3qDghT7jMvLwJC/5qHga73c0MVcdVoVToFk9EQO5YHtd8vxl1p9eWdIBXiPV3DWL3b/fBypheimV/df1jYOXLjHFCXWEOZgeGlTbRtfUTfLh+H4gCstWTw1ff+0Wc/eUZGPhkyDWQoFLMB8rooCGEFGDNGOjO4fJvX4T5LXP8noDvaQRs+vf3Mdidc7vFmisqv7Kjd1N1IhwQncCylyF+969vQtk6XBMRQVoSf/7ja7Hwr89Dri+PwmDBE1UCIiCoiiKLmZHtGYZWjK8+tBiX332R2xOUpY1SQgr0dPZh87+9j8QYC9rR4V0xulgQcYwOYI/HXA4YvRoMhCtFCMtISPR09kEYAk0XNfpZoSgAhSTMXNyEyedOQH/XIHoPDiDfX4A9rKDyGs6wAzvrwM7aMJIGZl09HTesuApnXzMtFFpFACQIv779ZXR3HIWZMt0Cqej2AS4q9wB/5bymqHr+hIajUdbWjkZqbBIbHn8bk+Y24KzLp7lZwhC+RzAzZi5uwszFTeja2o29G7twZPcx5HqHQYKQaUhj0pzxmNbciPHT3YYqK3YbLMX7eLtEXl22CTvW7EGmPuWqwBB5VgfvD0q8P2uwVgzJo4r5svNATiVytfv/fm8t/nLldThj4RQ/VYJKnECCMOW8iZhy3sTKtyx2fgJuXyzGNv58K15dvgnpcUkoJwZ8ECRiwAdSMGuHhaPto5o1KE7fcpXTSLHCmkGGgLY1fnX7auxY85FLTpFBR/FarTS04lJdodzXikYqjsq044WTJKz78Wb83z+uR2KMWw9AVwAf5IJoN8h9j7RWKGh1VAig09Z2eVXIMW4f18kJ9uEVQ1oSWjGeu/slvLpiI+xhxyewImCfBGWYBF1vId8gRO6q9x0cwNPfXI2XH96IZK0FBDs/0eFH8VsH9gdHymBiEra2NYM6Dc4N7eAa62ClrbJxBUy1bSnF3Z1WysSGn76FD9ftRfMtCzD7y9MhTRnSDP5kx1Oawf4/Acj2DOOd/+7Ahse3YODQENL1I7h9yANipsTM0JrZgEEOFw4iWdhBAPCj5if+s8Ya+7WsPaRAMMp3WkTAxym5kJDx/EwKFIZsqILCpLkNmH3tmThz0VRMmFkPMxXPv7nePA5tO4ydazrRsXoPevb0wcqYMCwBZceNwTie8HSMAHJDwUlRRg6p/v/6Qf/Srxtud9h5UrG6icFETPHD3JH24cXsyWFbw0waMJMGDu86hq4tG/H6Y29hzORa1E2tRc3EDKyMCVaM4f4C+g4OoHdfP/o+HoLKK5hpE+n6JLTDJfAYYeU53u0D8pgUO2Qr+0kAoNZWFm1tpFc0P7E+Y9ZelrWzShBJ5vIZ/sibECtPYYscq5WGk1duZ8n2SNDLIiQJ0pTuxAjkk2JIHwRju1qqi4LXgGZWSaRkVg++/sOBO7/UilZhbN++igBAEZbayt4sSZBiXeKCUe/ArDCOKkaE1v5nDcuAYUUJlqG1pzaV+wxgtOIMP/hQXuGNAJ4FC9hsO0qppQCwHfNIrFrVotqXtMvvbrjl3WE1dFfKyEiCcIqbp0fah1em5+OGEhG31H7aYyhHQzsaynGBs65Sw8fl81GCJyYngbTM6dxdy7N3vbsE7XIVWpQAgJZVLap1catxzxu3rewr9DyUNjImEUFrrUazCTEYLhy3Lwfxu7X8EjbC1KhEbKN1+4Aw0syKmJBE2hxQxx5aMfStla1oNVbBfXYw/sHJix+/MyFSyw0y/AcnmUsPTjKH2b6s21ph2wrHuSxG6N5W6/DoSoTHzBqaGZREStjasXN66Dsrhu56pB3tsgWlBycrPzp74WML00bmBwaZV0oEHp1laPaGfMFcW7YNjRkUXRmM0Kmt5s4IlLc6UvPrUuYFQ0g2YLIFxQqOttfmnIF7V+Tu2Vx0+7hedqwRAGD5BT+7Rgh5E4MXgTFVkikFqKQmYvJyeFW43GWjYCLXRndyVI1xv/nBUKzhaFsB2K81XgPUU//Uv9R9eDqy8lUNAMQ8Pj93ZU0ymTibWDURoYG4WN8GGiTeyDn8gveS0mWvu2kxfL0K/Q1dulYFPlb8uyq848rW+qgA7+23enb+5HBb6fF53EdtiH98/v8BoOmLWwDm7xMAAAAASUVORK5CYII=

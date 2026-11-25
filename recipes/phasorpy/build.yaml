@@ -1,0 +1,528 @@
+name: phasorpy
+version: 0.13.0
+
+description: Phasor-space analysis of fluorescence lifetime imaging microscopy (FLIM) and hyperspectral optical skin imaging data.
+
+copyright:
+  - license: MIT
+    name: PhasorPy license
+    url: https://github.com/phasorpy/phasorpy/blob/v{{ context.upstream_version }}/LICENSE.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.13"
+
+auto_update:
+  method: sources
+  container_version: phasorpy
+  sources:
+    - id: phasorpy
+      method: pypi
+      package: phasorpy
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/phasorpy/wrappers:/opt/phasorpy/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libgomp1
+        - patchelf
+        - python3
+        - python3-matplotlib
+        - python3-numpy
+        - python3-pil
+        - python3-pip
+        - python3-scipy
+        - python3-sklearn
+        - python3-venv
+
+    - run:
+        # Inherit Ubuntu 26.04 system numpy/scipy/sklearn/matplotlib so we avoid
+        # shipping bundled PyPI GNU runtime libs (libquadmath/libgfortran/libgomp).
+        - python3 -m venv --system-site-packages /opt/phasorpy
+        - /opt/phasorpy/bin/python -m pip install --no-cache-dir "phasorpy=={{ context.upstream_version }}"
+        - /opt/phasorpy/bin/python -m pip check
+        # Link phasorpy's OpenMP Cython extension against Ubuntu's system libgomp1
+        # instead of shipping a bundled wheel copy of libgomp.
+        - >-
+          for f in $(find /opt/phasorpy/lib/python*/site-packages/phasorpy -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libgomp-' || true); do
+          patchelf --replace-needed "$need" libgomp.so.1 "$f";
+          done;
+          done
+          && rm -rf /opt/phasorpy/lib/python*/site-packages/phasorpy.libs
+        # Install startup .pth hook so direct Python imports get writable cache dirs
+        # and unlisted-UID USER fallback without touching /home.
+        - /opt/phasorpy/bin/python {{ get_file("install_runtime_hook") }}
+        # Guard: system APT scientific libs, zero bundled GNU/MPL libs, OpenMP works.
+        - >-
+          /opt/phasorpy/bin/python -c "import pathlib, matplotlib, numpy, phasorpy, scipy, sklearn;
+          from phasorpy.phasor import phasor_from_signal;
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (numpy, scipy, sklearn, matplotlib));
+          bad_libs = [str(p) for p in pathlib.Path('/opt/phasorpy').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libzmq'))];
+          assert not bad_libs, bad_libs;
+          t = numpy.linspace(0.0, 12.5, 64, endpoint=False);
+          mean, real, imag = phasor_from_signal(numpy.exp(-t / 2.5));
+          assert float(mean) > 0 and 0.0 < float(real) < 1.0 and 0.0 < float(imag) < 1.0"
+        - mkdir -p /opt/phasorpy/wrappers /opt/phasorpy/share/licenses
+        - install -m 0755 {{ get_file("phasorpy_wrapper") }} /opt/phasorpy/wrappers/phasorpy
+        - install -m 0644 {{ get_file("phasorpy_license") }} /opt/phasorpy/share/licenses/PHASORPY-LICENSE.txt
+        - chmod -R a+rX /opt/phasorpy
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: phasorpy_license
+    url: https://raw.githubusercontent.com/phasorpy/phasorpy/v{{ context.upstream_version }}/LICENSE.txt
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/phasorpy/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_phasorpy_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for PhasorPy caches and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".phasorpy-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="phasorpy-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                      ("PHASORPY_DATA_DIR", "data"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+
+
+              ensure_runtime_env()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "_phasorpy_runtime.pth").write_text(
+          "import _phasorpy_runtime\n",
+          encoding="utf-8",
+      )
+  - name: phasorpy_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run PhasorPy CLI with private non-/home cache paths and POSIX job control."""
+
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+          ("PHASORPY_DATA_DIR", "data"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".phasorpy-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/phasorpy/bin/phasorpy", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+          missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+          if not env.get("HOME"):
+              missing.append(("HOME", "home"))
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="phasorpy.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - phasorpy
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "optical imaging"
+  - "quantitative imaging"
+  - "spectroscopy"
+
+readme: |-
+  ----------------------------------
+  ## phasorpy/{{ context.version }} ##
+
+  PhasorPy is an open-source Python library and CLI for phasor-space analysis
+  of fluorescence lifetime imaging microscopy (FLIM) and hyperspectral
+  fluorescence data — useful for multiphoton and NADH/FAD autofluorescence skin
+  imaging.
+
+  ### Included CLI Tool
+  ```
+  phasorpy    PhasorPy CLI (versions, fetch, ...)
+  ```
+
+  ### Example
+  ```
+  ml phasorpy/{{ context.version }}
+  phasorpy versions
+  # Or inside the container shell:
+  /opt/phasorpy/bin/python -c "import phasorpy; print(phasorpy.__version__)"
+  ```
+
+  Documentation: https://www.phasorpy.org/docs/stable/
+  License text is installed at `/opt/phasorpy/share/licenses/PHASORPY-LICENSE.txt`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

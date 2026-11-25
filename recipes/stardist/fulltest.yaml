@@ -1,0 +1,293 @@
+name: stardist
+version: 0.9.2
+upstream_version: "0.9.2"
+
+tests:
+  - name: stardist wrappers available on PATH and CLIs launch cleanly
+    description: Verify both deployed StarDist wrappers resolve on PATH and exit cleanly on --help.
+    command: |
+      set -e
+      command -v stardist-predict2d
+      command -v stardist-predict3d
+      env -u HOME -u USER -u LOGNAME stardist-predict2d --help | grep -q "input"
+      env -u HOME -u USER -u LOGNAME stardist-predict3d --help | grep -q "input"
+    expected_output_contains: "/opt/stardist/wrappers/stardist-predict2d"
+
+  - name: package version matches recipe, zero bundled GNU/CUDA libs or weights
+    description: Verify stardist matches upstream_version, pip check passes, and no bundled GNU runtime libs, CUDA packages, or baked model weights ship.
+    command: |
+      set -e
+      /opt/stardist/bin/python -m pip check
+      /opt/stardist/bin/python - <<'PY'
+      import importlib.metadata as md
+      import pathlib
+      import csbdeep
+      import numpy
+      import scipy
+      import skimage
+      import stardist
+      import tensorflow as tf
+
+      assert md.version("stardist") == "${upstream_version}", md.version("stardist")
+      bad_libs = [
+          str(p)
+          for p in pathlib.Path("/opt/stardist").rglob("*.so*")
+          if p.name.startswith(("libquadmath", "libgfortran", "libgomp"))
+      ]
+      assert not bad_libs, bad_libs
+      bad_pkgs = [
+          d.metadata.get("Name", "")
+          for d in md.distributions()
+          if (d.metadata.get("Name") or "").lower().startswith(("nvidia-", "cuda-"))
+      ]
+      assert not bad_pkgs, bad_pkgs
+      baked_weights = [
+          str(p)
+          for p in pathlib.Path("/opt/stardist").rglob("*")
+          if p.is_file() and p.suffix.lower() in (".h5", ".hdf5", ".keras", ".weights") and p.stat().st_size > 1_000_000
+      ]
+      assert not baked_weights, baked_weights
+      print(f"stardist={md.version('stardist')} tf={tf.__version__} csbdeep={md.version('csbdeep')}")
+      PY
+    expected_output_contains: "stardist=${upstream_version}"
+
+  - name: license notices installed
+    description: Verify StarDist BSD-3-Clause, TensorFlow Apache-2.0, FlatBuffers Apache-2.0, and bundled libaec BSD-2-Clause license files are installed.
+    command: |
+      set -e
+      test -s /opt/stardist/share/licenses/STARDIST-LICENSE.txt
+      grep -q "BSD 3-Clause" /opt/stardist/share/licenses/STARDIST-LICENSE.txt
+      test -s /opt/stardist/share/licenses/TENSORFLOW-LICENSE.txt
+      grep -q "Apache License" /opt/stardist/share/licenses/TENSORFLOW-LICENSE.txt
+      test -s /opt/stardist/share/licenses/FLATBUFFERS-LICENSE.txt
+      grep -q "Apache License" /opt/stardist/share/licenses/FLATBUFFERS-LICENSE.txt
+      test -s /opt/stardist/share/licenses/LIBAEC-LICENSE.txt
+      grep -q "Mathis Rosenhauer" /opt/stardist/share/licenses/LIBAEC-LICENSE.txt
+      test -s /opt/stardist/lib/python3.12/site-packages/tensorflow/THIRD_PARTY_NOTICES.txt
+      echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: wrapper isolates process-group signals, cleans up on SIGHUP, and preserves piped and PTY stdin
+    description: Verify the installed StarDist wrapper handles SIGHUP cleanup, noexec /tmp, and foreground PTY stdin cleanly.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, sys, tempfile, termios, time
+
+      src = open("/opt/stardist/wrappers/_stardist_launcher.py").read()
+      py = sys.executable
+
+      def make_wrapper(path, stub_path):
+          patched = src.replace(
+              'cmd = [f"/opt/stardist/bin/{prog}", *sys.argv[1:]]',
+              f'cmd = [{py!r}, {stub_path!r}, *sys.argv[1:]]',
+          )
+          assert patched != src
+          open(path, "w").write(patched)
+
+      def run_in_pty(argv, env, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('KERAS_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          wrapper = os.path.join(td, "stardist-predict2d")
+          make_wrapper(wrapper, stub)
+
+          env = os.environ.copy()
+          for k in ("KERAS_HOME", "NUMBA_CACHE_DIR", "MPLCONFIGDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
+              env.pop(k, None)
+
+          r = subprocess.run([py, wrapper, "stdin"], input="stardist-pipe\n", capture_output=True, text=True, env=env, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:stardist-pipe", (r.returncode, r.stdout, r.stderr)
+
+          rc, out = run_in_pty([py, wrapper, "stdin"], env=env, send_bytes=b"stardist-pty\n")
+          assert rc == 0 and "GOT:stardist-pty" in out, (rc, out)
+
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([py, wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_dir = open(ready_hup).read().strip()
+          assert scratch_dir and os.path.isdir(scratch_dir), scratch_dir
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_dir)), scratch_dir
+
+          stub_nohup = os.path.join(td, "stub_nohup.py")
+          open(stub_nohup, "w").write(
+              "import os, signal, sys, time\n"
+              "ready, go = sys.argv[1], sys.argv[2]\n"
+              "assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN, signal.getsignal(signal.SIGHUP)\n"
+              "open(ready, 'w').write('ready\\n')\n"
+              "dl = time.time() + 5.0\n"
+              "while not os.path.exists(go) and time.time() < dl:\n"
+              "    time.sleep(0.02)\n"
+              "assert os.path.exists(go), 'go file not seen'\n"
+          )
+          wrapper_nohup = os.path.join(td, "wrapper_nohup.py")
+          make_wrapper(wrapper_nohup, stub_nohup)
+          ready_nh, go_nh = os.path.join(td, "nh.ready"), os.path.join(td, "nh.go")
+          p_nh = subprocess.Popen(["nohup", py, wrapper_nohup, ready_nh, go_nh], env=env, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_nh) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_nh), f"nohup stub not ready: {p_nh.stderr.read().decode()}"
+          os.killpg(p_nh.pid, signal.SIGHUP)
+          time.sleep(0.1)
+          open(go_nh, "w").write("go\n")
+          rc_nh = p_nh.wait(timeout=10)
+          err_nh = p_nh.stderr.read().decode()
+          assert rc_nh == 0, (rc_nh, err_nh)
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: offline synthetic 2D StarDist geometry, C++ NMS, and CPU Keras forward pass
+    description: Compute star-convex distances, EDT probabilities, C++ non-maximum suppression, polygon reconstruction, and an in-memory StarDist2D CPU forward pass under unset/read-only HOME.
+    command: |
+      set -e
+      env -u HOME -u USER -u LOGNAME -u KERAS_HOME -u NUMBA_CACHE_DIR -u MPLCONFIGDIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME         /opt/stardist/bin/python - <<'PY'
+      import numpy as np
+      from stardist import edt_prob, star_dist, polygons_to_label, non_maximum_suppression
+      from stardist.matching import matching
+      from stardist.models import Config2D, StarDist2D
+
+      # Synthesize 3 circular nuclei in a 64x64 patch
+      yy, xx = np.mgrid[:64, :64]
+      gt = np.zeros((64, 64), dtype=np.int32)
+      for idx, (cy, cx, rad) in enumerate([(18, 18, 7), (44, 22, 8), (32, 46, 7)], start=1):
+          gt[(yy - cy) ** 2 + (xx - cx) ** 2 <= rad ** 2] = idx
+
+      n_rays = 32
+      dist = star_dist(gt, n_rays=n_rays)
+      prob = edt_prob(gt)
+      points, probs, dists = non_maximum_suppression(dist, prob, prob_thresh=0.5, nms_thresh=0.3)
+      pred = polygons_to_label(dists, points, shape=gt.shape)
+      stats = matching(gt, pred, thresh=0.5)
+      assert stats.tp == 3 and stats.fp == 0 and stats.fn == 0, stats
+
+      # Instantiate an untrained in-memory StarDist2D model and verify CPU inference
+      conf = Config2D(
+          n_rays=n_rays,
+          n_channel_in=1,
+          unet_n_depth=2,
+          unet_n_filter_base=8,
+          train_patch_size=(64, 64),
+          train_batch_size=1,
+      )
+      model = StarDist2D(conf, name=None, basedir=None)
+      img = (gt > 0).astype(np.float32)
+      p_out, d_out = model.predict(img)
+      assert p_out.shape == (64, 64) and d_out.shape == (64, 64, n_rays), (p_out.shape, d_out.shape)
+      assert np.isfinite(p_out).all() and np.isfinite(d_out).all()
+      print(f"stardist 2d ok tp={stats.tp} f1={stats.f1:.3f} out={d_out.shape}")
+      PY
+    expected_output_contains: "stardist 2d ok tp=3"
+
+  - name: runtime hook preserves cache across fork and cleans up on SIGTERM/SIGHUP (including PID 1)
+    description: Verify direct /opt/stardist/bin/python keeps parent cache across os.fork()+sys.exit(0), cleans up on SIGTERM/SIGHUP, and exits cleanly under the PID 1 signal path.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import os, pathlib, signal, subprocess, tempfile
+
+      py = "/opt/stardist/bin/python"
+      with tempfile.TemporaryDirectory() as td:
+          env = {"PATH": os.environ["PATH"], "TMPDIR": td}
+
+          fork_code = (
+              "import os, sys, _stardist_runtime as rt\n"
+              "root = rt._CACHE_ROOT\n"
+              "assert root is not None and root.is_dir(), root\n"
+              "pid = os.fork()\n"
+              "if pid == 0:\n"
+              "    sys.exit(0)\n"
+              "_, st = os.waitpid(pid, 0)\n"
+              "assert os.WIFEXITED(st) and os.WEXITSTATUS(st) == 0, st\n"
+              "assert root.is_dir(), root\n"
+              "print(root)\n"
+          )
+          r = subprocess.run([py, "-c", fork_code], env=env, capture_output=True, text=True, timeout=30)
+          assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+          assert not pathlib.Path(r.stdout.strip()).exists(), r.stdout
+
+          for sig in (signal.SIGTERM, signal.SIGHUP):
+              sp = subprocess.Popen(
+                  [py, "-c", "import time, _stardist_runtime as rt; print(rt._CACHE_ROOT, flush=True); time.sleep(30)"],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir = sp.stdout.readline().strip()
+              assert cdir and os.path.isdir(cdir), cdir
+              os.kill(sp.pid, sig)
+              rc = sp.wait(timeout=10)
+              assert rc == -sig.value, (sig, rc, sp.stderr.read())
+              assert not os.path.exists(cdir), cdir
+
+              pid1_code = (
+                  "import os, time, _stardist_runtime as rt\n"
+                  "rt._CACHE_OWNER_PID = 1\n"
+                  "os.getpid = lambda: 1\n"
+                  "print(rt._CACHE_ROOT, flush=True)\n"
+                  "time.sleep(30)\n"
+              )
+              sp1 = subprocess.Popen(
+                  [py, "-c", pid1_code],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir1 = sp1.stdout.readline().strip()
+              assert cdir1 and os.path.isdir(cdir1), cdir1
+              os.kill(sp1.pid, sig)
+              rc1 = sp1.wait(timeout=10)
+              assert rc1 == 128 + sig.value, (sig, rc1, sp1.stderr.read())
+              assert not os.path.exists(cdir1), cdir1
+          assert os.listdir(td) == [], os.listdir(td)
+      print("runtime hook signal and fork ok")
+      PY
+    expected_output_contains: "runtime hook signal and fork ok"
