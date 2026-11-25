@@ -1,0 +1,212 @@
+name: dentateseg
+version: "0.3.2"
+
+copyright:
+  - license: NOASSERTION
+    name: DentateSeg (no license declared upstream)
+    url: https://github.com/art2mri/DentateSeg
+
+architectures:
+  - x86_64
+
+auto_update:
+  method: dockerhub
+  repo: diogohs/dentateseg
+  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+
+build:
+  kind: neurodocker
+  base-image: diogohs/dentateseg:{{ context.version }}
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - environment:
+        RUNNING_IN_DOCKER: "true"
+        PYTHONUNBUFFERED: "1"
+        PYTHONIOENCODING: utf-8
+        PYTHONPATH: /app
+    - run:
+        - install -m 0755 {{ get_file("dentateseg") }} /usr/local/bin/dentateseg
+        - ln -sf /usr/local/bin/dentateseg /usr/local/bin/dentateseg.sh
+        - install -m 0755 {{ get_file("dentateseg-entrypoint") }} /usr/local/bin/dentateseg-entrypoint
+        - test -x /usr/local/bin/dentateseg
+        - test -x /usr/local/bin/dentateseg.sh
+    - entrypoint: /usr/local/bin/dentateseg-entrypoint
+
+deploy:
+  bins:
+    - dentateseg
+    - dentateseg.sh
+
+files:
+  - name: dentateseg
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      usage() {
+          cat <<'EOF'
+      DentateSeg: Automated cerebellar dentate nucleus segmentation from QSM MRI
+
+      Usage: dentateseg -i INPUT_RESOURCE -o OUTPUT_DIRECTORY [--gpu] [--debug]
+
+      Args:
+        -i, --input_resource INPUT_RESOURCE
+            Path to an input NIfTI file (.nii or .nii.gz) or directory of NIfTI files. (Required)
+
+        -o, --output_directory OUTPUT_DIRECTORY
+            Path to the output directory where segmentation results and reports will be saved. (Required)
+
+        --gpu
+            Enable CUDA GPU acceleration for inference (run container with --nv or --gpus=all). (Optional)
+
+        --debug
+            Enable verbose debug logging. (Optional)
+
+        -h, --help
+            Display this help message and exit.
+      EOF
+      }
+
+      if [ "$#" -eq 0 ]; then
+          usage
+          exit 0
+      fi
+
+      ORIG_PWD="$PWD"
+      INPUT_RESOURCE=""
+      OUTPUT_DIRECTORY=""
+      EXTRA_ARGS=()
+
+      while [ "$#" -gt 0 ]; do
+          case "$1" in
+              -h|--help)
+                  usage
+                  exit 0
+                  ;;
+              -i|--input_resource)
+                  if [ "$#" -lt 2 ]; then
+                      echo "Error: $1 requires a path argument." >&2
+                      exit 2
+                  fi
+                  INPUT_RESOURCE="$2"
+                  shift 2
+                  ;;
+              --input_resource=*)
+                  INPUT_RESOURCE="${1#*=}"
+                  shift
+                  ;;
+              -o|--output_directory)
+                  if [ "$#" -lt 2 ]; then
+                      echo "Error: $1 requires a path argument." >&2
+                      exit 2
+                  fi
+                  OUTPUT_DIRECTORY="$2"
+                  shift 2
+                  ;;
+              --output_directory=*)
+                  OUTPUT_DIRECTORY="${1#*=}"
+                  shift
+                  ;;
+              *)
+                  EXTRA_ARGS+=("$1")
+                  shift
+                  ;;
+          esac
+      done
+
+      if [ -z "$INPUT_RESOURCE" ] || [ -z "$OUTPUT_DIRECTORY" ]; then
+          echo "Error: Both -i/--input_resource and -o/--output_directory are required." >&2
+          usage >&2
+          exit 2
+      fi
+
+      USE_STORAGE_FALLBACK=false
+      INPUT_ABS="$(realpath -m -- "$INPUT_RESOURCE")"
+      if [ ! -e "$INPUT_ABS" ] && [[ "$INPUT_RESOURCE" != /* ]] && [ -e "/dentateseg-storage/$INPUT_RESOURCE" ]; then
+          INPUT_ABS="$(realpath -m -- "/dentateseg-storage/$INPUT_RESOURCE")"
+          USE_STORAGE_FALLBACK=true
+      fi
+
+      if [ ! -e "$INPUT_ABS" ]; then
+          echo "Error: Input resource does not exist: $INPUT_ABS" >&2
+          exit 1
+      fi
+
+      if [ "$USE_STORAGE_FALLBACK" = true ] && [[ "$OUTPUT_DIRECTORY" != /* ]] && [ -d "/dentateseg-storage" ]; then
+          OUTPUT_ABS="$(realpath -m -- "/dentateseg-storage/$OUTPUT_DIRECTORY")"
+      else
+          OUTPUT_ABS="$(realpath -m -- "$OUTPUT_DIRECTORY")"
+      fi
+
+      WORKDIR_TMP="$(mktemp -d "${TMPDIR:-/tmp}/dentateseg.XXXXXX")"
+      trap 'rm -rf "$WORKDIR_TMP"' EXIT
+      ln -s /app/config.yaml "$WORKDIR_TMP/config.yaml"
+
+      export RUNNING_IN_DOCKER=true
+      export PYTHONUNBUFFERED=1
+      export PYTHONIOENCODING=utf-8
+      export PYTHONPATH="/app${PYTHONPATH:+:$PYTHONPATH}"
+      : "${MPLCONFIGDIR:=$WORKDIR_TMP/mpl}"
+      : "${CUDA_CACHE_PATH:=$WORKDIR_TMP/cuda-cache}"
+      export MPLCONFIGDIR CUDA_CACHE_PATH
+      mkdir -p "$MPLCONFIGDIR" "$CUDA_CACHE_PATH"
+
+      cd "$WORKDIR_TMP"
+      python3 /app/main.py -i "$INPUT_ABS" -o "$OUTPUT_ABS" "${EXTRA_ARGS[@]}"
+
+  - name: dentateseg-entrypoint
+    contents: |
+      #!/usr/bin/env bash
+      set -e
+
+      if [ "$#" -eq 0 ]; then
+          exec /usr/bin/env bash
+      fi
+
+      if [ "${1#-}" != "$1" ]; then
+          exec /usr/local/bin/dentateseg "$@"
+      fi
+
+      exec "$@"
+
+structured_readme:
+  description: >-
+    DentateSeg is an automated deep-learning pipeline for segmenting the left
+    and right cerebellar dentate nuclei from Quantitative Susceptibility Mapping
+    (QSM) MRI images. It runs a two-stage workflow combining a MONAI 3D U-Net
+    cerebellar localization model with a 5-fold 3D full-resolution nnU-Net v2
+    segmentation ensemble, producing labeled NIfTI masks (1 = left dentate
+    nucleus, 2 = right dentate nucleus) along with CSV and Excel volumetric and
+    texture analysis reports. Both CPU and CUDA GPU execution (`--gpu`, with
+    `--nv` under Apptainer/Singularity or `--gpus=all` under Docker) are
+    supported.
+  example: |-
+    # Show CLI usage
+    dentateseg --help
+
+    # Segment a QSM NIfTI image on CPU
+    dentateseg -i QSM_image.nii.gz -o dentateseg-output
+
+    # Segment a QSM NIfTI image or directory using a CUDA GPU
+    dentateseg -i QSM_image.nii.gz -o dentateseg-output --gpu
+  documentation: https://github.com/art2mri/DentateSeg
+  citation: >-
+    Shiraishi, D. H.*, Saha, S.*, et al., Harding, I. H., Rezende, T. J. R.,
+    TRACK-FA Neuroimaging Consortium (*co-first). Automated Deep Learning-based
+    Segmentation of the Dentate Nucleus Using Quantitative Susceptibility
+    Mapping MRI. Radiology: Artificial Intelligence (2025).
+    https://doi.org/10.1148/ryai.240478
+
+domains:
+  - neuroimaging
+
+categories:
+  - image segmentation
+  - quantitative imaging
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,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

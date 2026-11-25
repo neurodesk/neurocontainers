@@ -1,0 +1,136 @@
+name: dentateseg
+version: "0.3.2"
+default_timeout: 180
+
+tests:
+  - name: DentateSeg commands are exported as wrapper names
+    description: Verify Transparent Singularity can expose both launchers in the user session
+    command: |
+      for cmd in dentateseg dentateseg.sh; do
+        echo "${DEPLOY_BINS}" | tr ':' '\n' | grep -qx -- "${cmd}" || {
+          echo "NOT EXPORTED: ${cmd}"
+          exit 1
+        }
+        command -v "${cmd}" > /dev/null || {
+          echo "EXPORTED BUT MISSING: ${cmd}"
+          exit 1
+        }
+      done
+      echo "DentateSeg wrapper commands are exportable"
+    expected_output_contains: "DentateSeg wrapper commands are exportable"
+
+  - name: dentateseg CLI help works without HOME
+    description: Verify dentateseg --help succeeds with exit code 0 even when HOME is unavailable
+    command: HOME=/nonexistent dentateseg --help
+    expected_output_contains: "--input_resource"
+
+  - name: dentateseg.sh alias help works
+    description: Verify dentateseg.sh alias exits cleanly and documents GPU option
+    command: HOME=/nonexistent dentateseg.sh --help
+    expected_output_contains: "--gpu"
+
+  - name: dentateseg rejects missing input with non-zero status
+    description: Verify missing input resource fails with an error message and non-zero exit code
+    command: |
+      if dentateseg -i /tmp/nonexistent_qsm_input.nii.gz -o /tmp/dentateseg_missing_out 2>&1; then
+        echo "UNEXPECTED_SUCCESS"
+        exit 1
+      fi
+      echo "MISSING_INPUT_REJECTED"
+    expected_output_contains: "MISSING_INPUT_REJECTED"
+
+  - name: bundled configuration and model checkpoints exist
+    description: Verify config.yaml, MONAI localization weights, and all 5 nnU-Net fold checkpoints are present
+    command: |
+      python3 - <<'PY'
+      from pathlib import Path
+      import yaml
+
+      cfg = yaml.safe_load(Path("/app/config.yaml").read_text(encoding="utf-8"))
+      prod = cfg["production"]
+      loc_model = Path(prod["localization_model_filepath"])
+      assert loc_model.is_file(), f"Missing localization model: {loc_model}"
+
+      nnunet_root = Path(prod["nnunet_results_dir"]) / prod["nnunet_task_name"] / "nnUNetTrainer__nnUNetPlans__3d_fullres"
+      assert (nnunet_root / "plans.json").is_file(), "Missing plans.json"
+      assert (nnunet_root / "dataset.json").is_file(), "Missing dataset.json"
+      assert (nnunet_root / "crossval_results_folds_0_1_2_3_4" / "postprocessing.pkl").is_file(), "Missing postprocessing.pkl"
+      for fold in range(5):
+          ckpt = nnunet_root / f"fold_{fold}" / "checkpoint_final.pth"
+          assert ckpt.is_file(), f"Missing fold {fold} checkpoint: {ckpt}"
+      print("ALL_MODELS_PRESENT")
+      PY
+    expected_output_contains: "ALL_MODELS_PRESENT"
+
+  - name: nnUNetv2 CLI entrypoints available
+    description: Verify nnUNetv2_predict and nnUNetv2_apply_postprocessing are installed
+    command: |
+      nnUNetv2_predict --help > /dev/null
+      nnUNetv2_apply_postprocessing --help > /dev/null
+      echo "NNUNET_CLI_OK"
+    expected_output_contains: "NNUNET_CLI_OK"
+
+  - name: MONAI localization, cropping, and report generation smoke test
+    description: Run real Stage 1 localization, Stage 2 cropping, and Stage 6 report generation on synthetic QSM data without HOME
+    command: |
+      HOME=/nonexistent MPLCONFIGDIR=/tmp/dentateseg-test-mpl python3 - <<'PY'
+      import sys
+      import tempfile
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+
+      sys.path.insert(0, "/app")
+      from config_manager import ConfigManager
+      from localization_model_qsm import run_localization
+      from localization_qsm import crop_images
+      from report import generate_reports
+
+      with tempfile.TemporaryDirectory() as tmp:
+          tmp_path = Path(tmp)
+          in_dir = tmp_path / "in"
+          out_dir = tmp_path / "out"
+          in_dir.mkdir()
+          out_dir.mkdir()
+
+          rng = np.random.default_rng(42)
+          data = rng.normal(0.0, 0.03, size=(64, 64, 64)).astype(np.float32)
+          x, y, z = np.ogrid[:64, :64, :64]
+          ellipsoid = ((x - 32) / 16) ** 2 + ((y - 32) / 16) ** 2 + ((z - 32) / 16) ** 2 <= 1
+          data[ellipsoid] += 0.05
+          qsm_path = in_dir / "synth_qsm.nii.gz"
+          nib.save(nib.Nifti1Image(data, np.eye(4)), qsm_path)
+
+          cfg = ConfigManager("/app/config.yaml")
+          loc_model = cfg.get("production.localization_model_filepath")
+
+          input_fps, mask_fps = run_localization(
+              input_resource=qsm_path,
+              model_path=loc_model,
+              output_dir=out_dir,
+              use_gpu=False,
+          )
+          assert len(mask_fps) == 1 and mask_fps[0].is_file(), "Localization mask missing"
+
+          cropped_fps, meta_fps = crop_images(
+              image_filepaths=input_fps,
+              mask_filepaths=mask_fps,
+              output_dir=None,
+              bounding_box=[128, 96, 96],
+          )
+          assert len(cropped_fps) == 1 and cropped_fps[0].is_file(), "Cropped image missing"
+          assert len(meta_fps) == 1 and meta_fps[0].is_file(), "Metadata JSON missing"
+
+          # Verify Stage 6 CSV/Excel report and texture pipeline with synthetic bilateral labels (1=left, 2=right)
+          seg = np.zeros((64, 64, 64), dtype=np.uint8)
+          seg[20:26, 28:34, 28:34] = 1
+          seg[38:44, 28:34, 28:34] = 2
+          seg_path = out_dir / "synth_qsm_seg.nii.gz"
+          nib.save(nib.Nifti1Image(seg, np.eye(4)), seg_path)
+
+          generate_reports([qsm_path], [seg_path], cfg.get("labels", {}))
+          assert (out_dir / "synth_qsm_report.csv").is_file(), "CSV report missing"
+          assert (out_dir / "synth_qsm_report.xlsx").is_file(), "Excel report missing"
+          print("PIPELINE_SMOKE_OK")
+      PY
+    expected_output_contains: "PIPELINE_SMOKE_OK"
