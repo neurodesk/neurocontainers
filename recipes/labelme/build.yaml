@@ -264,10 +264,11 @@ files:
 
           try:
               # Install signal handlers BEFORE creating tmp_root so an early
-              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
-              signal.signal(signal.SIGINT, handle_signal)
-              signal.signal(signal.SIGTERM, handle_signal)
-              signal.signal(signal.SIGHUP, handle_signal)
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch,
+              # while preserving inherited SIG_IGN (e.g. under nohup or background &).
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
               signal.signal(signal.SIGCONT, handle_cont)
               signal.signal(signal.SIGTSTP, handle_tstp)
               if received_signal is not None:
