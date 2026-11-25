@@ -52,6 +52,49 @@ tests:
       echo "bundled assets present"
     expected_output_contains: bundled assets present
 
+  - name: launcher keeps settings in a writable HOME
+    description: Verify that the launcher uses persistent XDG defaults and honors a writable override.
+    command: |-
+      python3 - "$(command -v OCTproZ)" <<'PY'
+      import os
+      from pathlib import Path
+      import shutil
+      import subprocess
+      import sys
+      import tempfile
+
+      with tempfile.TemporaryDirectory() as work:
+          root = Path(work)
+          launcher = root / "bin/OCTproZ"
+          probe = root / "lib/OCTproZ"
+          home = root / "home"
+          for directory in (launcher.parent, probe.parent, home):
+              directory.mkdir()
+          shutil.copyfile(sys.argv[1], launcher)
+          probe.write_text("""#!/usr/bin/env python3
+      import os
+      from pathlib import Path
+
+      for variable in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
+          directory = Path(os.environ[variable])
+          directory.mkdir(parents=True, exist_ok=True)
+          (directory / "launch-test").write_text("saved")
+      """)
+          probe.chmod(0o755)
+          env = {key: value for key, value in os.environ.items() if not key.startswith("XDG_")}
+          env.update(HOME=str(home), TMPDIR=work)
+          subprocess.run([sys.executable, launcher], env=env, check=True)
+          for directory in (".config", ".cache", ".local/share"):
+              marker = home / directory / "launch-test"
+              assert marker.is_file(), f"missing persistent state in {directory}"
+          custom_config = root / "custom/config"
+          env["XDG_CONFIG_HOME"] = str(custom_config)
+          subprocess.run([sys.executable, launcher], env=env, check=True)
+          assert (custom_config / "launch-test").is_file(), "XDG_CONFIG_HOME override was ignored"
+      print("home state persists")
+      PY
+    expected_output_contains: home state persists
+
   - name: headless startup under xvfb with read-only HOME and CUDA driver stub
     description: OCTproZ starts cleanly under Xvfb with HOME=/sys and the CUDA driver stub, handles SIGTERM cleanly, and preserves ignored SIGHUP (nohup) while cleaning temporary XDG state.
     command: |-
@@ -84,7 +127,7 @@ tests:
           stub_dir = os.path.join(td, "stub")
           os.makedirs(stub_dir)
           os.symlink("/usr/local/cuda/lib64/stubs/libcuda.so", os.path.join(stub_dir, "libcuda.so.1"))
-          env = os.environ.copy()
+          env = {key: value for key, value in os.environ.items() if not key.startswith("XDG_")}
           env["HOME"] = "/sys"
           env["TMPDIR"] = td
           env["LIBGL_ALWAYS_SOFTWARE"] = "1"
@@ -100,6 +143,7 @@ tests:
           )
           time.sleep(2.0)
           assert proc.poll() is None, f"process exited early: {proc.returncode}"
+          assert glob.glob(os.path.join(td, "octproz-xdg-*", "config")), "missing temporary config"
           proc.send_signal(signal.SIGHUP)
           time.sleep(1.0)
           assert proc.poll() is None, f"process died on ignored SIGHUP: {proc.returncode}"
