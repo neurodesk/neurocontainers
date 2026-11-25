@@ -1,0 +1,271 @@
+name: slideflow
+version: 3.0.2
+upstream_version: "3.0.2"
+
+tests:
+  - name: slideflow-studio wrapper available on PATH and --help launches cleanly
+    description: Verify the deployed slideflow-studio wrapper resolves on PATH and prints CLI help headlessly.
+    command: |
+      set -e
+      command -v slideflow-studio
+      env -u HOME -u USER -u LOGNAME slideflow-studio --help | grep -q "Whole-slide image viewer"
+    expected_output_contains: "/opt/slideflow/wrappers/slideflow-studio"
+
+  - name: package version matches recipe, system APT cv2 used, zero non-commercial or bundled GNU/FFmpeg/CUDA libs
+    description: Verify slideflow matches upstream_version, cv2 comes from Ubuntu APT, pip check has only intentional exclusions, and no non-commercial packages, CUDA packages, or bundled GNU/FFmpeg libs ship.
+    command: |
+      set -e
+      /opt/slideflow/bin/python - <<'PY'
+      import importlib.metadata as md
+      import pathlib
+      import subprocess
+      import cv2
+      import pyvips
+      import rasterio
+      import shapely
+      import slideflow as sf
+      import torch
+      import torchvision
+
+      assert md.version("slideflow") == "${upstream_version}", md.version("slideflow")
+      assert sf.backend() == "torch", sf.backend()
+      for m in (cv2, rasterio, shapely):
+          assert m.__file__.startswith("/usr/lib/python3/dist-packages/"), m.__file__
+      r = subprocess.run(["/opt/slideflow/bin/python", "-m", "pip", "check"], capture_output=True, text=True)
+      lines = [l for l in (r.stdout + r.stderr).splitlines() if l.strip() and "No broken requirements" not in l]
+      bad_chk = [l for l in lines if not any(a in l for a in ("opencv-python-headless", "triangle"))]
+      assert not bad_chk, bad_chk
+      bad_libs = [
+          str(p)
+          for p in pathlib.Path("/opt/slideflow").rglob("*.so*")
+          if p.name.startswith(("libquadmath", "libgfortran", "libgomp", "libgeos", "libgdal", "libavcodec", "libavformat", "libavutil", "libswscale", "libswresample"))
+      ]
+      assert not bad_libs, bad_libs
+      bad_pkgs = [
+          d.metadata.get("Name", "")
+          for d in md.distributions()
+          if (d.metadata.get("Name") or "").lower().startswith(("nvidia-", "cuda-", "slideflow-noncommercial"))
+          or (d.metadata.get("Name") or "").lower() == "triangle"
+      ]
+      assert not bad_pkgs, bad_pkgs
+      print(f"slideflow={md.version('slideflow')} backend={sf.backend()} torch={torch.__version__}")
+      PY
+    expected_output_contains: "slideflow=${upstream_version}"
+
+  - name: license notices and LGPL-2.1 crc32c source archive installed
+    description: Verify Slideflow Apache-2.0, Dear ImGui MIT, crc32c LGPL-2.1, and transitive dependency notices plus the complete crc32c source archive (including build files) are installed.
+    command: |
+      set -e
+      test -s /opt/slideflow/share/licenses/SLIDEFLOW-LICENSE.txt
+      grep -q "Apache License" /opt/slideflow/share/licenses/SLIDEFLOW-LICENSE.txt
+      test -s /opt/slideflow/share/licenses/DEAR-IMGUI-LICENSE.txt
+      grep -q "Omar Cornut" /opt/slideflow/share/licenses/DEAR-IMGUI-LICENSE.txt
+      test -s /opt/slideflow/share/licenses/CRC32C-LGPL-2.1.txt
+      grep -q "GNU LESSER GENERAL PUBLIC LICENSE" /opt/slideflow/share/licenses/CRC32C-LGPL-2.1.txt
+      test -s /opt/slideflow/share/licenses/PROTOBUF-LICENSE.txt
+      test -s /opt/slideflow/share/licenses/PYNISHER-LICENSE.txt
+      test -s /opt/slideflow/share/licenses/PYOPENGL-LICENSE.txt
+      test -s /opt/slideflow/share/licenses/TENSORBOARD-DATA-SERVER-LICENSE.txt
+      tar -tzf /opt/slideflow/share/src/crc32c-*.tar.gz | grep -q '/setup.py$'
+      tar -tzf /opt/slideflow/share/src/crc32c-*.tar.gz | grep -q '/pyproject.toml$'
+      echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: wrapper isolates process-group signals, cleans up on SIGHUP, and preserves piped and PTY stdin
+    description: Verify the installed slideflow-studio wrapper handles SIGHUP cleanup, noexec /tmp, and foreground PTY stdin cleanly.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, sys, tempfile, termios, time
+
+      src = open("/opt/slideflow/wrappers/slideflow-studio").read()
+      py = sys.executable
+
+      def make_wrapper(path, stub_path):
+          patched = src.replace(
+              'cmd = ["/opt/slideflow/bin/slideflow-studio", *sys.argv[1:]]',
+              f'cmd = [{py!r}, {stub_path!r}, *sys.argv[1:]]',
+          )
+          assert patched != src
+          open(path, "w").write(patched)
+
+      def run_in_pty(argv, env, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('TORCH_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          wrapper = os.path.join(td, "wrapper.py")
+          make_wrapper(wrapper, stub)
+
+          env = os.environ.copy()
+          for k in ("TORCH_HOME", "TORCHINDUCTOR_CACHE_DIR", "NUMBA_CACHE_DIR", "MPLCONFIGDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
+              env.pop(k, None)
+
+          r = subprocess.run([py, wrapper, "stdin"], input="slideflow-pipe\n", capture_output=True, text=True, env=env, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:slideflow-pipe", (r.returncode, r.stdout, r.stderr)
+
+          rc, out = run_in_pty([py, wrapper, "stdin"], env=env, send_bytes=b"slideflow-pty\n")
+          assert rc == 0 and "GOT:slideflow-pty" in out, (rc, out)
+
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([py, wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_dir = open(ready_hup).read().strip()
+          assert scratch_dir and os.path.isdir(scratch_dir), scratch_dir
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_dir)), scratch_dir
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: offline synthetic WSI tiling and Reinhard stain normalization via libvips + PyTorch
+    description: Synthesize a tiled RGB TIFF slide, open via slideflow.WSI (libvips backend), extract tiles, and run Reinhard stain normalization under unset/read-only HOME.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      cat > "$tmpdir/run_sf.py" <<'PY'
+      import os
+      import sys
+      import numpy as np
+      import pyvips
+      import slideflow as sf
+
+      if __name__ == "__main__":
+          td = sys.argv[1]
+          rng = np.random.default_rng(123)
+          img = np.full((512, 512, 3), 210, dtype=np.uint8)
+          img[:, :, 0] = rng.integers(140, 210, size=(512, 512), dtype=np.uint8)
+          img[:, :, 1] = rng.integers(80, 150, size=(512, 512), dtype=np.uint8)
+          img[:, :, 2] = rng.integers(130, 200, size=(512, 512), dtype=np.uint8)
+
+          slide_path = os.path.join(td, "synthetic_derm.tif")
+          pyvips.Image.new_from_array(img).tiffsave(
+              slide_path, tile=True, tile_width=256, tile_height=256, pyramid=True
+          )
+
+          wsi = sf.WSI(slide_path, tile_px=128, tile_um=64, mpp=0.5, verbose=False)
+          tiles = list(
+              wsi.build_generator(
+                  shuffle=False, grayspace_fraction=1.0, whitespace_fraction=1.0, num_threads=1, pool=None
+              )()
+          )
+          assert len(tiles) >= 4, len(tiles)
+          normalizer = sf.norm.autoselect("reinhard_fast")
+          norm_tile = normalizer.transform(tiles[0]["image"])
+          assert norm_tile.shape == (128, 128, 3) and norm_tile.dtype == np.uint8, (norm_tile.shape, norm_tile.dtype)
+          print(f"slideflow wsi ok tiles={len(tiles)} shape={norm_tile.shape}")
+      PY
+      env -u HOME -u USER -u LOGNAME -u TORCH_HOME -u TORCHINDUCTOR_CACHE_DIR -u NUMBA_CACHE_DIR -u MPLCONFIGDIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME \
+        /opt/slideflow/bin/python "$tmpdir/run_sf.py" "$tmpdir"
+    expected_output_contains: "slideflow wsi ok"
+
+  - name: runtime hook preserves cache across fork and cleans up on SIGTERM/SIGHUP (including PID 1)
+    description: Verify direct /opt/slideflow/bin/python keeps parent cache across os.fork()+sys.exit(0), cleans up on SIGTERM/SIGHUP, and exits cleanly under the PID 1 signal path.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import os, pathlib, signal, subprocess, tempfile
+
+      py = "/opt/slideflow/bin/python"
+      with tempfile.TemporaryDirectory() as td:
+          env = {"PATH": os.environ["PATH"], "TMPDIR": td}
+
+          fork_code = (
+              "import os, sys, _slideflow_runtime as rt\n"
+              "root = rt._CACHE_ROOT\n"
+              "assert root is not None and root.is_dir(), root\n"
+              "pid = os.fork()\n"
+              "if pid == 0:\n"
+              "    sys.exit(0)\n"
+              "_, st = os.waitpid(pid, 0)\n"
+              "assert os.WIFEXITED(st) and os.WEXITSTATUS(st) == 0, st\n"
+              "assert root.is_dir(), root\n"
+              "print(root)\n"
+          )
+          r = subprocess.run([py, "-c", fork_code], env=env, capture_output=True, text=True, timeout=30)
+          assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+          assert not pathlib.Path(r.stdout.strip()).exists(), r.stdout
+
+          for sig in (signal.SIGTERM, signal.SIGHUP):
+              sp = subprocess.Popen(
+                  [py, "-c", "import time, _slideflow_runtime as rt; print(rt._CACHE_ROOT, flush=True); time.sleep(30)"],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir = sp.stdout.readline().strip()
+              assert cdir and os.path.isdir(cdir), cdir
+              os.kill(sp.pid, sig)
+              rc = sp.wait(timeout=10)
+              assert rc == -sig.value, (sig, rc, sp.stderr.read())
+              assert not os.path.exists(cdir), cdir
+
+              pid1_code = (
+                  "import os, time, _slideflow_runtime as rt\n"
+                  "rt._CACHE_OWNER_PID = 1\n"
+                  "os.getpid = lambda: 1\n"
+                  "print(rt._CACHE_ROOT, flush=True)\n"
+                  "time.sleep(30)\n"
+              )
+              sp1 = subprocess.Popen(
+                  [py, "-c", pid1_code],
+                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+              )
+              cdir1 = sp1.stdout.readline().strip()
+              assert cdir1 and os.path.isdir(cdir1), cdir1
+              os.kill(sp1.pid, sig)
+              rc1 = sp1.wait(timeout=10)
+              assert rc1 == 128 + sig.value, (sig, rc1, sp1.stderr.read())
+              assert not os.path.exists(cdir1), cdir1
+          assert os.listdir(td) == [], os.listdir(td)
+      print("runtime hook signal and fork ok")
+      PY
+    expected_output_contains: "runtime hook signal and fork ok"
