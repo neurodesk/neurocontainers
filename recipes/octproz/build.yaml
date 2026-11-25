@@ -97,6 +97,7 @@ build:
         - mkdir -p /tmp/octproz
         - tar -xzf {{ get_file("octproz_source") }} --strip-components=1 -C /tmp/octproz
         - sed -i 's/^CUDA_DEFINES_FLAGS = .*/CUDA_DEFINES_FLAGS = -DENABLE_CUDA_ZERO_COPY/' /tmp/octproz/octproz_project/octproz/pri/cuda.pri
+        - sed -i 's/-std=c++11/-std=c++17/' /tmp/octproz/octproz_project/octproz/pri/cuda.pri
         - mkdir -p /tmp/octproz/octproz_project/octproz_share_dev/release /tmp/octproz/octproz_project/octproz_share_dev/plugins/release
         - >-
           cd /tmp/octproz/octproz_project/octproz_devkit
