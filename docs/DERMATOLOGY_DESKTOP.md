@@ -30,7 +30,7 @@ The `dermatology` distribution is imaging- and computational-dermatology-centric
 | Workflow Role | Recipes | Dermatology Role |
 | --- | --- | --- |
 | Dermatopathology & WSI analysis | [qupath](../recipes/qupath/build.yaml), [fiji](../recipes/fiji/build.yaml), [cellprofiler](../recipes/cellprofiler/build.yaml), [ilastik](../recipes/ilastik/build.yaml) | WSI annotation and quantification (`qupath` 0.7.0 bundles `qupath-extension-cellpose` with Cellpose 3 and `cyto3`), calibrated wound planimetry (`fiji`), interactive pixel/lesion segmentation (`ilastik`), batch phenotyping (`cellprofiler`). |
-| Multiplex skin tissue imaging | [palmettobug](../recipes/palmettobug/build.yaml) *(conditional)* | Imaging mass cytometry of skin immune infiltrates. Resolve or isolate its documented `.fonts` side effect before promoting to desktop defaults. |
+| Multiplex skin tissue imaging | [palmettobug](../recipes/palmettobug/build.yaml) | Imaging mass cytometry of skin immune infiltrates. CustomTkinter bundled fonts are preinstalled under `/usr/local/share/fonts/customtkinter` and isolated from `$HOME/.fonts` (PR #3967). |
 | Volumetric OCT / RCM / HFUS & vascular analysis | [napari](../recipes/napari/build.yaml), [slicer](../recipes/slicer/build.yaml), [itksnap](../recipes/itksnap/build.yaml), [vessynth](../recipes/vessynth/build.yaml), [vesselvio](../recipes/vesselvio/build.yaml), [skan](../recipes/skan/build.yaml), [terastitcher](../recipes/terastitcher/build.yaml) | 3D stack review and interactive `nnInteractive` segmentation (`napari`), volumetric ROI delineation (`slicer`, `itksnap`), OCT vessel segmentation (`vessynth`), dermal microvasculature/network morphology (`vesselvio`, `skan`), and confocal mosaic stitching (`terastitcher`). |
 | 3D-TBP surfaces & clinical photography | [blender](../recipes/blender/build.yaml), [slicersalt](../recipes/slicersalt/build.yaml), [gimp](../recipes/gimp/build.yaml) | Textured `.obj`/`.ply` inspection (`blender`), 3D surface shape analysis (`slicersalt`), and 2D photo review/cropping (`gimp`). |
 | Registration & evaluation | [ants](../recipes/ants/build.yaml), [elastix](../recipes/elastix/build.yaml), [niftyreg](../recipes/niftyreg/build.yaml), [convert3d](../recipes/convert3d/build.yaml), [panoptica](../recipes/panoptica/build.yaml) | Longitudinal lesion/histology registration and instance-segmentation benchmarking. |
@@ -52,11 +52,13 @@ The `dermatology` distribution is imaging- and computational-dermatology-centric
 | `instanseg` | [instanseg/instanseg](https://github.com/instanseg/instanseg) (PyPI `instanseg-torch`) | `Apache-2.0` | Permissively licensed brightfield H&E and fluorescence/RCM nuclei and cell instance segmentation |
 | `tiatoolbox` | [TissueImageAnalytics/tiatoolbox](https://github.com/TissueImageAnalytics/tiatoolbox) (PyPI `tiatoolbox`) | `BSD-3-Clause` *(code only)* | Batch WSI tissue masking, Macenko/Vahadane stain normalization, and tiling (code-only image; see Weight Policy) |
 
-## Second-Wave Candidates
+## Second-Wave Dermatology Container Additions
 
-* **Dermatopathology & DL:** `histoqc` (`BSD-3-Clause-Clear`, pinned GitHub commit — not published on PyPI), `valis` (`MIT`, serial H&E/IHC registration), `nnunetv2` (`Apache-2.0`, standalone 2D/3D training CLI), `slideflow` (`Apache-2.0` core only), `lazyslide` (`MIT`, code only), and `stardist` (`BSD-3-Clause`). Standalone `cellpose` (`4.2.1.1`, `BSD-3-Clause`) is already packaged on `main` and tagged with `dermatology`.
+Shipped in PR #3965 (12 recipes, 21 targets) and PR #3968 (`octproz`):
+
+* **Dermatopathology & DL:** `histoqc` (`BSD-3-Clause-Clear`, pinned GitHub commit — not published on PyPI), `valis` (`MIT`, serial H&E/IHC registration), `nnunetv2` (`Apache-2.0`, standalone 2D/3D training CLI), `slideflow` (`Apache-2.0` core only), `lazyslide` (`MIT`, code only), and `stardist` (`BSD-3-Clause`). Standalone `cellpose` (`4.2.1.1`, `BSD-3-Clause`) is also packaged on `main` and tagged with `dermatology`.
 * **Photography & 3D:** `darktable` (`GPL-3.0-or-later`, RAW DSLR clinical photography), `colmap` (`BSD-3-Clause`), `open3d` (`MIT`).
-* **Non-invasive optical imaging:** `hyperspy` (`GPL-3.0-or-later`), `spectral` (`MIT`), `phasorpy` (`MIT`, multiphoton/FLIM), and `octproz` (`GPL-3.0-or-later`, raw OCT interferogram reconstruction if lab fixtures are available).
+* **Non-invasive optical imaging:** `hyperspy` (`GPL-3.0-or-later`), `spectral` (`MIT`), `phasorpy` (`MIT`, multiphoton/FLIM), and `octproz` (`GPL-3.0-or-later`, CUDA 12.8 + Qt5 raw OCT interferogram reconstruction with bundled Virtual OCT System plugin).
 
 ## Model Weight, Licensing, and Runtime Cache Policy
 
@@ -85,41 +87,36 @@ Two modality categories are added to `CATEGORIES` in `builder/validation.py`:
   multiphoton/FLIM, and hyperspectral containers across `dermatology`, `microscopy`,
   and `preclinical`.
 
-Registry sync prerequisite: [NeuroContainers UI](https://github.com/neurodesk/neurocontainers-ui)
+Registry sync: [NeuroContainers UI](https://github.com/neurodesk/neurocontainers-ui)
 maintains the `CATEGORIES` map in `components/common.ts`, and `lib/zodSchema.ts`
-derives its category enum from `Object.keys(CATEGORIES)`. Keep syncing both new
-entries into `components/common.ts` (and verifying the derived schema accepts
-them) as a prerequisite before editing or publishing recipes that use either
-category through the web UI.
+derives its category enum from `Object.keys(CATEGORIES)`. Both new categories
+were synced into `neurodesk/neurocontainers-ui` in PR #69 (and `fetal imaging`
+in PR #70 so all 31 categories match 1:1).
 
 ## Multi-Domain Tagging List for the `dermatology` Desktop
 
 NeuroContainers routes recipes to domain desktops through `domains:` in each
 `build.yaml`, validated against the
 [apps-catalog `domains.json`](https://apps-catalog.scigetorg.workers.dev/domains.json)
-registry. The `dermatology` domain is registered in `apps-catalog`, and existing
-dual-use recipes on `main` were tagged in PR #3958. Rollout steps:
+registry. The `dermatology` domain is registered in `apps-catalog`, and all
+rollout steps have landed on `main`:
 
-1. Merge the groundwork PR (category definitions in `builder/validation.py`,
-   Debian version-suffix / multi-arch APT peer agreement in `builder/`, unit
-   tests, `AGENTS.md`, and this plan) separately from recipe additions.
-   Automated container candidate builds and promotion require recipe-only PRs.
-2. Open recipe-only PRs for the first-wave and second-wave containers tagged
-   with `dermatology` (and `microscopy` where shared across both desktops).
+1. Groundwork PR #3962 (category definitions in `builder/validation.py`,
+   Debian version-suffix / multi-arch APT peer agreement in `builder/`, PID-1
+   `exec` in `/neurodocker/startup.sh`, unit tests, `AGENTS.md`, and this plan).
+2. Recipe-only PRs #3964 (Wave 1, 10 recipes / 20 targets), #3965 (Wave 2,
+   12 recipes / 21 targets), and #3968 (`octproz` `1.8.0`).
+3. Dual-use domain tagging in PR #3958, PR #3966 (7 remaining shared recipes),
+   and PR #3967 (`palmettobug` `.fonts` isolation + `dermatology` domain).
 
-### 1. First-wave dermatology additions (`domains: [dermatology, ...]`)
+### 1. First-wave dermatology additions (`domains: [dermatology, ...]`, PR #3964)
 
 * `isic-cli`, `wsidicomizer`, `colour-science`, `dicom-validator`, `labelme`,
   `meshlab`, `cloudcompare`, `bioformats2raw`, `instanseg`, `tiatoolbox`
 
-### 2. Proposed shared dual-use candidates from `microscopy` / `neuroimaging` / `preclinical`
+### 2. Shared dual-use recipes from `microscopy` / `neuroimaging` / `preclinical` (PRs #3958, #3966, #3967)
 
-Some of these (including `cellpose`, `cellprofiler`, `fiji`, `qupath`, `napari`,
-`slicer`, `ants`, `gimp`, `blender`, `rstudio`) were tagged in PR #3958; the
-remaining entries (such as `itksnap`, `vessynth`, `vesselvio`, `terastitcher`)
-are proposed follow-up candidates pending curation review:
-
-* **Dermatopathology & WSI:** `cellprofiler`, `fiji`, `ilastik`, `qupath` (plus `palmettobug` after font-isolation check)
+* **Dermatopathology & WSI:** `cellpose`, `cellprofiler`, `fiji`, `ilastik`, `palmettobug`, `qupath`
 * **Non-invasive optical / volumetric & vascular:** `itksnap`, `napari`, `skan`, `slicer`, `terastitcher`, `vesselvio`, `vessynth`
 * **3D-TBP & clinical photography:** `blender`, `gimp`, `slicersalt`
 * **Registration, math & evaluation:** `ants`, `convert3d`, `elastix`, `niftyreg`, `panoptica`
