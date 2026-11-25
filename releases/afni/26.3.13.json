@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "afni 26.3.13": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "sumaGUI-afni 26.3.13": {
+      "version": "20261125",
+      "exec": "suma",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}
