@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "labelme 7.11.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "LabelMe-labelme 7.11.0": {
+      "version": "20261125",
+      "exec": "labelme",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "optical imaging",
+    "visualization"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "dicom-validator_arm64 0.9.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "quality control",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "dicom-validator"
+}

@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "wsidicomizer_arm64 0.32.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "digital pathology",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "wsidicomizer"
+}

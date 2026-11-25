@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "tiatoolbox 2.1.3": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "digital pathology",
+    "image segmentation",
+    "machine learning"
+  ]
+}

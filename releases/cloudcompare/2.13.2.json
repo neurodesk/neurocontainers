@@ -1,0 +1,20 @@
+{
+  "apps": {
+    "cloudcompare 2.13.2": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "CloudCompare-cloudcompare 2.13.2": {
+      "version": "20261125",
+      "exec": "CloudCompare",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image registration",
+    "shape analysis",
+    "body"
+  ]
+}

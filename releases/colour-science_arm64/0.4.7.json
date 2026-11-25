@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "colour-science_arm64 0.4.7": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "quantitative imaging",
+    "quality control"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "colour-science"
+}

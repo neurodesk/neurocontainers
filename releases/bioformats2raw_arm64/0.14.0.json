@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "bioformats2raw_arm64 0.14.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "digital pathology",
+    "optical imaging",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "bioformats2raw"
+}

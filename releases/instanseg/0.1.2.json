@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "instanseg 0.1.2": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "digital pathology",
+    "image segmentation",
+    "machine learning"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "colour-science 0.4.7": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "quantitative imaging",
+    "quality control"
+  ]
+}

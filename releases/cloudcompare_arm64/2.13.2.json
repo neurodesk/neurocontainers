@@ -1,0 +1,23 @@
+{
+  "apps": {
+    "cloudcompare_arm64 2.13.2": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "CloudCompare-cloudcompare_arm64 2.13.2": {
+      "version": "20261125",
+      "exec": "CloudCompare",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image registration",
+    "shape analysis",
+    "body"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "cloudcompare"
+}

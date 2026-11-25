@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "wsidicomizer 0.32.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "digital pathology",
+    "data organisation"
+  ]
+}

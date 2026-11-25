@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "isic-cli 12.8.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "data organisation"
+  ]
+}

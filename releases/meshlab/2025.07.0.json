@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "meshlab 2025.07.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "MeshLab-meshlab 2025.07.0": {
+      "version": "20261125",
+      "exec": "meshlab",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "shape analysis",
+    "body"
+  ]
+}

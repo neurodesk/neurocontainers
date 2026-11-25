@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "meshlab_arm64 2025.07.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "MeshLab-meshlab_arm64 2025.07.0": {
+      "version": "20261125",
+      "exec": "meshlab",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "shape analysis",
+    "body"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "meshlab"
+}
