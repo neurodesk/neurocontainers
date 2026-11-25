@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "dentateseg 0.3.2": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "quantitative imaging",
+    "structural imaging",
+    "machine learning"
+  ]
+}
