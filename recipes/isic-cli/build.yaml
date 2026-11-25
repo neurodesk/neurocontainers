@@ -136,7 +136,7 @@ deploy:
     - isic
 
 domains:
-  - microscopy
+  - dermatology
 
 categories:
   - "optical imaging"

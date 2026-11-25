@@ -382,6 +382,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "digital pathology"

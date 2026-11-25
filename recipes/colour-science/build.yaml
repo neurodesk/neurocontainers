@@ -312,6 +312,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "optical imaging"
