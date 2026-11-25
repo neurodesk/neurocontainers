@@ -1,0 +1,140 @@
+name: wsidicomizer
+version: 0.32.0
+
+description: Convert proprietary whole-slide microscopy images (SVS, NDPI, MRXS, CZI, TIFF) to DICOM VL Whole Slide Microscopy (Supplement 145).
+
+copyright:
+  - license: Apache-2.0
+    name: wsidicomizer license
+    url: https://github.com/imi-bigpicture/wsidicomizer/blob/v{{ context.upstream_version }}/LICENCE
+  - license: LGPL-2.1-only
+    name: OpenSlide binary distribution license
+    url: https://github.com/openslide/openslide-bin/blob/v{{ context.openslide_bin_version }}/COPYING.LESSER
+  - license: LGPL-2.1-only
+    name: OpenSlide Python license
+    url: https://github.com/openslide/openslide-python/blob/v{{ context.openslide_python_version }}/COPYING.LESSER
+  - license: MIT
+    name: pyjpegls license
+    url: https://github.com/pydicom/pyjpegls/blob/v{{ context.pyjpegls_version }}/license.txt
+  - license: BSD-3-Clause
+    name: CharLS license
+    url: https://github.com/team-charls/charls/blob/{{ context.charls_commit }}/LICENSE.md
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.32.0"
+  # Coordinated native-codec pins (kept together with their SHA-256 digests and
+  # bundled LGPL/BSD notices so auto_update cannot drift versions and sources).
+  openslide_bin_version: "4.0.1.2"
+  openslide_bin_source_sha256: "83c9a4a598f3a5fe1dea83e123745e48b94ce7eab99833f04902bdf4fa0af1db"
+  openslide_python_version: "1.4.7"
+  openslide_python_source_sha256: "730fed798de683b00c8ef4d956f3d429cc02f2c449eb0d58944e1769ba7983cc"
+  pyjpegls_version: "1.5.1"
+  charls_commit: "36dd3307e070d8fbc765c3ba890b7e681046fa39"
+
+auto_update:
+  method: sources
+  container_version: wsidicomizer
+  sources:
+    - id: wsidicomizer
+      method: pypi
+      package: wsidicomizer
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PIP_NO_CACHE_DIR: "1"
+        XDG_CACHE_HOME: /tmp/wsidicomizer-cache
+        XDG_CONFIG_HOME: /tmp/wsidicomizer-config
+        PATH: /opt/wsidicomizer/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-venv
+
+    - run:
+        - python3 -m venv /opt/wsidicomizer
+        # Omit the optional [opencv] extra so no bundled PyPI FFmpeg/Qt wheels are shipped;
+        # [kernels] provides Apache-2.0 SIMD downsampling instead.
+        - /opt/wsidicomizer/bin/python -m pip install --no-cache-dir "wsidicomizer[openslide,imagecodecs,pylibjpeg-openjpeg,pyjpegls,kernels]=={{ context.upstream_version }}" "openslide-bin=={{ context.openslide_bin_version }}" "openslide-python=={{ context.openslide_python_version }}" "pyjpegls=={{ context.pyjpegls_version }}"
+        - /opt/wsidicomizer/bin/python -m pip check
+        - mkdir -p /opt/wsidicomizer/share/licenses/openslide-bin /opt/wsidicomizer/share/src
+        - install -m 0644 /opt/wsidicomizer/lib/python*/site-packages/wsidicomizer-{{ context.upstream_version }}.dist-info/licenses/LICENCE /opt/wsidicomizer/share/licenses/WSIDICOMIZER-LICENCE.txt
+        - cp -a /opt/wsidicomizer/lib/python*/site-packages/openslide_bin-{{ context.openslide_bin_version }}.dist-info/licenses/. /opt/wsidicomizer/share/licenses/openslide-bin/
+        - install -m 0644 /opt/wsidicomizer/lib/python*/site-packages/openslide_python-{{ context.openslide_python_version }}.dist-info/licenses/COPYING.LESSER /opt/wsidicomizer/share/licenses/OPENSLIDE-PYTHON-COPYING.LESSER
+        - install -m 0644 {{ get_file("pyjpegls_license") }} /opt/wsidicomizer/share/licenses/PYJPEGLS-LICENSE.txt
+        - install -m 0644 {{ get_file("charls_license") }} /opt/wsidicomizer/share/licenses/CHARLS-LICENSE.md
+        - install -m 0644 {{ get_file("openslide_bin_source") }} /opt/wsidicomizer/share/src/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+        - install -m 0644 {{ get_file("openslide_python_source") }} /opt/wsidicomizer/share/src/openslide_python-{{ context.openslide_python_version }}.tar.gz
+        - chmod -R a+rX /opt/wsidicomizer
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: pyjpegls_license
+    url: https://raw.githubusercontent.com/pydicom/pyjpegls/v{{ context.pyjpegls_version }}/license.txt
+  - name: charls_license
+    url: https://raw.githubusercontent.com/team-charls/charls/{{ context.charls_commit }}/LICENSE.md
+  - name: openslide_bin_source
+    url: https://github.com/openslide/openslide-bin/releases/download/v{{ context.openslide_bin_version }}/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+    sha256: "{{ context.openslide_bin_source_sha256 }}"
+  - name: openslide_python_source
+    url: https://files.pythonhosted.org/packages/source/o/openslide_python/openslide_python-{{ context.openslide_python_version }}.tar.gz
+    sha256: "{{ context.openslide_python_source_sha256 }}"
+
+deploy:
+  bins:
+    - wsidicomizer
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "digital pathology"
+  - "data organisation"
+
+readme: |-
+  ----------------------------------
+  ## wsidicomizer/{{ context.version }} ##
+
+  `wsidicomizer` (IMI Bigpicture) reads proprietary whole-slide microscopy
+  formats (`.svs`, `.ndpi`, `.mrxs`, `.czi`, `.tiff`) and converts them to
+  standard DICOM VL Whole Slide Microscopy Image objects (DICOM Supplement 145).
+  This container bundles OpenSlide 4.x (`openslide-bin` {{ context.openslide_bin_version }},
+  `openslide-python` {{ context.openslide_python_version }}), `imagecodecs`,
+  OpenJPEG, JPEG-LS (`pyjpegls` {{ context.pyjpegls_version }}), and SIMD
+  pyramid downsampling (`wsidicom-kernels`).
+
+  ### Included CLI Tool
+  ```
+  wsidicomizer    Convert whole-slide images to DICOM WSI (Supplement 145)
+  ```
+
+  ### Example
+  ```
+  ml wsidicomizer/{{ context.version }}
+  wsidicomizer -i slide.svs -o ./dicom_out/ --tile-size 512
+  ```
+
+  Documentation: https://github.com/imi-bigpicture/wsidicomizer
+  License texts (including `wsidicomizer`, `openslide-bin` and its bundled
+  third-party notices, `openslide-python`, `pyjpegls`, and `CharLS`) are
+  installed under `/opt/wsidicomizer/share/licenses`. Matching LGPL-2.1
+  corresponding source archives for `openslide-bin` and `openslide-python` are
+  bundled under `/opt/wsidicomizer/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAEAIAAAB1mzrKAAAgl0lEQVR4nOyad1wVSdb3T91ARkBEREBEQcFRGbMi5oAJMeeIWczZMaFjTohZmZUZc0ABBXPCjCiKIAoSJQuXHO69XXXO+2FWdmfmnd1n4/M+7z78Tv/Rnz6nT5+q7+2qrr6toJ8FNfp/JFn1Tg2AGgA1AGoA1ACoAVADoAZADYAaADUAagDUAKgBUAOgBkANgBoANQBqANQA+A8EoKeO4hklW8Ytv3osf5Px0L0lBZ+crf1TJOMnLukl1UH/HWL/i/4PeALTYDu0hyOwpKL/jskvTpSfX3X+0a+6W36piafZ89pz44NnBL1NOrvy7o6iGeklX9obyyxczYaYHm08tT63ymy5u1GSQTezRcb1qs/7x6Wo3vnPEb9R8qj8YdGj6LvJzqrN0ZC8uuB43Oo0ZdHiT+aZX/rvvWO3YzD3TepQ9LwqGtZUn1dleDCtsOQ1SOAB8z47PlRHX4jTCTr7WIf7YpiIFJfRFV+JXVhJbuYrmxTbNm72bPCdzi3ajp2i6qc2G2U7q+7B6kz/2QBS4AgESRlfaheGqO8l6GUsKe0SE5ESU7wsunVi59IPaerc7to10ijhLZnz5+Kq9FRYit24jx/Bc+rdOfMLD+m9Gu3tFKLx+wPGdAU1yujBHwHo1B0yxuEstIEH8LroQgKmt1Z6KHbIjrIU4Q1y9g07wJ6zYTADLQq2JPT8fCvcZUdIWtP7aTs7n23t3Ka/fUf/Pt4bTk5ZaeX1zemGBdXl/n8LgLZKw/llTfvUrtmDNIGJq7LCNJrEZZnv1Z8+1k4/LMYWzirrAK7gCEdFskjDZ+AuzeWNdS8qmyjvyCaxF7JoWYasFkvWm258oNa2JltXHh67SE9haWg2AVbW1TN1MCm59cPI02rl+ZAPTRUPG/U0NdS/uXhZO78yn+wJqrRKv9xhhWuUa+Rj5cjUzJVtZ2uFYBeYE/hDCAQzOSyHIeAp4sFcxFDrDzz0wTOjuEm3bkRMH2Kwx2+ed8eK6QsHHqpuzf+wOYAu8bbio/Q0t13BB0k3+0fVPOlIZv38z9or6d/lkfZ02o7ch9L0nKEF9cBapFNI9Xl/TRiKoThBypNcxWbtQ+knPt/I1zWmWUCDyDmOns2Es3YzPxd7Y9OWU6WI7B5cdj6woM7w2UavHe5aefD+pXL15pQjNzHiQKNxg151upbOH46O7nxjivdi383SVe0C6YB0QBgJV35AGONdfgVfYoFYJvbhSW4sHotJeBxr0RI+AMeKNNEAi2ise8yGHK+OvW+uNhu3pbrGfxsAmiXV5+8k1y/rC3tz39xRRXY8N1+v6AxvojIsOcEdVVDSmvfJP1XcjNfLn1ccLnSLlpfvBi3eJE+wBVuwqM70C0nsC0xXNrH5XAfkovYQ48EoL8tSM2ly2uAvjcmHB4tmvxmaUiCXBdUyMLhsHjjpc9+Oxqs6WTU7md/qdnbkxOS2x+9fT6qcWri7pKfUm9uLttrJ0kRxRZSBEfteO1azVfNZKuImYolJvxbyRoN67Ti6bLFl6opHfaKT7rFFww4ptGkVkzXPeCDaiolSrnDHfJ4teospIgMjsIDriFAcgz9gY9zMy4QNBqEFnSbVOOnkzjXDWx0ftbTH3D9V+o8D4MUFoSUjKqTok8k56tAPL1KbaawSl2Z148W5swrHQDvygu3Vsf+4DPQ7vXHqad5izP5etxV5Fn1MN1R7qgx1ytpUHC8ouqQKf116686rqMZgAh6QYZTeFVocNi+Y9KnvUFxfvlhtlNFub3pgw2Kd96mpkdpO/CVfL53kGnFGS9Iy3kd7g/uKIsmCWwgD6QjPFselTCmWX5TeiUnY2Wz7t8MdbvZ9+MPCFQ0zZj1eGL0g7M3Me3vCNQXqQO0nboZTRTwvEQMxtuqeEMbCGzXUj7uJVOGDi9Ca1nIuGolQfes670zOr17xQX1qk14DYz8Di78bgNr14+q0osL1QZ+ehKrtY81SR4AOlcOeav+/UrWc3NVtRpsXTD7Wr4621vXgxIqK47tuRsh51odhhbbyZFtbYze9WbOGfPtOv97071z2l9iE//RmmMxfJ0lZYjSnU0XzuuV6z+++d8sffmLyzeeatMLAsk3au7xCxGgTeBTfqH0mjeV2koXwFCrtEGm32ClNkNzEfe1PvIRf4EvFDGEqfeaV4q12Kf9GNLQK7ty9xdmeUw8FLJwbbxaoDH9wZ+9y76M9+T1hiT2ktiJK+PEhuAtDRZB4gBFcX9wQE8RYTEUP0UeMwmQxEM1oWV//TQO8GvYxW/lsXNDfBAAVZQMrB+c5HX8W+qVi/yunhPZgD/ZgWe3/10u52LrY3Nr6+LbYGWXlyrVJjzWVfIfypaj2/1a6juNkToNqbT3dz8OJC9XB0gb5b/7w8HpW5broO0nfw88StsIWC6UEyZVv1Pbky4Srdg5XcX8pjtuLZ9pYaSR30i6QPMVzvkMsE0O0XaSfxBSpkEfzc1Kh2ICjtbc4CrLs32lSswO9gw4lL8r8+OTyg0et7xmuXu4/W8qU1kkBXF9MwFR+TdgLe+GML9CGu4tM3Ize2AA3cBCOeMPwkOWI2hvXzU06em6k7IXCR77iL66EKUV4iuzskp3Xz7eruPaqf4LH164/DN0hDn5ijmBQHfuvlEncwOyOs3n52/IvAX+96/9omk9n8WOousXZq3GB/HvViKIOv+z6r83zZJ6sSDae1Wfx7DlrzUgmY5tkPVgfVsYi2W02kpnK9slGsUzWl5WySLZC5sCK2BL2LSthW5gCHsnusGlMPzvz6cHYU7dlC1/u79l81NibvYL6HvetOz9RvkveUX6aJbL9bDsby7JZNnNlShbNLsAeWMx6six2k9mySHaqrGNOdMHbZOnp6xizP5X3+wCKlgSvfGqrzU0cmyVTBtuwOj/W3bNYPfyBXYsTVstNG1b8KF8Za9Vhfd4EtV7Ppn1tOlef989KN6Bpks0h7fObPVJqVx/7r6XpGBSUMFh3dqNYq0XyqDotje3hE3yCzK/uA+wAzIHzbAebw6JgJyxl59k6mMM43IM/sAVsOOvDFrLO7B2rgHvsGDsAC2A868x02DtmDjfYTvaOnYf1LAkOwIHM1ve7vXlz59yyEUemOU8apnFb7Oa2zmTSMbYeRkD/n7O8Y8OgD+vArFk+u8f2wxw2gqXBT+ADC5kndEsZ82zB+8N/EYBwKPItG118INTvhbneaOdXDfZYm2z+3itOR5/O1GpWPmLZzYddy/jcrnd82YmE+5qZVuVrhk/41nBCh81OydU5/iEFUADckYXoZisTaVXpFu3fAYBWlazWmrJNSo2yS4P++2csGGTrcmj5AnndY4s+DFts4jDQpIOr/nbnOFvGWuqYKizBBIzAALIgH4pgMLhCK9hMh+kWLGLjoScMgI7gwuxYfbBg3swd2jEfmAke4AJ2zA46gCM4Jj4LavDY98b8uZn7XrT5xmv8gB5dPNZZThwnM5FFsgmwgHlCf7aezYERUAsMQJclsRNsPXSHFuCQcyf2fPK4v7gQKx32aOa7cIrTnJWGmx/3KnM/rC27lZs6r3TtkD8EW9EKPExpsBoOw1E1/AAxYGTtd7/n0zqnZp0edLzyQ+zY1G/RuTxQPa8639+sqWwq9JGWZyWqMpX5LvYW3pVVh19Uu/+alLfbhVq14mZ5SwujcpJ8jwbe0x/UtGmDJL3F33Sz+2JWf2hntzvmAYZH9btSoJTC95Rd+dgh3afENeZScozK/vWDhBhV7+hjSb7Qs2KmZi+MgUewitIoC+yoHCxBRWkQD5/hW6hDaTAFHEAfTKEA6ifODB33/DYlyxqw7IEBhw4t6qy7VvlYmRQ24DvP4810xxjtMXhr3azjvmYNdCyMXQ0Vma/e7UxcXVQv41heyF8EUHk/2iVpi+Jl3UMmTOehtXtdKFAPbBYWStH4gX7nGbZi2I6Cl/f01Qtmtv2sn9DCxX5LufOLwA/Z1f6/T2Vez47GhdRZOHGD+2qZbsOxjx+iJvVciV61/7eSWZu90Nus7+l9pTWWTou6E3dVKk71/KKULqbCl84lKbciXu0VaixBkvWp18j8mO7p5ml2QYaVLdLsHSyfDJrTqbd1/XFbehXSCmkMtyiKeP8mzTJvfOSQeNdsehET1zb3XLRPohV8L80SKgqH0zCaWsM1eANOdBlCYAqEU/jHoUHfP1Lo7ah12eBEL9q+f+Ymw1k26y02NHLskdLKR0cYntd7V11v1Zaz96MmbcTvAViI0eSoMUkuzbqt09e2su7kqoPgheGpicUCWn+N+o3h2uxzZV/oOHcXBvIfa003OA6e0BkaVvv/PpVPedQyRmO8o/tpl3OmJ++FjckoNfcacX2YtDR8eMa76qgqk8uaXTQvMP58Sn9gT8zUn0UmxRkhCc9DAUADQ78OTW/oDTmK1tIp0U/dPtU3p2PR6cSijHPS+UDHRxelLSJfoFJb/1MdC6NvnevZ7TGu7XSowTGriu6zv/3YZOf0g/27i3naBL5MVRJrmvo6b/4756TizNuvs+JdMpMjm330KumWEZX/DTyEDbA7ctMJ2fV3FqzVWsczLSeOSOy+rXzA1phn80vDflTHelOF6kqlkfJaF6WNYZ16W926HQKAfpD7q8dQPl0VVrwsfdR8n4MVslOGp3S/sxPH0pZ2LZYPibhipt17bUPS6Orm/1mK8x2OWB0wm/9i9sT07MGb+alwtV/cpM9Pqv3/iGopBiV1UJnbjovovffr0u903JC8Qn4nPq+glrxx/WnGrZSinYfVNu3HdNMv2lz1vouBgXxfblhR9ar4OlyHSGm6NF2E8dW8j3DUNuBm/JZUV0wXQpK4m0iWwrmZuCVZcY2wkWZwZzFUes7NxH1+UewX7Vkv/el68trBrawdt9R91u6K0866G9olNt1Ru1/TbbaCOcismU9p+8xZ+fdSA59Yx6R/lj1rFavu82ir2wxrqc7edq+fVritL3naCL4W9GcxHZM83Wu1g+M/Tp8hm2zpZjjp6x3AOxQtKnsLAKbQBDeVb9L8VL7r1cF4mdG0Azm9K4qHxKXktxHBSfbFr78mulzrrI6L0SQ/k17fSytz5hRsVm/9MDD9XpUPeldf7u+T7lhHF+u02idHXelhXFTvqvPT4+r38cEZYYY32pc5lcp9miwyfsLfFLsU7iyacyw50rnc4NnBuIX0SAjs+DWFH/lBCPcWXCwSO4WOWCUpxRVxQpRiC3ISPsITj4py0RETxEJchF1EPRGHbUUODkIT9Ma5OFFcxPdkwycUf1Pmk+Zxz+/1+aTw2zdeqiQlfy2MlJNqvTbUtTRu28ipa72QDt2cFje44Nqw+dsWlqOselyBGawJlJQmB8TErgcAO5gDX8v6s0hbbKHx0GDwloRX+jDLrVU1AGlXKVYGVEaqZ2qj9FvoonKAqtePnjeTLYuWDx99rnbF+wnT+2k3PbRMWwvHtLMFKpt1CbF9S8cUF9FUtsBwqX79Wmr3Fm1GlxjehFeq6sv9rVLmNrhk4V7Pcbnt6KXlxq86f1xXePJC6sO6UEIbIa9y85u6iVVhQdAL2kEQlMMrADhXdQi+dj3ZkR1NFi/5S7zCw4VKlGlXchdxg18XKPZKDbmb2CTtF+NFpdRQZItu/AY/gru4F7ZAFJ3FbJQLM9xLI8QncQ9HCkPMo6ViKGbjRJGPrbE++dM2wgrM31my51Pqdcfn/T+cvXby6WV+TzhjpHO7UW7dwz3hUMoiiUJUQyvuwQQACKxu32+NNn4xqtgPU3/xGIprFXUUCwoHloaWty9tWD5BHaudrGpaKmXPXHc3ICz3wPH04HMaruteckNzzXSemgryglo96Pf57vzZB3cVDQkpfuJg3naSnfvsWqp+29qaV1/ov5Y81lRt2MVqyapP4xZJLfLWFnXKlx1tE5oOjtQBrlVH/TVhPMbjCilHkou5WpXkxLtrbbhSXJXCeGsRq+3Kg8Qs6RN3EBF8Cl+ETnwH/xYX81LxTOzja7i/aMF3Cxe8w5sLE3FVBGAYuvNZoqlIEgfEOXwglmMyThC24hj2FIOpDnYUJ3EeHhaTsTsGYxeKxcTslLcNPimqqgGlcovbApvvf6fQX0j52a2VzZGvY8nPUwCpH+Z9LJHdbe1xbDUZjzKI1F1jVFe/oe5Ug1V673SH6w5RLlXUZ7dkt9hfXHaZmY4y6trFNNjTxC0xL+no/ZCRZdMeN32/v9r/W7HZsrpshGWf7xLHpSntrZ7VVmfVX2sSkCHqFXYqK6yO+n3RCTxBcr5RbMSN4juhKx7wfaIU13ESbuKqlChUuIjfF1FiNJ/DfYU9H4hG+FSaxM3EKG4mCvA4X8YPiqZ8rJDjUX5fXBOzeaXoi2W8XCTjWR4lhBjCFwovPCt2ciXm8ONCjbG8GAeKqixTsUIYoz56cTexDtdhZ8zDb6ZkX7fd0c16vKHKwqFodrcT5xeSXfECzfDqqqtMr/MUnW/mGN8PODjwPtjADPCsfheUDm/gU6jX4J5rMnjLrPeq5YZt9FN0Pxs80rusk6ev1L2kXKfHddTKWJ04xRtFsGySvC37A3Nkjiz6ly+TzWBUWNcWpg89Z7rlF8Zc/vLomXKuNZqv0m3aYFC9jfSd6I931JEf09P82TXDi3pOhl1dnBwis45uijmZKtXKSM3/9VupFEiBXGpMjckLrdGazuAuPIsDeSMei/t5e5yJiWKA8MZ43gO7iVBuLmrhbuErvDFBuiKuiNG8h0jGaNGDf8Zo/kF8EN68pTDFg3yMkIljPEuo8AdujP2wktsIIUJ5Y9ETN4k1YhIG8wBug2VimygUL7gvhuEjMVkcRBN+Gh9jB7EXQ/GW8EBLbCO6iRTcYBRR/7b5sqlJ1xy2TzDPqeVrtlETHxSZkE4v86wrVyrC3B5Ze+hk9WhkN/mPXf/rx1BbaAWOdueGzena7nW77RFnlmg3cyWfqHmg3SVFVbbVra+U9DbpFCjDdB2UlYrjOmeVZooDyvGKQrmrIl3eWjZXNl5mJNtRMPF8RPgD+dTaubUqzKaO6NbtB+nTy4KsTE2036uYQSzRYJhiqZHvNF+XFzKl7cZaHnl+/vLQJGlN+pP8FdQP+tFaeoEvyB430AZS4Ss0pKOiUhzCbMHJFGeKJahHo4WvOIVlYo44L+JFe8ylXrwtNhX2YrroiJP4IVEbUSwSPqjkfYUt5vBT2BINxF7hJqZyN6FGNR8iFmG8cBad0InPQnt8x5uKFSJBRIvBOFAMFitxKbcScgwWMgxAb9FdpOBo/hgfYwcxHvfjEXyJK2mbqCvq4AXshtYUX6iT3vML7B/Y6cjcup2HzHceNrrpx74d2i3UdTFubhIkqdRT1SF2NuAKnr8aCX75NlTcVD+Wup561KPpojU8Kv9Jsbf+G90/KAfp9dVxVX7Sna/zVHFKN1w5U2mpc1W5Wz5P2U1RW95eWSS/LDeRz5QvlxkrWytTFQ+cTh7vsaQQjZ/mf8kpnTUcQ5pTNG4l5ddL3jXppbvD1OLxsXGGao/Kxqq8z+e3650bRfMwgeqgHxG1xO+oH/mJhzgTL+EDnEKnMZcW0FXRHnOxpwgV27AID2Fz9OG30BvlojWeJC/xWozARuKC8MYycQDnYYJAcQyNhQx3oR5vIdriRz4CV2F9USJ+xA7cG6fiHTFZLBfHxHE8RJvEW74CjcVY0Vn4C0AgR94F16OZ8EZ33CWq7oPbwhsbYz/RXJxBW5yJKeQhgmkUXhIfxQNsTSPpLRiJSWiLG9CXepE/7qEKaj7y7UHtIv0uJ+eohpz5vYXYzybvp9dF+ahP4/1nFnQMXDgq1KdI+146x5urs3U+Srt1W+lcVU7RjVD6SK46TxUN5dZKG0UXuZuiu1wt91Wg4qNsl2m9plENGijHWQSb2hXaft8+2J+iMZJ+NaZT7+J7mpXlERtVTzxqDT23zuOHso4aL+0XvCgc8RQ9IBPqgD9gEMnIgcKoN06lgcTEeMzDGZiM7nQb26KakoQKD2JjITCyCgT2pk+iPoagDI+Kn3Akj8MB6C4aYgDNET9gCLYTTcVmXCmWYhA+F4a4GzVCI4JxuVgmMrCt4FhOySJf9MMUMQ1TMUd8xnzcIwSOxSbiKhqiqXiGx+iAuIid8Efqiy+IhBXm4UgxGCdiOqXQW+gq5mAT3IpXaRxdwctkTF1rRdRfXyegg8+U5/3PVffBXwDwx83asd34pi966m0ZPe3D9UOL4g5GazdIyxVbNQ20V3kfnVhlqeKQ8qZCIa/Umacolt9XDFL0kkcp1sieyJbpzBMN8VRVFsinwhJz7aKqXdjwOxPp56J8zUPmpvCQLyvzV8+SzmFP6Yw0Aw7BCjiOg8mDPGk+ZlJblFEGRaEN5ZIOjcGJ5IHltJiuC0fsiO6Yi/voJ7yFcrwtuuM8moNAljSPO4h7OBjXowVGiia4gFoIDRbhe6yP7rgKo8RGuiSi0AU/iRso4R3RHPviXlGAi2mJGIitcbIoxET8hFG4jKaL7WiOS0QEbsS25EWCmotGojVOEE9pLt2hDaQiwChk1F0spuG0kyxIlzrCQ8iCxAHg83pqK51G+kd1R/2p+X8NwB+thXqcoreztpvmhjT1luvKm8fctH25HffUaS11VeQrLyqs5KjwUiTIbyqGKCrkJQoLWZbMUsqLNUlxwvZaf95JJ37oIMfSSth1M3J3ddY/S++7yQeaB5WsShyVNaXMv7R1+R2aAJPBjzaRklrBRDoL80lJappIlXCLhmEfTKP6lEPBpEUFFZEFzsAllCj8yZ2K8Br60QJMp/n0CAHH4DahwRycgLYItAKj8QHp4jPch0fFJHGbPDGJmqGXmIYdcalQopyW406cgB3EGhpG9mIZOqLAlziWTgljXISNaDReogARSPF4QXxEXfKkMHKmz5iMd0jgNbTEHjiPntFW8gEVLKhqIeQ3ietd3rawk99U9YB11e3+mwH8cWsTPnVl/xeW510aN14WzOb29/UpHJswOuOMco68rixMMUfeXG6i9FA0l8fJT8uHyL5UjtQUacdEiL3LL97vaLx54ujjLNm4r04Lbf0wo6S2bKNeF0Wl3qDpU13G6/Hx25v9FOGw8OohmzJR+UJTSgUUQXEwBqzB4uf74Bh5UHMIIAJzcqWjNIq64hcicKAfqQE1RQPU4APyo1ewC51pC73FRByHZ+gynaIW6CcO0knhj8l0GleTHabgOIyk6cKLVpEhKvEUzsdI2k6X8RVuo0gRSZPQDzNwI73GdpiNDVEXexLDBpRBaWInvsL1aEQt6T75UhP6Ae+hF4VhFO0lLT6nUroDPnAGbvzcbeBwruuxb5Omn7t0a+ND9o3MkzX+U5f+xn41Cf91E1M04dKDBz57nlyY+lSxPzBwNdmov5dCFB/kabJ9isWyUTJL+Wr5UBnIDWW6socu2VOi+0GXGSsTx+/RyTExNXhUlQWg+FnaxNz4p/pbnpwyS7e5dy7qFothQWw7mwProRvYM1uwIB86DYEwFsbQEXKkgbCUjKk2zaL9tBvuUj59oNEUQxHUhxbTVlLgFnwBhrSdVKSH/SgBv2A8+VE4dqS3ZI7umEAOeJVW0k/Yjd5TCubiYfJHRwrAx5iPg+kEvkQn3Er+lAv2qKFtGCN2YTc6ih4UQbqUQC1pbNVHLxSMRH6UQAnkQmOoN6yGQ5AKX+DrZ1gt7g/t6nbXa/iZ8xteyjfqWipdq/vvnwbwSyuN+YJFTvdlOzqdGRk1JCD8hjvN5u9EjnyvjMlC5HbyCbI6stXsuuygcrrudWXb2mqH4daMNvBLYkXJ4dS9OdNZH9oDxUzDzsJRlgAB7HtwBEOwgFmsN/SGj5AFWbCJAiEQMqGACqgbbABf8qIj8AO9hFbUg9KoO02hDOoNXvSSWtEM3ESMWtFZsqJOuJDKyYDWE4EC9ekSBuNWSiQFzaJQKkInXEFPcTk9IKJp9IoMsDFeokLUpSOUgtupjJwpjOpQb0yoivx5vxc2p6tURjvgEtyFG/AKPnx9eNmqs17x0L3J2ouTwL3zaocJ2eySLERmVd1b/wYAv7SKWQWfStfEvAne9Vj7zuHStoeOqR+e3oxRs210gypk9dhpNly2S9aJMdkV1o/Zsd2ssUyPzWQGUMjescNsOwuCZeANC9gA1ocNgjbwLXQFZ6h+m5gA2VAIN+ENRNN42k/+NAL2whFYR+fhPDWG6TSfVORK/fE6GVNjaEyjYQEepHgyog+kT53pMqnIAYNJIhcaRc9JBx+QNfSjFZRNDXEWfSILsqMp5ENbqQSc0JJOUg6dIDm1r4qk/r8cXr7+G9FI8US+vc2VcfV7Nx1Qe33klCjzYPsRVr3+FPA32r8AwP9tFXEFp0tnvM8Oa/zcNt76tvdL69Trz4pi+5U5Z7sWuMlush4MmDV7B+eZMYtkp5gJi2eXWT7cgAPQHBzAlg1jfaBDdb4qo3CKhLiqigFgPRyAC7QN/CEIxtA6OkLtwQs2kRH1p/nUkrzge9JSH5pLhwmpFRH0g/mkR560lCqoJ8yiBGhJY1FFncmLTpEudKJ5lEpWZEzDaDldgEcQ9cvfOIRTOaSaZNiE1nnWIcFr5IDnbr7TP3tcMt1sY2tx/mvMP2T/FgC/YynwAuKKk7IXqLZmpb8bm+SUt+xDm89vc/0/Nvockpec2C0DC4aneGT3KvXPOaz6htaiBQWx7tASHKAjOIE95EAhVH9Kngq5oKqaJ+gGBMAdiKB9EAQPwIW8YQf9CHcpgqxpAqyDXrCaDlb9usGHUqgVjadusAL8qDutpP3kDYchEA7CVXj0dRw/B6bwwdigXlHtVrZH2zRrmtqoXWfj5hcdr3Rf0CrFbnK71U5lMl1Zimz810r+afvvAvA3S3qsVmjdVcrUiznJRSFpLrnyoh2Z3fMyipwyVXkHy1p+ySyKLpuWn1j8vqJOwdaSeuqY0kOVV7R7yxUVr1BVGaTdr37D3/HnVWDopc4ZeUvFYFmSXo5ymTLY8JrBCEM909lG5QZtLfaaZJnE1V9hbmj+0T7K6qZFu8b6NjPqFzXvYn/JxNlqrXmrn2ck0+q6/l36Hwfgf5vJfudYDYAaADUAagDUAKgBUAOgBkANgBoANQBqANQAqAFQA6AGQA2AGgA1AGoA/OcB+D8DAD7K0uYRcCGTAAAAAElFTkSuQmCC

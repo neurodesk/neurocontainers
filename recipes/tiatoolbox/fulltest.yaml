@@ -1,0 +1,484 @@
+name: tiatoolbox
+version: 2.1.3
+upstream_version: "2.1.3"
+openslide_bin_version: "4.0.1.1"
+openslide_python_version: "1.4.3"
+
+tests:
+  - name: tiatoolbox wrapper available on PATH
+    description: Verify the deployed tiatoolbox wrapper resolves on PATH.
+    command: command -v tiatoolbox
+    expected_output_contains: "/opt/tiatoolbox/wrappers/tiatoolbox"
+
+  - name: package versions match recipe, system APT libs and CPU PyTorch used, no weights baked
+    description: Verify tiatoolbox matches upstream_version, system APT packages supply OpenCV/Shapely/SciPy/scikit-learn/pyzmq, zero bundled GNU/MPL wheel libs exist, CPU PyTorch and imagecodecs work with system libgomp1, no CUDA wheels exist, and no pretrained checkpoints are baked.
+    command: |
+      set -e
+      /opt/tiatoolbox/bin/python - <<'PY'
+      import importlib.metadata as md
+      import pathlib
+      import subprocess
+      import cv2
+      import imagecodecs
+      import scipy
+      import shapely
+      import sklearn
+      import torch
+      import torchvision
+      import zmq
+
+      assert md.version("tiatoolbox") == "${upstream_version}", md.version("tiatoolbox")
+      assert md.version("openslide-bin") == "${openslide_bin_version}", md.version("openslide-bin")
+      assert md.version("openslide-python") == "${openslide_python_version}", md.version("openslide-python")
+      r = subprocess.run(["/opt/tiatoolbox/bin/python", "-m", "pip", "check"], capture_output=True, text=True)
+      lines = [ln.strip() for ln in (r.stdout + "\n" + r.stderr).splitlines() if ln.strip()]
+      unexpected = [ln for ln in lines if not ln.endswith("requires opencv-python, which is not installed.")]
+      assert not unexpected, unexpected
+      for mod in (cv2, shapely, scipy, sklearn, zmq):
+          assert mod.__file__.startswith("/usr/lib/python3/dist-packages/"), mod.__file__
+      bad_libs = [
+          str(p)
+          for p in pathlib.Path("/opt/tiatoolbox").rglob("*.so*")
+          if p.name.startswith(("libquadmath", "libgfortran", "libgomp", "libzmq"))
+      ]
+      assert not bad_libs, bad_libs
+      assert "+cpu" in torch.__version__ and "+cpu" in torchvision.__version__, (torch.__version__, torchvision.__version__)
+      torch.set_num_threads(2)
+      assert float(torch.ones(8).sum()) == 8.0
+      assert imagecodecs.version()
+      bad = [
+          d.metadata["Name"]
+          for d in md.distributions()
+          if d.metadata["Name"].lower().startswith(("nvidia-", "cuda-"))
+      ]
+      assert not bad, bad
+      weights = [
+          str(p)
+          for p in pathlib.Path("/opt/tiatoolbox").rglob("*")
+          if p.is_file()
+          and p.suffix.lower() in {".pth", ".pt", ".ckpt", ".onnx", ".safetensors"}
+          and p.stat().st_size > 1_000_000
+      ]
+      assert not weights, weights
+      print(f"tiatoolbox={md.version('tiatoolbox')} torch={torch.__version__} cv2={cv2.__version__} shapely={shapely.__version__}")
+      PY
+    expected_output_contains: "tiatoolbox=${upstream_version}"
+
+  - name: license notices and OpenSlide LGPL-2.1 corresponding sources installed
+    description: Verify TIAToolbox BSD-3-Clause, OpenSlide LGPL-2.1 license texts, and matching OpenSlide corresponding source archives are installed.
+    command: |
+      set -e
+      test -s /opt/tiatoolbox/share/licenses/TIATOOLBOX-LICENSE.txt
+      grep -q "BSD 3-Clause" /opt/tiatoolbox/share/licenses/TIATOOLBOX-LICENSE.txt
+      test -s /opt/tiatoolbox/share/licenses/openslide-bin/COPYING.LESSER
+      test -s /opt/tiatoolbox/share/licenses/OPENSLIDE-PYTHON-COPYING.LESSER
+      test -s /opt/tiatoolbox/share/src/openslide-bin-${openslide_bin_version}.tar.gz
+      test -s /opt/tiatoolbox/share/src/openslide_python-${openslide_python_version}.tar.gz
+      echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: wrapper isolates process-group signals, cleans up on SIGHUP, and preserves piped and PTY stdin
+    description: Verify the installed tiatoolbox wrapper delivers one SIGINT/SIGHUP, cleans up scratch dirs on SIGHUP, works on noexec /tmp, and handles foreground/background PTY job control cleanly.
+    command: |
+      set -e
+      /usr/bin/python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, sys, tempfile, termios, time
+
+      src = open("/opt/tiatoolbox/wrappers/tiatoolbox").read()
+      py = sys.executable
+
+      def make_wrapper(path, stub_path):
+          patched = src.replace(
+              'cmd = ["/opt/tiatoolbox/bin/tiatoolbox", *sys.argv[1:]]',
+              f'cmd = [{py!r}, {stub_path!r}, *sys.argv[1:]]',
+          )
+          assert patched != src
+          open(path, "w").write(patched)
+
+      def run_in_pty(argv, env, on_ready=None, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if on_ready:
+              on_ready()
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('TIATOOLBOX_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          wrapper = os.path.join(td, "wrapper.py")
+          make_wrapper(wrapper, stub)
+
+          env = os.environ.copy()
+          for k in ("TIATOOLBOX_HOME", "TORCH_HOME", "TORCHINDUCTOR_CACHE_DIR", "HF_HOME", "MPLCONFIGDIR", "NUMBA_CACHE_DIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
+              env.pop(k, None)
+
+          # 1. Piped stdin passthrough
+          r = subprocess.run([py, wrapper, "stdin"], input="tiatoolbox-pipe\n", capture_output=True, text=True, env=env, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:tiatoolbox-pipe", (r.returncode, r.stdout, r.stderr)
+
+          # 2. Interactive foreground PTY stdin read (must not stop with SIGTTIN)
+          rc, out = run_in_pty([py, wrapper, "stdin"], env=env, send_bytes=b"tiatoolbox-pty\n")
+          assert rc == 0 and "GOT:tiatoolbox-pty" in out, (rc, out)
+
+          # 3. Interactive foreground PTY Ctrl-C delivers one SIGINT
+          log_pty, ready_pty = os.path.join(td, "pty.log"), os.path.join(td, "pty.ready")
+          def wait_ready():
+              dl = time.time() + 5.0
+              while not os.path.exists(ready_pty) and time.time() < dl:
+                  time.sleep(0.02)
+              assert os.path.exists(ready_pty), "pty stub did not become ready"
+          rc, out = run_in_pty([py, wrapper, "sig", log_pty, ready_pty], env=env, on_ready=wait_ready, send_bytes=b"\x03")
+          sigs_pty = [int(x) for x in open(log_pty).read().splitlines() if x.strip()]
+          assert rc == 130 and sigs_pty == [signal.SIGINT.value], (rc, sigs_pty, out)
+
+          # 4. Non-TTY process-group SIGINT delivers one SIGINT
+          log, ready = os.path.join(td, "sig.log"), os.path.join(td, "sig.ready")
+          p = subprocess.Popen([py, wrapper, "sig", log, ready], env=env, start_new_session=True)
+          deadline = time.time() + 5.0
+          while not os.path.exists(ready) and time.time() < deadline:
+              time.sleep(0.02)
+          assert os.path.exists(ready), "stub did not become ready"
+          os.killpg(p.pid, signal.SIGINT)
+          rc = p.wait(timeout=10)
+          sigs = [int(x) for x in open(log).read().splitlines() if x.strip()]
+          assert rc == 130 and sigs == [signal.SIGINT.value], (rc, sigs)
+
+          # 5. SIGHUP forwards once to child and removes wrapper scratch dir
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([py, wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          deadline = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < deadline:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_home = open(ready_hup).read().strip()
+          assert scratch_home and os.path.isdir(scratch_home), scratch_home
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_home)), f"scratch dir leaked on SIGHUP: {scratch_home}"
+
+          # 5b. Under nohup, inherited SIG_IGN for SIGHUP is preserved and child survives SIGHUP
+          stub_nohup = os.path.join(td, "stub_nohup.py")
+          open(stub_nohup, "w").write(
+              "import os, signal, sys, time\n"
+              "ready, go = sys.argv[1], sys.argv[2]\n"
+              "assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN, signal.getsignal(signal.SIGHUP)\n"
+              "open(ready, 'w').write('ready\\n')\n"
+              "dl = time.time() + 5.0\n"
+              "while not os.path.exists(go) and time.time() < dl:\n"
+              "    time.sleep(0.02)\n"
+              "assert os.path.exists(go), 'go file not seen'\n"
+          )
+          wrapper_nohup = os.path.join(td, "wrapper_nohup.py")
+          make_wrapper(wrapper_nohup, stub_nohup)
+          ready_nh, go_nh = os.path.join(td, "nh.ready"), os.path.join(td, "nh.go")
+          p_nh = subprocess.Popen(["nohup", py, wrapper_nohup, ready_nh, go_nh], env=env, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_nh) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_nh), f"nohup stub not ready: {p_nh.stderr.read().decode()}"
+          os.killpg(p_nh.pid, signal.SIGHUP)
+          time.sleep(0.1)
+          open(go_nh, "w").write("go\n")
+          rc_nh = p_nh.wait(timeout=10)
+          err_nh = p_nh.stderr.read().decode()
+          assert rc_nh == 0, (rc_nh, err_nh)
+
+          # 6. Interactive Bash Ctrl-Z returns shell prompt and fg resumes child
+          ready_z = os.path.join(td, "tstp.ready")
+          stub_z = os.path.join(td, "stub_z.py")
+          open(stub_z, "w").write(
+              "import sys\n"
+              "open(sys.argv[1], 'w').write('ready\\n')\n"
+              "print('RESUMED:' + sys.stdin.readline().strip(), flush=True)\n"
+          )
+          wrapper_z = os.path.join(td, "wrapper_z.py")
+          make_wrapper(wrapper_z, stub_z)
+          master, slave = pty.openpty()
+          def preexec_bash():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          benv = env.copy()
+          for k in ("PROMPT_COMMAND", "BASH_ENV", "ENV"):
+              benv.pop(k, None)
+          benv["PS1"] = "BP> "
+          bash = subprocess.Popen(["bash", "--norc", "--noprofile", "-i"], stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec_bash, close_fds=True, env=benv)
+          os.close(slave)
+          pty_buf = [""]
+          def read_until(marker):
+              dl = time.time() + 5.0
+              while True:
+                  idx = pty_buf[0].find(marker)
+                  if idx != -1:
+                      end = idx + len(marker)
+                      out = pty_buf[0][:end]
+                      pty_buf[0] = pty_buf[0][end:]
+                      return out
+                  if time.time() >= dl:
+                      raise AssertionError(f"Timed out waiting for {marker!r}: {pty_buf[0]!r}")
+                  r, _, _ = select.select([master], [], [], 0.05)
+                  if r:
+                      try:
+                          chunk = os.read(master, 4096)
+                          if not chunk:
+                              raise AssertionError(f"EOF waiting for {marker!r}: {pty_buf[0]!r}")
+                          pty_buf[0] += chunk.decode("utf-8", "replace")
+                      except OSError:
+                          raise AssertionError(f"OSError waiting for {marker!r}: {pty_buf[0]!r}")
+          read_until("BP> ")
+          os.write(master, f"{py} {wrapper_z} {ready_z}\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_z) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_z), "tstp stub did not start"
+          time.sleep(0.1)
+          os.write(master, b"\x1a")
+          read_until("BP> ")
+          os.write(master, b"bg\n")
+          read_until("BP> ")
+          time.sleep(0.15)
+          os.write(master, b"echo BASH_KEEPS_TTY\n")
+          out_bg = read_until("BASH_KEEPS_TTY")
+          assert "RESUMED:echo" not in out_bg, out_bg
+          read_until("BP> ")
+          os.write(master, b"fg\n")
+          time.sleep(0.15)
+          os.write(master, b"after-fg\n")
+          read_until("RESUMED:after-fg")
+          read_until("BP> ")
+          # 7. Background launch (&) followed by fg hands TTY to child cleanly
+          ready_bg = os.path.join(td, "bg.ready")
+          os.write(master, f"{py} {wrapper_z} {ready_bg} &\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_bg) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_bg), "bg stub did not start"
+          time.sleep(0.15)
+          os.write(master, b"echo BG_LAUNCH_OK\n")
+          out_bgl = read_until("BG_LAUNCH_OK")
+          assert "RESUMED:echo" not in out_bgl, out_bgl
+          read_until("BP> ")
+          os.write(master, b"fg\n")
+          time.sleep(0.15)
+          os.write(master, b"from-bg-to-fg\n")
+          read_until("RESUMED:from-bg-to-fg")
+          read_until("BP> ")
+          # 8. Running background child (no TTY I/O) -> fg -> Ctrl-Z stops child too
+          stub_bg = os.path.join(td, "stub_bg.py")
+          open(stub_bg, "w").write(
+              "import os, sys, time\n"
+              "if sys.argv[1] == 'tick':\n"
+              "    open(sys.argv[2], 'w').write(str(os.getpid()))\n"
+              "    for i in range(60):\n"
+              "        open(sys.argv[3], 'w').write(str(i))\n"
+              "        time.sleep(0.05)\n"
+              "else:\n"
+              "    open(sys.argv[2], 'w').write('ready\\n')\n"
+              "    time.sleep(0.3)\n"
+              "    print('TOSTOP_OK', flush=True)\n"
+          )
+          wrapper_bg = os.path.join(td, "wrapper_bg.py")
+          make_wrapper(wrapper_bg, stub_bg)
+          pidf, tickf = os.path.join(td, "c.pid"), os.path.join(td, "c.tick")
+          os.write(master, f"{py} {wrapper_bg} tick {pidf} {tickf} &\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(pidf) and time.time() < dl:
+              time.sleep(0.02)
+          cpid = int(open(pidf).read().strip())
+          read_until("BP> ")
+          os.write(master, b"fg\n")
+          time.sleep(0.15)
+          os.write(master, b"\x1a")
+          read_until("BP> ")
+          time.sleep(0.1)
+          st = open(f"/proc/{cpid}/stat").read().rsplit(")", 1)[1].split()[0]
+          assert st == "T", f"running child not stopped on fg + Ctrl-Z: {st}"
+          os.write(master, b"fg\n")
+          time.sleep(0.1)
+          os.write(master, b"\x03")
+          read_until("BP> ")
+          # 9. stty tostop + bg with </dev/null stops cleanly on SIGTTOU and fg completes write
+          ready_ts = os.path.join(td, "ts.ready")
+          os.write(master, b"stty tostop\n")
+          read_until("BP> ")
+          os.write(master, f"{py} {wrapper_bg} write {ready_ts} </dev/null\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_ts) and time.time() < dl:
+              time.sleep(0.02)
+          os.write(master, b"\x1a")
+          read_until("BP> ")
+          os.write(master, b"bg\n")
+          read_until("BP> ")
+          time.sleep(0.5)
+          os.write(master, b"jobs\n")
+          jout = read_until("BP> ")
+          assert "Stopped" in jout and "TOSTOP_OK" not in jout, jout
+          os.write(master, b"fg\n")
+          read_until("TOSTOP_OK")
+          read_until("BP> ")
+          os.write(master, b"exit\n")
+          bash.wait(timeout=5)
+          os.close(master)
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: tiatoolbox CLI and Python API work with read-only or unset HOME and unwritable cache paths
+    description: Verify tiatoolbox CLI and direct Python API fall back cleanly to writable private cache dirs when HOME/USER are unset or cache variables point to unwritable paths.
+    command: |
+      set -e
+      env -u HOME -u USER -u LOGNAME -u TIATOOLBOX_HOME -u TORCH_HOME -u TORCHINDUCTOR_CACHE_DIR -u HF_HOME -u MPLCONFIGDIR -u NUMBA_CACHE_DIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME \
+        tiatoolbox --version
+      env -u HOME -u USER -u LOGNAME \
+        TIATOOLBOX_HOME=/sys/unwritable-tia \
+        NUMBA_CACHE_DIR=/sys/unwritable-numba \
+        MPLCONFIGDIR=/sys/unwritable-mpl \
+        TORCHINDUCTOR_CACHE_DIR=/sys/unwritable-inductor \
+        XDG_CACHE_HOME=/sys/unwritable-xdg \
+        /opt/tiatoolbox/bin/python - <<'PY'
+      import os
+      import pathlib
+      import torchvision
+      import torch._dynamo
+      import tiatoolbox
+      from tiatoolbox.tools import stainnorm
+      from torch._inductor.runtime.cache_dir_utils import default_cache_dir
+
+      home = pathlib.Path(tiatoolbox.rcParam["TIATOOLBOX_HOME"])
+      assert not str(home).startswith(("/sys", "/home")), str(home)
+      probe = home / "write_probe.txt"
+      probe.write_text("ok", encoding="utf-8")
+      assert probe.read_text(encoding="utf-8") == "ok"
+      assert stainnorm.get_normalizer("macenko") is not None
+      assert default_cache_dir()
+      print("tiatoolbox_home ok:", home)
+      PY
+    expected_output_contains: "tiatoolbox_home ok:"
+
+  - name: offline H&E Macenko stain normalization, Otsu tissue masking, and TIFF WSI reading
+    description: Run tiatoolbox CLI stain-norm and tissue-mask plus OpenSlide/TIFF WSI reading end-to-end offline on synthetic H&E dermatopathology patches under read-only HOME.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      mkdir -p "$tmpdir/src" "$tmpdir/norm_out" "$tmpdir/mask_out"
+      env -u TIATOOLBOX_HOME -u TORCH_HOME -u HF_HOME -u MPLCONFIGDIR -u NUMBA_CACHE_DIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME \
+        HOME=/sys /opt/tiatoolbox/bin/python - "$tmpdir" <<'PY'
+      import os
+      import sys
+      import numpy as np
+      import tifffile
+      from PIL import Image
+      from tiatoolbox.tools import stainnorm, tissuemask
+      from tiatoolbox.wsicore.wsireader import WSIReader
+
+      td = sys.argv[1]
+      rng = np.random.default_rng(7)
+
+      # Synthesize a brightfield H&E-like RGB target and shifted source patch
+      def make_he(bg, pink, purple):
+          img = np.full((128, 128, 3), bg, dtype=np.uint8)
+          img[20:108, 20:108] = pink
+          for y in range(28, 100, 12):
+              for x in range(28, 100, 12):
+                  img[y:y+5, x:x+5] = purple
+          noise = rng.integers(-6, 7, size=img.shape, dtype=np.int16)
+          return np.clip(img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+      target = make_he((245, 245, 245), (218, 155, 192), (96, 56, 138))
+      source = make_he((242, 240, 238), (200, 140, 165), (78, 48, 118))
+      target_png = os.path.join(td, "target.png")
+      source_png = os.path.join(td, "src", "source.png")
+      slide_tif = os.path.join(td, "slide.tif")
+      Image.fromarray(target).save(target_png)
+      Image.fromarray(source).save(source_png)
+      tifffile.imwrite(
+          slide_tif,
+          target,
+          photometric="rgb",
+          tile=(64, 64),
+          resolution=(40000, 40000),
+          resolutionunit="CENTIMETER",
+      )
+
+      # 1. Python API Macenko stain normalization
+      norm = stainnorm.get_normalizer("macenko")
+      norm.fit(target)
+      transformed = norm.transform(source)
+      assert transformed.shape == source.shape and transformed.dtype == np.uint8
+
+      # 2. Python API Otsu tissue masking
+      masker = tissuemask.OtsuTissueMasker()
+      masks = masker.fit_transform(np.asarray([target]))
+      assert masks.shape == (1, 128, 128)
+      frac = float(masks[0].mean())
+      assert 0.2 < frac < 0.8, frac
+
+      # 3. WSIReader tiled TIFF reading (via OpenSlide/TIFF backend)
+      reader = WSIReader.open(slide_tif)
+      region = reader.read_rect((16, 16), (64, 64), resolution=0, units="level")
+      assert region.shape == (64, 64, 3), region.shape
+      print(f"api ok mask_frac={frac:.3f}")
+      PY
+
+      # 4. Real CLI end-to-end under read-only HOME with unset cache env vars
+      env -u TIATOOLBOX_HOME -u TORCH_HOME -u HF_HOME -u MPLCONFIGDIR -u NUMBA_CACHE_DIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME \
+        HOME=/sys tiatoolbox stain-norm \
+        --img-input "$tmpdir/src/source.png" \
+        --target-input "$tmpdir/target.png" \
+        --method macenko \
+        --output-path "$tmpdir/norm_out"
+      test -s "$tmpdir/norm_out/source.png"
+
+      env -u TIATOOLBOX_HOME -u TORCH_HOME -u HF_HOME -u MPLCONFIGDIR -u NUMBA_CACHE_DIR -u XDG_CACHE_HOME -u XDG_CONFIG_HOME \
+        HOME=/sys tiatoolbox tissue-mask \
+        --img-input "$tmpdir/slide.tif" \
+        --method Otsu \
+        --resolution 1.0 \
+        --units mpp \
+        --mode save \
+        --output-path "$tmpdir/mask_out"
+      test -s "$tmpdir/mask_out/slide.png"
+      echo "tiatoolbox offline workflow ok"
+    expected_output_contains: "tiatoolbox offline workflow ok"

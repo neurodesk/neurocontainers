@@ -1,0 +1,455 @@
+name: bioformats2raw
+version: 0.14.0
+
+description: Convert proprietary whole-slide microscopy, reflectance confocal microscopy, and multiphoton imaging formats to cloud-native OME-Zarr (OME-NGFF).
+
+copyright:
+  - license: GPL-2.0-or-later
+    name: bioformats2raw license
+    url: https://github.com/glencoesoftware/bioformats2raw/blob/{{ context.upstream_tag }}/LICENSE.txt
+  - license: GPL-2.0-or-later
+    name: Bio-Formats (formats-gpl) license
+    url: https://github.com/ome/bioformats/blob/v{{ context.bioformats_version }}/LICENSE.txt
+  - license: LGPL-2.1-or-later
+    name: OME mdbtools license
+    url: https://github.com/ome/ome-mdbtools/blob/v{{ context.ome_mdbtools_version }}/LICENSE.txt
+  - license: GPL-2.0-or-later
+    name: OME metakit license
+    url: https://github.com/ome/ome-metakit/blob/v{{ context.metakit_version }}/LICENSE.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.14.0"
+  upstream_tag: "v0.14.0"
+  # Pinned versions of bundled GPL/LGPL/CDDL-GPL JARs inside bioformats2raw-0.14.0.zip
+  # with matching SHA-256-verified corresponding source archives in /opt/bioformats2raw/share/src.
+  bioformats_version: "9.0.0-rc2"
+  ome_mdbtools_version: "5.4.0"
+  metakit_version: "5.4.0"
+  logback_version: "1.5.32"
+  jaxb_api_version: "2.3.0"
+
+auto_update:
+  method: sources
+  container_version: bioformats2raw
+  sources:
+    - id: bioformats2raw
+      method: github_release_asset
+      repo: glencoesoftware/bioformats2raw
+      asset: bioformats2raw-{version}.zip
+      target:
+        file: bioformats2raw_zip
+        variables:
+          upstream_version: version
+          upstream_tag: tag
+    - id: bioformats2raw-source
+      dependency: true
+      method: http_digest
+      url: https://github.com/glencoesoftware/bioformats2raw/archive/refs/tags/{{ context.upstream_tag }}.tar.gz
+      target:
+        file: bioformats2raw_source
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/bioformats2raw/wrappers:/opt/bioformats2raw/app/bin:$PATH
+    - condition: arch == "x86_64"
+      environment:
+        JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+    - condition: arch == "aarch64"
+      environment:
+        JAVA_HOME: /usr/lib/jvm/java-21-openjdk-arm64
+
+    - install:
+        - ca-certificates
+        - libblosc1
+        - openjdk-21-jre-headless
+        - python3
+        - unzip
+
+    - run:
+        - mkdir -p /opt/bioformats2raw/wrappers /opt/bioformats2raw/share/licenses /opt/bioformats2raw/share/src /tmp/bf2raw-unpack
+        - unzip -q {{ get_file("bioformats2raw_zip") }} -d /tmp/bf2raw-unpack
+        - mv /tmp/bf2raw-unpack/bioformats2raw-{{ context.upstream_version }} /opt/bioformats2raw/app
+        - rm -rf /tmp/bf2raw-unpack
+        # Verify bundled GPL/LGPL JAR versions match our bundled corresponding source archives
+        # so an upstream bioformats2raw bump cannot silently ship stale source archives.
+        - test -f "/opt/bioformats2raw/app/lib/formats-gpl-{{ context.bioformats_version }}.jar"
+        - test -f "/opt/bioformats2raw/app/lib/ome-mdbtools-{{ context.ome_mdbtools_version }}.jar"
+        - test -f "/opt/bioformats2raw/app/lib/metakit-{{ context.metakit_version }}.jar"
+        - test -f "/opt/bioformats2raw/app/lib/logback-classic-{{ context.logback_version }}.jar"
+        - test -f "/opt/bioformats2raw/app/lib/logback-core-{{ context.logback_version }}.jar"
+        - test -f "/opt/bioformats2raw/app/lib/jaxb-api-{{ context.jaxb_api_version }}.jar"
+        - install -m 0755 {{ get_file("bioformats2raw_wrapper") }} /opt/bioformats2raw/wrappers/bioformats2raw
+        - install -m 0644 /opt/bioformats2raw/app/LICENSE.txt /opt/bioformats2raw/share/licenses/BIOFORMATS2RAW-LICENSE.txt
+        - install -m 0644 /usr/share/common-licenses/LGPL-2.1 /opt/bioformats2raw/share/licenses/LGPL-2.1.txt
+        - install -m 0644 {{ get_file("gpl_source_notice") }} /opt/bioformats2raw/share/licenses/GPL-SOURCE-NOTICE.txt
+        - install -m 0644 {{ get_file("bioformats2raw_source") }} /opt/bioformats2raw/share/src/bioformats2raw-{{ context.upstream_version }}.tar.gz
+        - install -m 0644 {{ get_file("bioformats_source") }} /opt/bioformats2raw/share/src/bioformats-{{ context.bioformats_version }}.tar.gz
+        - install -m 0644 {{ get_file("ome_mdbtools_source") }} /opt/bioformats2raw/share/src/ome-mdbtools-{{ context.ome_mdbtools_version }}.tar.gz
+        - install -m 0644 {{ get_file("ome_metakit_source") }} /opt/bioformats2raw/share/src/ome-metakit-{{ context.metakit_version }}.tar.gz
+        - install -m 0644 {{ get_file("logback_source") }} /opt/bioformats2raw/share/src/logback-{{ context.logback_version }}.tar.gz
+        - install -m 0644 {{ get_file("jaxb_api_source") }} /opt/bioformats2raw/share/src/jaxb-spec-{{ context.jaxb_api_version }}.tar.gz
+        - chmod -R a+rX /opt/bioformats2raw
+
+files:
+  - name: bioformats2raw_zip
+    url: https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.14.0/bioformats2raw-0.14.0.zip
+    sha256: "08a8aae58e8e673403d96c54c56ee77c41ef2c706516528f051db00bd1c58c1e"
+  - name: bioformats2raw_source
+    url: https://github.com/glencoesoftware/bioformats2raw/archive/refs/tags/{{ context.upstream_tag }}.tar.gz
+    sha256: "0002045df1bfd9322ff3246a34c7e66e5770002e348951e0ba7f6325b0b910bb"
+  - name: bioformats_source
+    url: https://github.com/ome/bioformats/archive/refs/tags/v{{ context.bioformats_version }}.tar.gz
+    sha256: "f57571e1419ca0367072d7e944e2d22c4d8480026b9f7253a272f4372701c147"
+  - name: ome_mdbtools_source
+    url: https://github.com/ome/ome-mdbtools/archive/refs/tags/v{{ context.ome_mdbtools_version }}.tar.gz
+    sha256: "3d524691dcdf7f19b4add9d9591e0f0d9e60adb47de35b0623cb7b04c38fd89b"
+  - name: ome_metakit_source
+    url: https://github.com/ome/ome-metakit/archive/refs/tags/v{{ context.metakit_version }}.tar.gz
+    sha256: "cc64fc2a32bfbf6deb4f237a04b18de933368fc1dcfd4fed2c61506fe7dfdd0c"
+  - name: logback_source
+    url: https://github.com/qos-ch/logback/archive/refs/tags/v_{{ context.logback_version }}.tar.gz
+    sha256: "169b2dbe22cdaeb9a68728b0e27035729df121907ea86bdaa557eaf62db66936"
+  - name: jaxb_api_source
+    url: https://github.com/javaee/jaxb-spec/archive/refs/tags/{{ context.jaxb_api_version }}.tar.gz
+    sha256: "cf46f371f719211d0848e5559b1f489151ad64090d7a17c6ae80b1db24647f11"
+  - name: gpl_source_notice
+    contents: |
+      bioformats2raw {{ context.upstream_version }} Container — License & Corresponding Source Notice
+      ==================================================================================
+      This container redistributes the unmodified upstream Glencoe Software release archive:
+        https://github.com/glencoesoftware/bioformats2raw/releases/download/{{ context.upstream_tag }}/bioformats2raw-{{ context.upstream_version }}.zip
+
+      Corresponding source release archives (including build files and licenses) for
+      every bundled GPL/LGPL/CDDL-GPL component are installed directly inside this
+      image under /opt/bioformats2raw/share/src/:
+
+      - bioformats2raw {{ context.upstream_version }} (GPL-2.0-or-later, tag {{ context.upstream_tag }}):
+          /opt/bioformats2raw/share/src/bioformats2raw-{{ context.upstream_version }}.tar.gz
+      - Bio-Formats formats-gpl {{ context.bioformats_version }} (GPL-2.0-or-later, tag v{{ context.bioformats_version }}):
+          /opt/bioformats2raw/share/src/bioformats-{{ context.bioformats_version }}.tar.gz
+      - OME ome-mdbtools {{ context.ome_mdbtools_version }} (LGPL-2.1-or-later, tag v{{ context.ome_mdbtools_version }}):
+          /opt/bioformats2raw/share/src/ome-mdbtools-{{ context.ome_mdbtools_version }}.tar.gz
+      - OME metakit {{ context.metakit_version }} (GPL-2.0-or-later, tag v{{ context.metakit_version }}):
+          /opt/bioformats2raw/share/src/ome-metakit-{{ context.metakit_version }}.tar.gz
+      - Logback {{ context.logback_version }} (EPL-2.0 / LGPL-2.1, tag v_{{ context.logback_version }}):
+          /opt/bioformats2raw/share/src/logback-{{ context.logback_version }}.tar.gz
+      - JAXB API {{ context.jaxb_api_version }} (CDDL-1.1 / GPL-2.0 with Classpath Exception, tag {{ context.jaxb_api_version }}):
+          /opt/bioformats2raw/share/src/jaxb-spec-{{ context.jaxb_api_version }}.tar.gz
+
+      License texts are installed under /opt/bioformats2raw/share/licenses/
+      (BIOFORMATS2RAW-LICENSE.txt and LGPL-2.1.txt).
+  - name: bioformats2raw_wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/python3
+      """Run bioformats2raw with a private non-/home JVM temp/home directory."""
+
+      from __future__ import annotations
+
+      import os
+      import shlex
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      def main() -> int:
+          target = "/opt/bioformats2raw/app/bin/bioformats2raw"
+          cmd = [target, *sys.argv[1:]]
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch,
+              # while preserving inherited SIG_IGN (e.g. under nohup or background &).
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="bioformats2raw.")
+              env = os.environ.copy()
+              # Always pin JAVA_HOME to the container's bundled JRE so host-inherited
+              # JAVA_HOME paths under Apptainer/Singularity never break startup.
+              if os.path.exists("/usr/bin/java"):
+                  env["JAVA_HOME"] = os.path.dirname(
+                      os.path.dirname(os.path.realpath("/usr/bin/java"))
+                  )
+              java_home_dir = os.path.join(tmp_root, "home")
+              java_tmp_dir = os.path.join(tmp_root, "tmp")
+              os.mkdir(java_home_dir, 0o700)
+              os.mkdir(java_tmp_dir, 0o700)
+              extra_opts = " ".join(
+                  shlex.quote(opt)
+                  for opt in (
+                      f"-Duser.home={java_home_dir}",
+                      f"-Djava.io.tmpdir={java_tmp_dir}",
+                      f"-Djava.util.prefs.userRoot={java_home_dir}",
+                  )
+              )
+              existing = env.get("BIOFORMATS2RAW_OPTS", "").strip()
+              env["BIOFORMATS2RAW_OPTS"] = f"{extra_opts} {existing}".strip()
+              if not env.get("XDG_CACHE_HOME"):
+                  env["XDG_CACHE_HOME"] = os.path.join(tmp_root, "cache")
+                  os.mkdir(env["XDG_CACHE_HOME"], 0o700)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              # Place the child in its own process group so a group SIGINT is delivered
+              # once; transfer foreground terminal ownership only when this job owns
+              # the TTY, and propagate job-control stops (Ctrl-Z/bg/fg/tostop) cleanly.
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - bioformats2raw
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "digital pathology"
+  - "optical imaging"
+  - "data organisation"
+
+readme: |-
+  ----------------------------------
+  ## bioformats2raw/{{ context.version }} ##
+
+  `bioformats2raw` (Glencoe Software) converts proprietary whole-slide
+  microscopy, reflectance confocal microscopy (RCM), and multiphoton
+  acquisitions supported by Bio-Formats into cloud-native OME-Zarr (OME-NGFF)
+  pyramids for downstream viewing and analysis in `napari`, `qupath`, and
+  `webknossos`.
+
+  ### Included CLI Tool
+  ```
+  bioformats2raw    Convert microscopy and WSI files to OME-Zarr (OME-NGFF)
+  ```
+
+  ### Example
+  ```
+  ml bioformats2raw/{{ context.version }}
+  bioformats2raw slide.svs slide.ome.zarr
+  ```
+
+  The `bioformats2raw` wrapper directs JVM `user.home`, `java.io.tmpdir`, and
+  Java preferences to an atomic private (`0700`) temporary directory so runs
+  succeed cleanly when `/home` is unavailable or read-only. Additional JVM
+  flags (such as `-Xmx8g`) can be supplied via `BIOFORMATS2RAW_OPTS`.
+
+  ### Architecture Note (`aarch64`)
+  Upstream Bio-Formats ships several JNI native libraries without `aarch64`
+  Linux binaries, so the following formats require the `x86_64` container:
+  - JPEG-XR-compressed Zeiss `.czi` slides (`jxrlib-all` ships `linux_64`
+    `libjxrjava.so` only).
+  - JPEG-compressed Hamamatsu `.ndpi` slides whose decoding paths in
+    `NDPIReader` invoke native TurboJPEG (`turbojpeg` ships `linux_32` and
+    `linux_64` `libturbojpeg.so` only).
+  - HDF5-based microscopy formats such as Imaris `.ims` and BDV `.h5`
+    (`jhdf5` ships 32-bit `arm-Linux` and `amd64-Linux` `libjhdf5.so` only).
+
+  Documentation: https://github.com/glencoesoftware/bioformats2raw
+  License texts and corresponding source archives for bundled GPL/LGPL
+  components are installed under `/opt/bioformats2raw/share/licenses` and
+  `/opt/bioformats2raw/share/src`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

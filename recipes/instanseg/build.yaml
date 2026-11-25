@@ -1,0 +1,377 @@
+name: instanseg
+version: 0.1.2
+
+description: Fast, channel-invariant nuclei and cell instance segmentation for brightfield H&E dermatopathology and fluorescence skin microscopy.
+
+copyright:
+  - license: Apache-2.0
+    name: InstanSeg license
+    url: https://github.com/instanseg/instanseg/blob/v{{ context.upstream_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: PyTorch license
+    url: https://github.com/pytorch/pytorch/blob/v{{ context.torch_version }}/LICENSE
+  - license: LGPL-3.0-only
+    name: fastremap license
+    url: https://github.com/seung-lab/fastremap/blob/{{ context.fastremap_version }}/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.1.2"
+  # Pinned official CPU-only PyTorch wheel (avoids proprietary NVIDIA CUDA wheels).
+  torch_version: "2.15.0"
+  # Coordinated LGPL-3.0 native-extension pin with matching PyPI sdist SHA-256
+  # so compiled wheel and corresponding source stay in lockstep.
+  fastremap_version: "1.21.0"
+  fastremap_source_sha256: "69c14cc36ffff240ad1f14dcb031f5419b022512e4c5000b648f325416f92551"
+
+auto_update:
+  method: sources
+  container_version: instanseg
+  sources:
+    - id: instanseg
+      method: pypi
+      package: instanseg-torch
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/instanseg/wrappers:/opt/instanseg/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-venv
+
+    - run:
+        - python3 -m venv /opt/instanseg
+        - arch="$(uname -m)" && cp {{ get_file("torch_cpu_wheel") }} "/tmp/torch-{{ context.torch_version }}+cpu-cp312-cp312-manylinux_2_28_${arch}.whl" && /opt/instanseg/bin/python -m pip install --no-cache-dir "/tmp/torch-{{ context.torch_version }}+cpu-cp312-cp312-manylinux_2_28_${arch}.whl" && rm -f "/tmp/torch-{{ context.torch_version }}+cpu-cp312-cp312-manylinux_2_28_${arch}.whl"
+        - /opt/instanseg/bin/python -m pip install --no-cache-dir "instanseg-torch=={{ context.upstream_version }}" "fastremap=={{ context.fastremap_version }}"
+        - /opt/instanseg/bin/python -m pip check
+        # Guard against pulling proprietary NVIDIA CUDA wheels during dependency resolution.
+        - /opt/instanseg/bin/python -c "import importlib.metadata as md; bad = [d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith(('nvidia-', 'cuda-'))]; assert not bad, bad"
+        - mkdir -p /opt/instanseg/wrappers /opt/instanseg/share/licenses /opt/instanseg/share/src
+        - install -m 0755 {{ get_file("instanseg_wrapper") }} /opt/instanseg/wrappers/instanseg-inference
+        - install -m 0644 /opt/instanseg/lib/python*/site-packages/instanseg_torch-{{ context.upstream_version }}.dist-info/licenses/LICENSE /opt/instanseg/share/licenses/INSTANSEG-LICENSE.txt
+        - install -m 0644 {{ get_file("fastremap_source") }} /opt/instanseg/share/src/fastremap-{{ context.fastremap_version }}.tar.gz
+        - tar -xzOf /opt/instanseg/share/src/fastremap-{{ context.fastremap_version }}.tar.gz "fastremap-{{ context.fastremap_version }}/LICENSE" > /opt/instanseg/share/licenses/FASTREMAP-LGPL-3.0.txt
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/instanseg/share/licenses/GPL-3.0.txt
+        - chmod -R a+rX /opt/instanseg
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: torch_cpu_wheel
+    condition: arch == "x86_64"
+    url: https://download-r2.pytorch.org/whl/cpu/torch-{{ context.torch_version }}%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
+    sha256: "0955c7e3446326293f48af18fad67872fa31dee5a36a87690eb9e5be8b465be3"
+  - name: torch_cpu_wheel
+    condition: arch == "aarch64"
+    url: https://download-r2.pytorch.org/whl/cpu/torch-{{ context.torch_version }}%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl
+    sha256: "75941d429aaf4450bcd364345d7677e2d54aad45b38fbfcb1c0552450a6e9c40"
+  - name: fastremap_source
+    url: https://files.pythonhosted.org/packages/source/f/fastremap/fastremap-{{ context.fastremap_version }}.tar.gz
+    sha256: "{{ context.fastremap_source_sha256 }}"
+  - name: instanseg_wrapper
+    executable: true
+    contents: |
+      #!/opt/instanseg/bin/python
+      """Run InstanSeg inference with private non-/home model and cache paths."""
+
+      from __future__ import annotations
+
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      ENV_SUBDIRS = (
+          ("INSTANSEG_BIOIMAGEIO_PATH", "bioimageio_models"),
+          ("INSTANSEG_TORCHSCRIPT_PATH", "torchscripts"),
+          ("INSTANSEG_MODEL_PATH", "models"),
+          ("TORCH_HOME", "torch"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+      )
+
+
+      def main() -> int:
+          cmd = ["/opt/instanseg/bin/inference", *sys.argv[1:]]
+          env = os.environ.copy()
+          missing = [item for item in ENV_SUBDIRS if not env.get(item[0])]
+          if not missing:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch,
+              # while preserving inherited SIG_IGN (e.g. under nohup or background &).
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="instanseg.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              # Place the child in its own process group so a group SIGINT is delivered
+              # once; transfer foreground terminal ownership only when this job owns
+              # the TTY, and propagate job-control stops (Ctrl-Z/bg/fg/tostop) cleanly.
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - instanseg-inference
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "digital pathology"
+  - "image segmentation"
+  - "machine learning"
+
+readme: |-
+  ----------------------------------
+  ## instanseg/{{ context.version }} ##
+
+  `InstanSeg` (`instanseg-torch`) is an Apache-2.0 embedding-based nuclei and
+  cell instance segmentation toolkit supporting brightfield H&E dermatopathology
+  and multichannel fluorescence microscopy. This container ships the official
+  open-source CPU PyTorch (`{{ context.torch_version }}+cpu`) build on both
+  `x86_64` and `aarch64` without proprietary CUDA wheels.
+
+  ### Included CLI Tool
+  ```
+  instanseg-inference    Run InstanSeg batch segmentation (wraps upstream `inference`)
+  ```
+
+  ### Example
+  ```
+  ml instanseg/{{ context.version }}
+  INSTANSEG_BIOIMAGEIO_PATH=/path/to/cache instanseg-inference \
+    --image_path /path/to/images \
+    --model_folder brightfield_nuclei \
+    --device cpu
+  ```
+
+  Pretrained checkpoints are not baked into this image. Set
+  `INSTANSEG_BIOIMAGEIO_PATH` (and optionally `TORCH_HOME`) to a writable,
+  persistent directory to cache downloaded BioImage.IO models across sessions;
+  otherwise the wrapper creates an atomic private (`0700`) temporary directory
+  so runs work cleanly on read-only containers without `/home`. Note that
+  downloaded BioImage.IO models carry their own license terms separate from the
+  Apache-2.0 InstanSeg package.
+
+  Documentation: https://github.com/instanseg/instanseg
+  License notices and corresponding LGPL-3.0 source for `fastremap` are
+  installed under `/opt/instanseg/share/licenses` and `/opt/instanseg/share/src`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

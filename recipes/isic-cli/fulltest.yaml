@@ -1,0 +1,61 @@
+name: isic-cli
+version: 12.8.0
+upstream_version: "12.8.0"
+
+tests:
+  - name: isic wrapper available on PATH
+    description: Verify the deployed isic wrapper resolves on PATH.
+    command: command -v isic
+    expected_output_contains: "/opt/isic-cli/wrappers/isic"
+
+  - name: isic-cli package version and dependency integrity
+    description: Verify installed isic-cli distribution metadata matches upstream_version and pip check passes.
+    command: |
+      set -e
+      /opt/isic-cli/bin/python -m pip check
+      /opt/isic-cli/bin/python -c "import importlib.metadata as md; print(md.version('isic-cli'))"
+    expected_output_contains: "${upstream_version}"
+
+  - name: license notice installed
+    description: Verify the release-matched Apache-2.0 license notice is installed under /opt/isic-cli/share/licenses.
+    command: |
+      set -e
+      test -s /opt/isic-cli/share/licenses/ISIC-CLI-LICENSE.txt
+      grep -q "Apache License" /opt/isic-cli/share/licenses/ISIC-CLI-LICENSE.txt
+      echo "license ok"
+    expected_output_contains: "license ok"
+
+  - name: isic CLI starts cleanly with read-only HOME
+    description: Verify isic reports version and help when HOME is read-only and XDG_* are unset.
+    command: |
+      set -e
+      env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME HOME=/sys isic --version
+      env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME HOME=/sys isic --help > /dev/null
+    expected_output_contains: "${upstream_version}"
+
+  - name: offline isic metadata validate CLI (valid and invalid CSV)
+    description: Exercise the real isic --no-version-check metadata validate CLI offline with read-only HOME and verify it passes valid rows and rejects invalid rows.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      cat > "$tmpdir/valid.csv" <<'EOF'
+      filename,sex,image_type
+      case001.jpg,female,dermoscopic
+      EOF
+      cat > "$tmpdir/invalid.csv" <<'EOF'
+      filename,sex,image_type
+      case001.jpg,invalid_sex,dermoscopic
+      EOF
+      env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME HOME=/sys \
+        isic --no-version-check metadata validate "$tmpdir/valid.csv" > "$tmpdir/ok.out" 2>&1
+      grep -q "No structural errors found" "$tmpdir/ok.out"
+      set +e
+      env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME HOME=/sys \
+        isic --no-version-check metadata validate "$tmpdir/invalid.csv" > "$tmpdir/bad.out" 2>&1
+      bad_rc=$?
+      set -e
+      test "$bad_rc" -ne 0
+      grep -q "Row Level Errors Found" "$tmpdir/bad.out"
+      echo "isic metadata validate ok: valid=0 invalid=${bad_rc}"
+    expected_output_contains: "isic metadata validate ok: valid=0 invalid="

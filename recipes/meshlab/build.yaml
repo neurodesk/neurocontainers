@@ -1,0 +1,154 @@
+variables:
+  meshlab_amd64_version: "2025.07~dfsg-2"
+  meshlab_arm64_version: "2025.07~dfsg-2"
+  package_version:
+    try:
+      - value: "{{ context.meshlab_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.meshlab_arm64_version }}"
+        condition: arch=="aarch64"
+
+name: meshlab
+version: "2025.07.0"
+
+description: 3D triangular mesh processing, cleaning, remeshing, inspection, and Hausdorff surface-distance analysis for 3D total-body photography and wound morphometry.
+
+copyright:
+  - license: GPL-3.0-or-later
+    name: MeshLab license
+    url: https://github.com/cnr-isti-vclab/meshlab/blob/main/LICENSE.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+auto_update:
+  method: sources
+  container_version: meshlab-amd64
+  local: []
+  sources:
+    - id: meshlab-amd64
+      method: apt
+      package: meshlab
+      urls:
+        - https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz
+        - https://archive.ubuntu.com/ubuntu/dists/resolute-updates/universe/binary-amd64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-amd64/Packages.gz
+      target:
+        variable: meshlab_amd64_version
+        fulltest_variable: meshlab_amd64_version
+    - id: meshlab-arm64
+      method: apt
+      package: meshlab
+      urls:
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-updates/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-security/universe/binary-arm64/Packages.gz
+      target:
+        variable: meshlab_arm64_version
+        fulltest_variable: meshlab_arm64_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - "meshlab={{ context.package_version }}"
+        - libegl-mesa0
+        - libgl1
+        - libgl1-mesa-dri
+        - libglx-mesa0
+        - xauth
+        - xvfb
+
+    - run:
+        # Download the exact APT-verified Ubuntu source package (.dsc, .orig.tar.*,
+        # and .debian.tar.* with Ubuntu packaging/patches) directly into the image.
+        - mkdir -p /opt/meshlab/share/src /opt/meshlab/share/licenses
+        - "sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources"
+        - apt-get update -qq
+        - cd /opt/meshlab/share/src && apt-get source --download-only "meshlab={{ context.package_version }}"
+        - "sed -i 's/^Types: deb deb-src$/Types: deb/' /etc/apt/sources.list.d/ubuntu.sources"
+        - rm -rf /var/lib/apt/lists/*
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/meshlab/share/licenses/GPL-3.0.txt
+        - install -m 0644 {{ get_file("gpl_source_notice") }} /opt/meshlab/share/licenses/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/meshlab
+
+files:
+  - name: gpl_source_notice
+    contents: |
+      MeshLab {{ context.version }} Container — License & Corresponding Source Notice
+      ===============================================================================
+      This container installs Ubuntu 26.04 (resolute) package:
+        meshlab={{ context.package_version }}
+
+      The exact APT-verified Ubuntu corresponding source package (including upstream
+      orig tarball, .dsc descriptor, and Ubuntu/Debian packaging and patches) is
+      bundled inside this image under /opt/meshlab/share/src/:
+        - meshlab_{{ context.package_version }}.dsc
+        - meshlab_*.orig.tar.*
+        - meshlab_{{ context.package_version }}.debian.tar.*
+
+      License notices are installed at /usr/share/doc/meshlab/copyright and
+      /opt/meshlab/share/licenses/GPL-3.0.txt.
+
+      The same Ubuntu source package can also be retrieved directly from Ubuntu's
+      resolute archive with `apt-get source meshlab={{ context.package_version }}`
+      (after enabling `deb-src` for `resolute`, `resolute-updates`, and
+      `resolute-security`), or from https://archive.ubuntu.com/ubuntu/pool/universe/m/meshlab/.
+
+deploy:
+  bins:
+    - meshlab
+
+gui_apps:
+  - name: "MeshLab"
+    exec: "meshlab"
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "visualization"
+  - "shape analysis"
+  - "body"
+
+readme: |-
+  ----------------------------------
+  ## meshlab/{{ context.version }} ##
+
+  MeshLab is an open-source system for processing, cleaning, remeshing,
+  inspecting, and measuring 3D triangular meshes — useful for textured
+  `.obj`/`.ply` exports from 3D total-body photography (3D-TBP) systems and
+  3D wound or scar surface reconstructions.
+
+  ### Included GUI Tool
+  ```
+  meshlab    Launch MeshLab 3D mesh viewer and processing suite
+  ```
+
+  ### Example
+  ```
+  ml meshlab/{{ context.version }}
+  meshlab avatar_mesh.obj
+  ```
+
+  In headless or software-rendered desktop environments, set
+  `LIBGL_ALWAYS_SOFTWARE=1` if hardware OpenGL acceleration is unavailable.
+
+  Documentation: https://www.meshlab.net/
+  Debian/Ubuntu copyright and license notices are installed at
+  `/usr/share/doc/meshlab/copyright` and `/opt/meshlab/share/licenses/`.
+  The exact Ubuntu source package (`.dsc`, `.orig.tar.*`, and `.debian.tar.*`
+  including Debian/Ubuntu packaging and patches) is bundled under
+  `/opt/meshlab/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

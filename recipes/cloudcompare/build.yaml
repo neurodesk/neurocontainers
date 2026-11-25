@@ -1,0 +1,160 @@
+variables:
+  cloudcompare_amd64_version: "2.13.2+git20240821+ds-4"
+  cloudcompare_arm64_version: "2.13.2+git20240821+ds-4"
+  package_version:
+    try:
+      - value: "{{ context.cloudcompare_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.cloudcompare_arm64_version }}"
+        condition: arch=="aarch64"
+
+name: cloudcompare
+version: "2.13.2"
+
+description: 3D point-cloud and triangular mesh ICP registration, comparison, and longitudinal surface change detection for 3D total-body photography and wound tracking.
+
+copyright:
+  - license: GPL-2.0-or-later
+    name: CloudCompare license
+    url: https://github.com/CloudCompare/CloudCompare/blob/v{{ context.version }}/license.txt
+
+architectures:
+  - x86_64
+  - aarch64
+
+auto_update:
+  method: sources
+  container_version: cloudcompare-amd64
+  local: []
+  sources:
+    - id: cloudcompare-amd64
+      method: apt
+      package: cloudcompare
+      urls:
+        - https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz
+        - https://archive.ubuntu.com/ubuntu/dists/resolute-updates/universe/binary-amd64/Packages.gz
+        - https://security.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-amd64/Packages.gz
+      target:
+        variable: cloudcompare_amd64_version
+        fulltest_variable: cloudcompare_amd64_version
+    - id: cloudcompare-arm64
+      method: apt
+      package: cloudcompare
+      urls:
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-updates/universe/binary-arm64/Packages.gz
+        - https://ports.ubuntu.com/ubuntu-ports/dists/resolute-security/universe/binary-arm64/Packages.gz
+      target:
+        variable: cloudcompare_arm64_version
+        fulltest_variable: cloudcompare_arm64_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:26.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - "cloudcompare={{ context.package_version }}"
+        - libegl-mesa0
+        - libgl1
+        - libgl1-mesa-dri
+        - libglx-mesa0
+        - xauth
+        - xvfb
+
+    - run:
+        # Download the exact APT-verified Ubuntu source package (.dsc, .orig.tar.*,
+        # and .debian.tar.* with Ubuntu packaging/patches) directly into the image.
+        - mkdir -p /opt/cloudcompare/share/src /opt/cloudcompare/share/licenses
+        - "sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources"
+        - apt-get update -qq
+        - cd /opt/cloudcompare/share/src && apt-get source --download-only "cloudcompare={{ context.package_version }}"
+        - "sed -i 's/^Types: deb deb-src$/Types: deb/' /etc/apt/sources.list.d/ubuntu.sources"
+        - rm -rf /var/lib/apt/lists/*
+        - install -m 0644 /usr/share/common-licenses/GPL-2 /opt/cloudcompare/share/licenses/GPL-2.0.txt
+        - install -m 0644 {{ get_file("gpl_source_notice") }} /opt/cloudcompare/share/licenses/GPL-SOURCE-NOTICE.txt
+        - chmod -R a+rX /opt/cloudcompare
+
+files:
+  - name: gpl_source_notice
+    contents: |
+      CloudCompare {{ context.version }} Container — License & Corresponding Source Notice
+      ====================================================================================
+      This container installs Ubuntu 26.04 (resolute) package:
+        cloudcompare={{ context.package_version }}
+
+      The exact APT-verified Ubuntu corresponding source package (including upstream
+      orig tarball, .dsc descriptor, and Ubuntu/Debian packaging and patches) is
+      bundled inside this image under /opt/cloudcompare/share/src/:
+        - cloudcompare_{{ context.package_version }}.dsc
+        - cloudcompare_*.orig.tar.*
+        - cloudcompare_{{ context.package_version }}.debian.tar.*
+
+      License notices are installed at /usr/share/doc/cloudcompare/copyright and
+      /opt/cloudcompare/share/licenses/GPL-2.0.txt.
+
+      The same Ubuntu source package can also be retrieved directly from Ubuntu's
+      resolute archive with `apt-get source cloudcompare={{ context.package_version }}`
+      (after enabling `deb-src` for `resolute`, `resolute-updates`, and
+      `resolute-security`), or from https://archive.ubuntu.com/ubuntu/pool/universe/c/cloudcompare/.
+
+deploy:
+  bins:
+    - CloudCompare
+    - ccViewer
+
+gui_apps:
+  - name: "CloudCompare"
+    exec: "CloudCompare"
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "visualization"
+  - "image registration"
+  - "shape analysis"
+  - "body"
+
+readme: |-
+  ----------------------------------
+  ## cloudcompare/{{ context.version }} ##
+
+  CloudCompare is a 3D point-cloud and triangular mesh processing suite
+  supporting ICP registration, cloud-to-mesh distance mapping, and headless
+  batch operations (`-SILENT`) for longitudinal 3D total-body photography
+  (3D-TBP) and 3D wound surface tracking.
+
+  ### Included Tools
+  ```
+  CloudCompare    Interactive 3D point-cloud/mesh GUI and headless batch CLI (-SILENT)
+  ccViewer        Lightweight 3D viewer companion
+  ```
+
+  ### Examples
+  ```
+  ml cloudcompare/{{ context.version }}
+  CloudCompare visit1.ply visit2.ply
+
+  # Headless batch processing (under Xvfb when no X display is attached)
+  xvfb-run -a CloudCompare -SILENT -O visit1.asc -C_EXPORT_FMT PLY -SAVE_CLOUDS
+  ```
+
+  In headless or software-rendered desktop environments, set
+  `LIBGL_ALWAYS_SOFTWARE=1` if hardware OpenGL acceleration is unavailable.
+
+  Documentation: https://www.danielgm.net/cc/
+  Debian/Ubuntu copyright and license notices are installed at
+  `/usr/share/doc/cloudcompare/copyright` and `/opt/cloudcompare/share/licenses/`.
+  The exact Ubuntu source package (`.dsc`, `.orig.tar.*`, and `.debian.tar.*`
+  including Debian/Ubuntu packaging and patches) is bundled under
+  `/opt/cloudcompare/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

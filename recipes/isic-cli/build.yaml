@@ -1,0 +1,189 @@
+name: isic-cli
+version: 12.8.0
+
+description: Official command-line client for searching, downloading, uploading, and curating ISIC Archive dermoscopy, clinical macro, and 3D total-body photography datasets.
+
+copyright:
+  - license: Apache-2.0
+    name: ISIC CLI license
+    url: https://github.com/ImageMarkup/isic-cli/blob/v{{ context.upstream_version }}/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "12.8.0"
+
+auto_update:
+  method: sources
+  container_version: isic-cli
+  sources:
+    - id: isic-cli
+      method: pypi
+      package: isic-cli
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/isic-cli/wrappers:/opt/isic-cli/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-venv
+
+    - run:
+        - python3 -m venv /opt/isic-cli
+        # Pin retryable-requests<1.0 and django-s3-file-field-client<2.0 because
+        # retryable-requests 1.0.0 made base_url keyword-only, breaking isic-cli 12.8.0.
+        - /opt/isic-cli/bin/python -m pip install --no-cache-dir "isic-cli=={{ context.upstream_version }}" "django-s3-file-field-client==1.1.0" "retryable-requests==0.1.2"
+        - /opt/isic-cli/bin/python -m pip check
+        - mkdir -p /opt/isic-cli/wrappers /opt/isic-cli/share/licenses
+        - install -m 0755 {{ get_file("isic_wrapper") }} /opt/isic-cli/wrappers/isic
+        - install -m 0644 /opt/isic-cli/lib/python*/site-packages/isic_cli-{{ context.upstream_version }}.dist-info/licenses/LICENSE /opt/isic-cli/share/licenses/ISIC-CLI-LICENSE.txt
+        - chmod -R a+rX /opt/isic-cli
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: isic_wrapper
+    executable: true
+    contents: |
+      #!/opt/isic-cli/bin/python
+      """Run isic with atomic private XDG directories when unset."""
+
+      from __future__ import annotations
+
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      def main() -> int:
+          cmd = ["/opt/isic-cli/bin/isic", *sys.argv[1:]]
+          env = os.environ.copy()
+          needed = [
+              key
+              for key in ("XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME")
+              if not env.get(key)
+          ]
+          if not needed:
+              os.execve(cmd[0], cmd, env)
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              elif proc.poll() is None:
+                  proc.send_signal(signum)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch,
+              # while preserving inherited SIG_IGN (e.g. under nohup or background &).
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="isic-cli.")
+              for key, subdir in (
+                  ("XDG_DATA_HOME", "data"),
+                  ("XDG_CACHE_HOME", "cache"),
+                  ("XDG_CONFIG_HOME", "config"),
+              ):
+                  if not env.get(key):
+                      path = os.path.join(tmp_root, subdir)
+                      os.mkdir(path, 0o700)
+                      env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+              proc = subprocess.Popen(cmd, env=env)
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None and proc.poll() is None:
+                  proc.send_signal(sig_to_replay)
+              while True:
+                  try:
+                      rc = proc.wait()
+                      break
+                  except InterruptedError:
+                      continue
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - isic
+
+domains:
+  - dermatology
+
+categories:
+  - "optical imaging"
+  - "data organisation"
+
+readme: |-
+  ----------------------------------
+  ## isic-cli/{{ context.version }} ##
+
+  `isic-cli` is the official International Skin Imaging Collaboration (ISIC)
+  command-line interface for querying, downloading, uploading, and validating
+  metadata for dermoscopy, clinical macro, and 3D total-body photography
+  collections in the ISIC Archive.
+
+  ### Included CLI Tool
+  ```
+  isic    Query, download, upload, and validate ISIC Archive collections and metadata
+  ```
+
+  ### Examples
+  ```
+  ml isic-cli/{{ context.version }}
+  isic collection list
+  isic image download --search "diagnosis_3:\"Melanoma\"" ./isic_melanoma/
+
+  # Offline metadata validation (skips PyPI update check)
+  isic --no-version-check metadata validate metadata.csv
+  ```
+
+  To remain compatible with read-only or unavailable `/home` directories while
+  preventing shared-`/tmp` credential races, the `isic` wrapper creates an
+  atomic private (`0700`) temporary directory for any unset `XDG_DATA_HOME`,
+  `XDG_CACHE_HOME`, or `XDG_CONFIG_HOME` variable and removes it on exit. Set `XDG_DATA_HOME` to a private persistent directory (`chmod 700`)
+  to retain ISIC login tokens across sessions. Dataset files are not bundled;
+  check each ISIC collection's attribution and license terms before
+  redistribution.
+
+  Documentation: https://github.com/ImageMarkup/isic-cli
+  License text is installed under `/opt/isic-cli/share/licenses`.
+  ----------------------------------
+
+icon: data:image/png;base64,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

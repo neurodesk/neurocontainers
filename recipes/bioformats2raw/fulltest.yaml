@@ -1,0 +1,377 @@
+name: bioformats2raw
+version: 0.14.0
+upstream_version: "0.14.0"
+
+tests:
+  - name: bioformats2raw wrapper available on PATH
+    description: Verify the deployed bioformats2raw wrapper resolves on PATH.
+    command: command -v bioformats2raw
+    expected_output_contains: "/opt/bioformats2raw/wrappers/bioformats2raw"
+
+  - name: bioformats2raw version matches recipe with read-only HOME
+    description: Verify bioformats2raw --version reports the pinned upstream version when HOME is read-only and host JAVA_HOME is invalid (upstream exits 255 on --version).
+    command: |
+      set +e
+      out="$(HOME=/sys JAVA_HOME=/nonexistent/host/jdk bioformats2raw --version 2>&1)"
+      rc=$?
+      set -e
+      printf '%s\n' "$out"
+      test "$rc" -eq 0 -o "$rc" -eq 255
+      printf '%s\n' "$out" | grep -q "Version = ${upstream_version}"
+    expected_output_contains: "Version = ${upstream_version}"
+
+  - name: license notices and corresponding source archives installed
+    description: Verify the GPL/LGPL license notices and complete corresponding source release archives (including build files) are installed.
+    command: |
+      set -e
+      test -s /opt/bioformats2raw/share/licenses/BIOFORMATS2RAW-LICENSE.txt
+      grep -q "GNU GENERAL PUBLIC LICENSE" /opt/bioformats2raw/share/licenses/BIOFORMATS2RAW-LICENSE.txt
+      test -s /opt/bioformats2raw/share/licenses/LGPL-2.1.txt
+      test -s /opt/bioformats2raw/share/licenses/GPL-SOURCE-NOTICE.txt
+      grep -q "EPL-2.0 / LGPL-2.1" /opt/bioformats2raw/share/licenses/GPL-SOURCE-NOTICE.txt
+      test -s "/opt/bioformats2raw/share/src/bioformats2raw-${upstream_version}.tar.gz"
+      test -s /opt/bioformats2raw/share/src/bioformats-9.0.0-rc2.tar.gz
+      test -s /opt/bioformats2raw/share/src/ome-mdbtools-5.4.0.tar.gz
+      test -s /opt/bioformats2raw/share/src/ome-metakit-5.4.0.tar.gz
+      test -s /opt/bioformats2raw/share/src/logback-1.5.32.tar.gz
+      tar -tzf /opt/bioformats2raw/share/src/logback-1.5.32.tar.gz | grep -q '/pom.xml$'
+      test -s /opt/bioformats2raw/share/src/jaxb-spec-2.3.0.tar.gz
+      tar -tzf /opt/bioformats2raw/share/src/jaxb-spec-2.3.0.tar.gz | grep -q '/pom.xml$'
+      echo "license and source ok"
+    expected_output_contains: "license and source ok"
+
+  - name: wrapper isolates process-group SIGINT and preserves piped and PTY stdin
+    description: Verify the installed bioformats2raw wrapper delivers one SIGINT on non-TTY and PTY interrupts and preserves both piped and foreground PTY stdin without SIGTTIN.
+    command: |
+      set -e
+      python3 - <<'PY'
+      import fcntl, os, pty, select, signal, subprocess, tempfile, termios, time
+
+      src = open("/opt/bioformats2raw/wrappers/bioformats2raw").read()
+
+      def run_in_pty(argv, on_ready=None, send_bytes=None):
+          master, slave = pty.openpty()
+          def preexec():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          p = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec, close_fds=True)
+          os.close(slave)
+          if on_ready:
+              on_ready()
+          if send_bytes:
+              os.write(master, send_bytes)
+          out = bytearray()
+          deadline = time.time() + 6.0
+          while time.time() < deadline:
+              r, _, _ = select.select([master], [], [], 0.1)
+              if r:
+                  try:
+                      chunk = os.read(master, 4096)
+                      if not chunk:
+                          break
+                      out += chunk
+                  except OSError:
+                      break
+              if p.poll() is not None and not r:
+                  break
+          rc = p.wait(timeout=5)
+          os.close(master)
+          return rc, out.decode("utf-8", "replace")
+
+      with tempfile.TemporaryDirectory() as td:
+          stub = os.path.join(td, "stub.py")
+          open(stub, "w").write(
+              "#!/usr/bin/python3\n"
+              "import os, signal, sys, time\n"
+              "if sys.argv[1] == 'stdin':\n"
+              "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
+              "    raise SystemExit(0)\n"
+              "log, ready = sys.argv[2], sys.argv[3]\n"
+              "seen = []\n"
+              "def h(sig, _):\n"
+              "    seen.append(sig)\n"
+              "    open(log, 'a').write(f'{sig}\\n')\n"
+              "signal.signal(signal.SIGINT, h)\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('XDG_CACHE_HOME', '') + '\\n')\n"
+              "deadline = time.time() + 5.0\n"
+              "while not seen and time.time() < deadline:\n"
+              "    time.sleep(0.02)\n"
+              "time.sleep(0.25)\n"
+              "raise SystemExit(128 + seen[0] if seen else 0)\n"
+          )
+          os.chmod(stub, 0o755)
+          wrapper = os.path.join(td, "wrapper.py")
+          open(wrapper, "w").write(src.replace("/opt/bioformats2raw/app/bin/bioformats2raw", stub))
+          os.chmod(wrapper, 0o755)
+
+          # 1. Piped stdin passthrough
+          r = subprocess.run([wrapper, "stdin"], input="bf2raw-pipe\n", capture_output=True, text=True, timeout=10)
+          assert r.returncode == 0 and r.stdout.strip() == "GOT:bf2raw-pipe", (r.returncode, r.stdout, r.stderr)
+
+          # 2. Interactive foreground PTY stdin read (must not stop with SIGTTIN)
+          rc, out = run_in_pty([wrapper, "stdin"], send_bytes=b"bf2raw-pty\n")
+          assert rc == 0 and "GOT:bf2raw-pty" in out, (rc, out)
+
+          # 3. Interactive foreground PTY Ctrl-C delivers one SIGINT
+          log_pty, ready_pty = os.path.join(td, "pty.log"), os.path.join(td, "pty.ready")
+          def wait_ready():
+              dl = time.time() + 5.0
+              while not os.path.exists(ready_pty) and time.time() < dl:
+                  time.sleep(0.02)
+              assert os.path.exists(ready_pty), "pty stub did not become ready"
+          rc, out = run_in_pty([wrapper, "sig", log_pty, ready_pty], on_ready=wait_ready, send_bytes=b"\x03")
+          sigs_pty = [int(x) for x in open(log_pty).read().splitlines() if x.strip()]
+          assert rc == 130 and sigs_pty == [signal.SIGINT.value], (rc, sigs_pty, out)
+
+          # 4. Non-TTY process-group SIGINT delivers one SIGINT
+          log, ready = os.path.join(td, "sig.log"), os.path.join(td, "sig.ready")
+          p = subprocess.Popen([wrapper, "sig", log, ready], start_new_session=True)
+          deadline = time.time() + 5.0
+          while not os.path.exists(ready) and time.time() < deadline:
+              time.sleep(0.02)
+          assert os.path.exists(ready), "stub did not become ready"
+          os.killpg(p.pid, signal.SIGINT)
+          rc = p.wait(timeout=10)
+          sigs = [int(x) for x in open(log).read().splitlines() if x.strip()]
+          assert rc == 130 and sigs == [signal.SIGINT.value], (rc, sigs)
+
+          # 5. SIGHUP forwards to child process group and cleans up scratch dir
+          hup_env = os.environ.copy()
+          hup_env.pop("XDG_CACHE_HOME", None)
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([wrapper, "sig", log_hup, ready_hup], env=hup_env, start_new_session=True)
+          deadline = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < deadline:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_cache = open(ready_hup).read().strip()
+          assert scratch_cache and os.path.isdir(scratch_cache), scratch_cache
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_cache)), f"scratch dir leaked on SIGHUP: {scratch_cache}"
+
+          # 5b. Under nohup, inherited SIG_IGN for SIGHUP is preserved and child survives SIGHUP
+          stub_nohup = os.path.join(td, "stub_nohup.py")
+          open(stub_nohup, "w").write(
+              "#!/usr/bin/python3\n"
+              "import os, signal, sys, time\n"
+              "ready, go = sys.argv[1], sys.argv[2]\n"
+              "assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN, signal.getsignal(signal.SIGHUP)\n"
+              "open(ready, 'w').write('ready\\n')\n"
+              "dl = time.time() + 5.0\n"
+              "while not os.path.exists(go) and time.time() < dl:\n"
+              "    time.sleep(0.02)\n"
+              "assert os.path.exists(go), 'go file not seen'\n"
+          )
+          os.chmod(stub_nohup, 0o755)
+          wrapper_nohup = os.path.join(td, "wrapper_nohup.py")
+          open(wrapper_nohup, "w").write(src.replace("/opt/bioformats2raw/app/bin/bioformats2raw", stub_nohup))
+          os.chmod(wrapper_nohup, 0o755)
+          ready_nh, go_nh = os.path.join(td, "nh.ready"), os.path.join(td, "nh.go")
+          p_nh = subprocess.Popen(["nohup", wrapper_nohup, ready_nh, go_nh], env=hup_env, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_nh) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_nh), f"nohup stub not ready: {p_nh.stderr.read().decode()}"
+          os.killpg(p_nh.pid, signal.SIGHUP)
+          time.sleep(0.1)
+          open(go_nh, "w").write("go\n")
+          rc_nh = p_nh.wait(timeout=10)
+          err_nh = p_nh.stderr.read().decode()
+          assert rc_nh == 0, (rc_nh, err_nh)
+
+          # 6. Interactive Bash Ctrl-Z returns shell prompt and fg resumes child
+          ready_z = os.path.join(td, "tstp.ready")
+          stub_z = os.path.join(td, "stub_z.py")
+          open(stub_z, "w").write(
+              "#!/usr/bin/python3\n"
+              "import sys\n"
+              "open(sys.argv[1], 'w').write('ready\\n')\n"
+              "print('RESUMED:' + sys.stdin.readline().strip(), flush=True)\n"
+          )
+          os.chmod(stub_z, 0o755)
+          wrapper_z = os.path.join(td, "wrapper_z.py")
+          open(wrapper_z, "w").write(src.replace("/opt/bioformats2raw/app/bin/bioformats2raw", stub_z))
+          os.chmod(wrapper_z, 0o755)
+          master, slave = pty.openpty()
+          def preexec_bash():
+              os.setsid()
+              fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+          benv = os.environ.copy()
+          for k in ("PROMPT_COMMAND", "BASH_ENV", "ENV"):
+              benv.pop(k, None)
+          benv["PS1"] = "BP> "
+          bash = subprocess.Popen(["bash", "--norc", "--noprofile", "-i"], stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec_bash, close_fds=True, env=benv)
+          os.close(slave)
+          pty_buf = [""]
+          def read_until(marker):
+              dl = time.time() + 5.0
+              while True:
+                  idx = pty_buf[0].find(marker)
+                  if idx != -1:
+                      end = idx + len(marker)
+                      out = pty_buf[0][:end]
+                      pty_buf[0] = pty_buf[0][end:]
+                      return out
+                  if time.time() >= dl:
+                      raise AssertionError(f"Timed out waiting for {marker!r}: {pty_buf[0]!r}")
+                  r, _, _ = select.select([master], [], [], 0.05)
+                  if r:
+                      try:
+                          chunk = os.read(master, 4096)
+                          if not chunk:
+                              raise AssertionError(f"EOF waiting for {marker!r}: {pty_buf[0]!r}")
+                          pty_buf[0] += chunk.decode("utf-8", "replace")
+                      except OSError:
+                          raise AssertionError(f"OSError waiting for {marker!r}: {pty_buf[0]!r}")
+          read_until("BP> ")
+          os.write(master, f"{wrapper_z} {ready_z}\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_z) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_z), "tstp stub did not start"
+          time.sleep(0.1)
+          os.write(master, b"\x1a")
+          read_until("BP> ")
+          os.write(master, b"bg\n")
+          read_until("BP> ")
+          time.sleep(0.15)
+          os.write(master, b"echo BASH_KEEPS_TTY\n")
+          out_bg = read_until("BASH_KEEPS_TTY")
+          assert "RESUMED:echo" not in out_bg, out_bg
+          read_until("BP> ")
+          os.write(master, b"fg\n")
+          time.sleep(0.15)
+          os.write(master, b"after-fg\n")
+          read_until("RESUMED:after-fg")
+          read_until("BP> ")
+          # 7. Background launch (&) followed by fg hands TTY to child cleanly
+          ready_bg = os.path.join(td, "bg.ready")
+          os.write(master, f"{wrapper_z} {ready_bg} &\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_bg) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_bg), "bg stub did not start"
+          time.sleep(0.15)
+          os.write(master, b"echo BG_LAUNCH_OK\n")
+          out_bgl = read_until("BG_LAUNCH_OK")
+          assert "RESUMED:echo" not in out_bgl, out_bgl
+          read_until("BP> ")
+          os.write(master, b"fg\n")
+          time.sleep(0.15)
+          os.write(master, b"from-bg-to-fg\n")
+          read_until("RESUMED:from-bg-to-fg")
+          read_until("BP> ")
+          # 8. Running background child (no TTY I/O) -> fg -> Ctrl-Z stops child too
+          stub_bg = os.path.join(td, "stub_bg.py")
+          open(stub_bg, "w").write(
+              "#!/usr/bin/python3\n"
+              "import os, sys, time\n"
+              "if sys.argv[1] == 'tick':\n"
+              "    open(sys.argv[2], 'w').write(str(os.getpid()))\n"
+              "    for i in range(60):\n"
+              "        open(sys.argv[3], 'w').write(str(i))\n"
+              "        time.sleep(0.05)\n"
+              "else:\n"
+              "    open(sys.argv[2], 'w').write('ready\\n')\n"
+              "    time.sleep(0.3)\n"
+              "    print('TOSTOP_OK', flush=True)\n"
+          )
+          os.chmod(stub_bg, 0o755)
+          wrapper_bg = os.path.join(td, "wrapper_bg.py")
+          open(wrapper_bg, "w").write(src.replace("/opt/bioformats2raw/app/bin/bioformats2raw", stub_bg))
+          os.chmod(wrapper_bg, 0o755)
+          pidf, tickf = os.path.join(td, "c.pid"), os.path.join(td, "c.tick")
+          os.write(master, f"{wrapper_bg} tick {pidf} {tickf} &\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(pidf) and time.time() < dl:
+              time.sleep(0.02)
+          cpid = int(open(pidf).read().strip())
+          read_until("BP> ")
+          os.write(master, b"fg\n")
+          time.sleep(0.15)
+          os.write(master, b"\x1a")
+          read_until("BP> ")
+          time.sleep(0.1)
+          st = open(f"/proc/{cpid}/stat").read().rsplit(")", 1)[1].split()[0]
+          assert st == "T", f"running child not stopped on fg + Ctrl-Z: {st}"
+          os.write(master, b"fg\n")
+          time.sleep(0.1)
+          os.write(master, b"\x03")
+          read_until("BP> ")
+          # 9. stty tostop + bg with </dev/null stops cleanly on SIGTTOU and fg completes write
+          ready_ts = os.path.join(td, "ts.ready")
+          os.write(master, b"stty tostop\n")
+          read_until("BP> ")
+          os.write(master, f"{wrapper_bg} write {ready_ts} </dev/null\n".encode())
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_ts) and time.time() < dl:
+              time.sleep(0.02)
+          os.write(master, b"\x1a")
+          read_until("BP> ")
+          os.write(master, b"bg\n")
+          read_until("BP> ")
+          time.sleep(0.5)
+          os.write(master, b"jobs\n")
+          jout = read_until("BP> ")
+          assert "Stopped" in jout and "TOSTOP_OK" not in jout, jout
+          os.write(master, b"fg\n")
+          read_until("TOSTOP_OK")
+          read_until("BP> ")
+          os.write(master, b"exit\n")
+          bash.wait(timeout=5)
+          os.close(master)
+      print("wrapper signal and stdin ok")
+      PY
+    expected_output_contains: "wrapper signal and stdin ok"
+
+  - name: synthetic TIFF to OME-Zarr conversion offline
+    description: Generate an uncompressed RGB TIFF, convert it to OME-Zarr with bioformats2raw under read-only HOME, and verify Zarr metadata and OME-XML output.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      python3 -c "
+      import struct, sys
+      w, h = 64, 64
+      pixels = bytes([210, 140, 90] * (w * h))
+      # Minimal valid baseline uncompressed RGB TIFF (little-endian)
+      ifd_offset = 8
+      entries = [
+          (256, 4, 1, w),         # ImageWidth
+          (257, 4, 1, h),         # ImageLength
+          (258, 3, 3, 0),         # BitsPerSample -> offset patched below
+          (259, 3, 1, 1),         # Compression = None
+          (262, 3, 1, 2),         # Photometric = RGB
+          (273, 4, 1, 0),         # StripOffsets -> patched below
+          (277, 3, 1, 3),         # SamplesPerPixel = 3
+          (278, 4, 1, h),         # RowsPerStrip
+          (279, 4, 1, len(pixels)),
+          (284, 3, 1, 1),         # PlanarConfiguration = Chunky
+      ]
+      bps_offset = ifd_offset + 2 + len(entries) * 12 + 4
+      pixel_offset = bps_offset + 6
+      buf = bytearray(b'II' + struct.pack('<HI', 42, ifd_offset))
+      buf += struct.pack('<H', len(entries))
+      for tag, typ, cnt, val in entries:
+          if tag == 258:
+              val = bps_offset
+          elif tag == 273:
+              val = pixel_offset
+          buf += struct.pack('<HHII', tag, typ, cnt, val)
+      buf += struct.pack('<I', 0)
+      buf += struct.pack('<HHH', 8, 8, 8)
+      buf += pixels
+      open(sys.argv[1], 'wb').write(buf)
+      " "$tmpdir/input.tif"
+      HOME=/sys bioformats2raw --tile-width 32 --tile-height 32 --resolutions 2 "$tmpdir/input.tif" "$tmpdir/out.ome.zarr"
+      test -f "$tmpdir/out.ome.zarr/.zgroup"
+      test -f "$tmpdir/out.ome.zarr/OME/METADATA.ome.xml"
+      test -f "$tmpdir/out.ome.zarr/0/.zattrs"
+      grep -q 'SizeX="64"' "$tmpdir/out.ome.zarr/OME/METADATA.ome.xml"
+      grep -q 'SizeY="64"' "$tmpdir/out.ome.zarr/OME/METADATA.ome.xml"
+      echo "bioformats2raw ome-zarr ok"
+    expected_output_contains: "bioformats2raw ome-zarr ok"

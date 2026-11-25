@@ -1,0 +1,167 @@
+name: dicom-validator
+version: 0.9.0
+upstream_version: "0.9.0"
+highdicom_version: "0.29.0"
+
+tests:
+  - name: deployed binaries available on PATH
+    description: Verify validate_iods and dump_dcm_info wrappers resolve on PATH.
+    command: |
+      set -e
+      command -v validate_iods
+      command -v dump_dcm_info
+    expected_output_contains: "/opt/dicom-validator/wrappers/validate_iods"
+
+  - name: package versions match recipe and pip check passes
+    description: Verify installed dicom-validator, highdicom, and pyjpegls distribution metadata match recipe variables.
+    command: |
+      set -e
+      /opt/dicom-validator/bin/python -m pip check
+      /opt/dicom-validator/bin/python -c "
+      import importlib.metadata as md, highdicom, jpeg_ls
+      print(
+          'dicom-validator=' + md.version('dicom-validator'),
+          'highdicom=' + md.version('highdicom'),
+          'pyjpegls=' + md.version('pyjpegls'),
+      )
+      "
+    expected_output_contains: "dicom-validator=${upstream_version} highdicom=${highdicom_version} pyjpegls=1.5.1"
+
+  - name: license notices installed
+    description: Verify release-matched license notices for dicom-validator, highdicom, pyjpegls, and CharLS are installed.
+    command: |
+      set -e
+      test -s /opt/dicom-validator/share/licenses/DICOM-VALIDATOR-LICENSE.txt
+      test -s /opt/dicom-validator/share/licenses/HIGHDICOM-LICENSE.txt
+      test -s /opt/dicom-validator/share/licenses/PYJPEGLS-LICENSE.txt
+      test -s /opt/dicom-validator/share/licenses/CHARLS-LICENSE.md
+      grep -q "MIT License" /opt/dicom-validator/share/licenses/DICOM-VALIDATOR-LICENSE.txt
+      grep -q "Jan de Vaan" /opt/dicom-validator/share/licenses/CHARLS-LICENSE.md
+      echo "licenses ok"
+    expected_output_contains: "licenses ok"
+
+  - name: CLI help works with read-only HOME
+    description: Verify validate_iods and dump_dcm_info start cleanly when HOME is read-only.
+    command: |
+      set -e
+      HOME=/sys validate_iods --help
+      HOME=/sys dump_dcm_info --help > /dev/null
+    expected_output_contains: "Validates DICOM file IODs"
+
+  - name: offline wrapper and miniature Dermoscopic IOD schema smoke test
+    description: Exercise validate_iods, dump_dcm_info, and -- option boundary offline against a miniature Dermoscopic Photography IOD fixture (Modality=DMS) with read-only HOME, asserting exact missing-tag diagnostics and absence of shared /tmp cache defaults.
+    command: |
+      set -e
+      tmpdir="$(mktemp -d)"
+      trap 'rm -rf "$tmpdir"' EXIT
+      HOME=/sys /opt/dicom-validator/bin/python -c "
+      import json, sys
+      from pathlib import Path
+      from pydicom.dataset import FileDataset, FileMetaDataset
+      from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+      from dicom_validator import __version__ as dv_version
+
+      root = Path(sys.argv[1])
+      std_dir = root / 'std'
+      docbook_dir = std_dir / '2026d' / 'docbook'
+      json_dir = std_dir / '2026d' / 'json'
+      docbook_dir.mkdir(parents=True)
+      json_dir.mkdir(parents=True)
+      for chapter in (3, 4, 6):
+          (docbook_dir / f'part{chapter:02d}.xml').write_text('<book/>', encoding='utf-8')
+      (std_dir / 'editions.json').write_text(json.dumps(['2026d']), encoding='utf-8')
+      (json_dir / 'version').write_text(dv_version, encoding='utf-8')
+
+      derm_uid = '1.2.840.10008.5.1.4.1.1.77.1.7'
+      (json_dir / 'uid_info.json').write_text(
+          json.dumps({derm_uid: 'Dermoscopic Photography Image Storage'}),
+          encoding='utf-8',
+      )
+      (json_dir / 'iod_info.json').write_text(
+          json.dumps({
+              derm_uid: {
+                  'title': 'Dermoscopic Photography Image IOD',
+                  'group_macros': {},
+                  'modules': {
+                      'patient': {'name': 'Patient', 'ref': 'patient', 'use': 'M'},
+                      'vl_image': {'name': 'VL Image', 'ref': 'vl_image', 'use': 'M'},
+                  },
+              }
+          }),
+          encoding='utf-8',
+      )
+      (json_dir / 'module_info.json').write_text(
+          json.dumps({
+              'patient': {
+                  '(0010,0010)': {'name': 'Patient Name', 'type': '2'},
+                  '(0010,0020)': {'name': 'Patient ID', 'type': '2'},
+              },
+              'vl_image': {
+                  '(0008,0008)': {'name': 'Image Type', 'type': '1'},
+                  '(0008,0016)': {'name': 'SOP Class UID', 'type': '1'},
+                  '(0008,0018)': {'name': 'SOP Instance UID', 'type': '1'},
+                  '(0008,0060)': {'name': 'Modality', 'type': '1'},
+              },
+          }),
+          encoding='utf-8',
+      )
+      (json_dir / 'dict_info.json').write_text(
+          json.dumps({
+              '(0008,0008)': {'name': 'Image Type', 'vr': 'CS', 'vm': '2-n', 'prop': ''},
+              '(0008,0016)': {'name': 'SOP Class UID', 'vr': 'UI', 'vm': '1', 'prop': ''},
+              '(0008,0018)': {'name': 'SOP Instance UID', 'vr': 'UI', 'vm': '1', 'prop': ''},
+              '(0008,0060)': {'name': 'Modality', 'vr': 'CS', 'vm': '1', 'prop': ''},
+              '(0010,0010)': {'name': 'Patient Name', 'vr': 'PN', 'vm': '1', 'prop': ''},
+              '(0010,0020)': {'name': 'Patient ID', 'vr': 'LO', 'vm': '1', 'prop': ''},
+          }),
+          encoding='utf-8',
+      )
+
+      def make_derm(path: Path, include_image_type: bool) -> None:
+          fm = FileMetaDataset()
+          fm.MediaStorageSOPClassUID = derm_uid
+          fm.MediaStorageSOPInstanceUID = generate_uid()
+          fm.TransferSyntaxUID = ExplicitVRLittleEndian
+          ds = FileDataset(str(path), {}, file_meta=fm, preamble=b'\0' * 128)
+          ds.SOPClassUID = derm_uid
+          ds.SOPInstanceUID = fm.MediaStorageSOPInstanceUID
+          ds.Modality = 'DMS'
+          ds.PatientName = 'Derm^Test'
+          ds.PatientID = 'DERM001'
+          if include_image_type:
+              ds.ImageType = ['ORIGINAL', 'PRIMARY']
+          ds.save_as(str(path), enforce_file_format=True)
+
+      make_derm(root / 'valid.dcm', include_image_type=True)
+      make_derm(root / '-h', include_image_type=True)
+      make_derm(root / 'incomplete.dcm', include_image_type=False)
+      " "$tmpdir"
+      HOME=/sys DICOM_VALIDATOR_STANDARD_PATH="$tmpdir/std" validate_iods --edition local "$tmpdir/valid.dcm"
+      # Verify wrapper stops scanning options at -- even when positional filename is "-h".
+      (cd "$tmpdir" && HOME=/sys DICOM_VALIDATOR_STANDARD_PATH="$tmpdir/std" validate_iods --edition local -- -h)
+      HOME=/sys DICOM_VALIDATOR_STANDARD_PATH="$tmpdir/std" dump_dcm_info --edition local "$tmpdir/valid.dcm" > "$tmpdir/dump.txt"
+      grep -q "DMS" "$tmpdir/dump.txt"
+      set +e
+      HOME=/sys DICOM_VALIDATOR_STANDARD_PATH="$tmpdir/std" validate_iods --edition local "$tmpdir/incomplete.dcm" > "$tmpdir/invalid.txt" 2>&1
+      bad_rc=$?
+      set -e
+      test "$bad_rc" -ne 0
+      grep -q "(0008,0008)" "$tmpdir/invalid.txt"
+      grep -q "Image Type" "$tmpdir/invalid.txt"
+      # Exercise default-cache branch (no --standard-path and no DICOM_VALIDATOR_STANDARD_PATH):
+      # must use a private per-invocation directory under TMPDIR, leave no leftover dir,
+      # and never create a shared /tmp/dicom-validator-cache directory.
+      mkdir -p "$tmpdir/private_tmp"
+      set +e
+      env -u DICOM_VALIDATOR_STANDARD_PATH HOME=/sys TMPDIR="$tmpdir/private_tmp" \
+        http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 \
+        HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 NO_PROXY="" no_proxy="" \
+        validate_iods --edition local "$tmpdir/valid.dcm" > "$tmpdir/default_branch.txt" 2>&1
+      default_rc=$?
+      set -e
+      test "$default_rc" -ne 0
+      grep -q "Invalid DICOM edition local" "$tmpdir/default_branch.txt"
+      test -z "$(ls -A "$tmpdir/private_tmp")"
+      test ! -e /tmp/dicom-validator-cache
+      echo "derm wrapper smoke ok: valid=0 dash_h=0 incomplete=${bad_rc} default_rc=${default_rc}"
+    expected_output_contains: "derm wrapper smoke ok: valid=0 dash_h=0 incomplete="

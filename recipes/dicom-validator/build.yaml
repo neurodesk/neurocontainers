@@ -1,0 +1,307 @@
+name: dicom-validator
+version: 0.9.0
+
+description: Validate DICOM IOD conformance (including Supplement 221 Dermoscopic Photography and Supplement 145 WSI) against PS3.3 definitions, paired with highdicom for DICOM segmentation, SR, and annotation workflows.
+
+copyright:
+  - license: MIT
+    name: dicom-validator license
+    url: https://github.com/pydicom/dicom-validator/blob/v{{ context.upstream_version }}/LICENSE
+  - license: MIT
+    name: highdicom license
+    url: https://github.com/ImagingDataCommons/highdicom/blob/v{{ context.highdicom_version }}/LICENSE
+  - license: MIT
+    name: pyjpegls license
+    url: https://github.com/pydicom/pyjpegls/blob/v{{ context.pyjpegls_version }}/license.txt
+  - license: BSD-3-Clause
+    name: CharLS license
+    url: https://github.com/team-charls/charls/blob/{{ context.charls_commit }}/LICENSE.md
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.9.0"
+  highdicom_version: "0.29.0"
+  # Keep pyjpegls_version and charls_commit aligned; inspect pydicom/pyjpegls
+  # submodule ref when updating pyjpegls.
+  pyjpegls_version: "1.5.1"
+  charls_commit: "36dd3307e070d8fbc765c3ba890b7e681046fa39"
+
+auto_update:
+  method: sources
+  container_version: dicom-validator
+  sources:
+    - id: dicom-validator
+      method: pypi
+      package: dicom-validator
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: highdicom
+      method: pypi
+      package: highdicom
+      dependency: true
+      target:
+        variable: highdicom_version
+        fulltest_variable: highdicom_version
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PIP_NO_CACHE_DIR: "1"
+        PATH: /opt/dicom-validator/wrappers:/opt/dicom-validator/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-venv
+
+    - run:
+        - python3 -m venv /opt/dicom-validator
+        - /opt/dicom-validator/bin/python -m pip install --no-cache-dir "dicom-validator=={{ context.upstream_version }}" "highdicom=={{ context.highdicom_version }}" "pyjpegls=={{ context.pyjpegls_version }}"
+        - /opt/dicom-validator/bin/python -m pip check
+        - mkdir -p /opt/dicom-validator/wrappers /opt/dicom-validator/share/licenses
+        - install -m 0755 {{ get_file("validate_iods_wrapper") }} /opt/dicom-validator/wrappers/validate_iods
+        - install -m 0755 {{ get_file("dump_dcm_info_wrapper") }} /opt/dicom-validator/wrappers/dump_dcm_info
+        - install -m 0644 /opt/dicom-validator/lib/python*/site-packages/dicom_validator-{{ context.upstream_version }}.dist-info/licenses/LICENSE /opt/dicom-validator/share/licenses/DICOM-VALIDATOR-LICENSE.txt
+        - install -m 0644 /opt/dicom-validator/lib/python*/site-packages/highdicom-{{ context.highdicom_version }}.dist-info/licenses/LICENSE /opt/dicom-validator/share/licenses/HIGHDICOM-LICENSE.txt
+        - install -m 0644 {{ get_file("pyjpegls_license") }} /opt/dicom-validator/share/licenses/PYJPEGLS-LICENSE.txt
+        - install -m 0644 {{ get_file("charls_license") }} /opt/dicom-validator/share/licenses/CHARLS-LICENSE.md
+        - chmod -R a+rX /opt/dicom-validator
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: pyjpegls_license
+    url: https://raw.githubusercontent.com/pydicom/pyjpegls/v{{ context.pyjpegls_version }}/license.txt
+  - name: charls_license
+    url: https://raw.githubusercontent.com/team-charls/charls/{{ context.charls_commit }}/LICENSE.md
+  - name: validate_iods_wrapper
+    executable: true
+    contents: |
+      #!/opt/dicom-validator/bin/python
+      """Run validate_iods with a non-/home, private default standard cache."""
+
+      from __future__ import annotations
+
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      def has_standard_or_help_flag(argv: list[str]) -> bool:
+          for arg in argv:
+              if arg == "--":
+                  return False
+              if arg in ("--standard-path", "-src", "-h", "--help"):
+                  return True
+              if arg.startswith(("--standard-path=", "-src=")):
+                  return True
+          return False
+
+
+      def main() -> int:
+          target = "/opt/dicom-validator/bin/validate_iods"
+          argv = sys.argv[1:]
+          if has_standard_or_help_flag(argv):
+              os.execv(target, [target, *argv])
+
+          env_std = os.environ.get("DICOM_VALIDATOR_STANDARD_PATH", "")
+          if env_std:
+              os.execv(target, [target, "--standard-path", env_std, *argv])
+
+          tmp_std: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              elif proc.poll() is None:
+                  proc.send_signal(signum)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_std so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch,
+              # while preserving inherited SIG_IGN (e.g. under nohup or background &).
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_std = tempfile.mkdtemp(prefix="dicom-validator.")
+              if received_signal is not None:
+                  return 128 + received_signal
+              proc = subprocess.Popen([target, "--standard-path", tmp_std, *argv])
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None and proc.poll() is None:
+                  proc.send_signal(sig_to_replay)
+              while True:
+                  try:
+                      rc = proc.wait()
+                      break
+                  except InterruptedError:
+                      continue
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              if tmp_std is not None:
+                  shutil.rmtree(tmp_std, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+  - name: dump_dcm_info_wrapper
+    executable: true
+    contents: |
+      #!/opt/dicom-validator/bin/python
+      """Run dump_dcm_info with a non-/home, private default standard cache."""
+
+      from __future__ import annotations
+
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      def has_standard_or_help_flag(argv: list[str]) -> bool:
+          for arg in argv:
+              if arg == "--":
+                  return False
+              if arg in ("--standard-path", "-src", "-h", "--help"):
+                  return True
+              if arg.startswith(("--standard-path=", "-src=")):
+                  return True
+          return False
+
+
+      def main() -> int:
+          target = "/opt/dicom-validator/bin/dump_dcm_info"
+          argv = sys.argv[1:]
+          if has_standard_or_help_flag(argv):
+              os.execv(target, [target, *argv])
+
+          env_std = os.environ.get("DICOM_VALIDATOR_STANDARD_PATH", "")
+          if env_std:
+              os.execv(target, [target, "--standard-path", env_std, *argv])
+
+          tmp_std: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              elif proc.poll() is None:
+                  proc.send_signal(signum)
+
+          try:
+              # Install signal handlers BEFORE creating tmp_std so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch,
+              # while preserving inherited SIG_IGN (e.g. under nohup or background &).
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_std = tempfile.mkdtemp(prefix="dicom-validator.")
+              if received_signal is not None:
+                  return 128 + received_signal
+              proc = subprocess.Popen([target, "--standard-path", tmp_std, *argv])
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None and proc.poll() is None:
+                  proc.send_signal(sig_to_replay)
+              while True:
+                  try:
+                      rc = proc.wait()
+                      break
+                  except InterruptedError:
+                      continue
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              if tmp_std is not None:
+                  shutil.rmtree(tmp_std, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - validate_iods
+    - dump_dcm_info
+
+domains:
+  - microscopy
+  - dermatology
+
+categories:
+  - "optical imaging"
+  - "quality control"
+  - "data organisation"
+
+readme: |-
+  ----------------------------------
+  ## dicom-validator/{{ context.version }} ##
+
+  `dicom-validator` ({{ context.upstream_version }}) validates DICOM files
+  against DICOM PS3.3/PS3.4/PS3.6 standard IOD definitions — including
+  Supplement 221 Dermoscopic Photography (`1.2.840.10008.5.1.4.1.1.77.1.7`) and
+  Supplement 145 VL Whole Slide Microscopy (`1.2.840.10008.5.1.4.1.1.77.1.6`).
+  This container also includes `highdicom` ({{ context.highdicom_version }})
+  for DICOM segmentation, structured reporting (SR), and microscopy/clinical
+  annotation workflows (note: `highdicom` does not provide dedicated image
+  constructors for the Dermoscopic Photography or WSI image IODs).
+
+  ### Included CLI Tools
+  ```
+  validate_iods    Validate DICOM files against PS3.3 IOD definitions
+  dump_dcm_info    Display DICOM tags annotated with standard descriptions
+  ```
+
+  ### Example
+  ```
+  ml dicom-validator/{{ context.version }}
+  validate_iods --standard-path /path/to/dicom-cache --edition 2026d dermoscopy.dcm
+  ```
+
+  NEMA DICOM standard files are not bundled in the image. By default, when
+  neither `--standard-path` nor `DICOM_VALIDATOR_STANDARD_PATH` is given, the
+  wrappers create an atomic private (`0700`) temporary directory so validation
+  neither touches `/home` nor trusts a shared `/tmp` cache. For persistent or offline HPC runs, point `--standard-path` or
+  `DICOM_VALIDATOR_STANDARD_PATH` at a trusted bind-mounted cache containing
+  `editions.json`, all three DocBook XML parts (`<edition>/docbook/part03.xml`,
+  `part04.xml`, `part06.xml`), and the JSON files generated by the matching
+  `dicom-validator` version (`<edition>/json/`), then pass `--edition local`.
+
+  Note: Upstream describes `dicom-validator` as beta-stage software.
+  Documentation: https://dicom-validator.readthedocs.io
+  License texts (including `dicom-validator`, `highdicom`, `pyjpegls`, and
+  `CharLS`) are installed under `/opt/dicom-validator/share/licenses`.
+  ----------------------------------
+
+icon: data:image/png;base64,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
