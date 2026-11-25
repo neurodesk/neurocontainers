@@ -31,16 +31,16 @@ def source_version(recipe: dict, source: dict) -> str:
 
     target = source["target"]
     variables = recipe.get("variables", {})
+    if source["method"] == "apt" and target.get("value", "value") != "value":
+        raise ValueError(
+            f"{source['id']}: apt sources must store the raw package pin (value: value)"
+        )
     for variable, field in target.get("variables", {}).items():
         if field == "version":
             return str(variables[variable])
     if "variable" in target:
         value = str(variables[target["variable"]])
         if source["method"] == "apt":
-            if target.get("value", "value") != "value":
-                raise ValueError(
-                    f"{source['id']}: apt sources must store the raw package pin (value: value)"
-                )
             from .update_observations import debian_upstream_version
 
             return debian_upstream_version(value)

@@ -263,11 +263,17 @@ def test_variable_backed_container_version_enforces_multiarch_apt_peers():
     recipe["variables"]["arm64_pin"] = "2.1~rc1-2"
     validate_container_version(recipe)
 
-    # Storing a lossy normalized version as the primary APT target is rejected.
-    for driver in ("pkg", {"variable": "pkg_ver"}):
+    # Storing a lossy normalized version as the primary APT target is rejected,
+    # including when container_version names the source ID and an auxiliary version variable is also set.
+    for driver, extra_target in (
+        ("pkg", {}),
+        ("pkg", {"variables": {"label": "version"}}),
+        ({"variable": "pkg_ver"}, {}),
+        ({"variable": "label"}, {"variables": {"label": "version"}}),
+    ):
         bad_target = {
             "version": "2.1.0-rc1",
-            "variables": {"pkg_ver": "2.1-rc1"},
+            "variables": {"pkg_ver": "2.1-rc1", "label": "2.1-rc1"},
             "auto_update": {
                 "method": "sources",
                 "container_version": driver,
@@ -279,7 +285,11 @@ def test_variable_backed_container_version_enforces_multiarch_apt_peers():
                         "urls": [
                             "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
                         ],
-                        "target": {"variable": "pkg_ver", "value": "version"},
+                        "target": {
+                            "variable": "pkg_ver",
+                            "value": "version",
+                            **extra_target,
+                        },
                     }
                 ],
             },
