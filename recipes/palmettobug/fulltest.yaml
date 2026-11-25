@@ -34,6 +34,34 @@ tests:
       assert any(e.name == "palmettobug" for e in d.entry_points)'
     expected_exit_code: 0
 
+  - name: CustomTkinter fonts isolated from HOME
+    description: Verify bundled CustomTkinter fonts are registered system-wide inside the container and importing customtkinter/palmettobug never creates ~/.fonts, even with a read-only HOME.
+    command: |-
+      set -euo pipefail
+      tmp_home=$(mktemp -d)
+      trap 'rm -rf "$tmp_home"' EXIT
+      HOME="$tmp_home" python3 -c '
+      import os
+      import customtkinter
+      from customtkinter.windows.widgets.core_rendering import DrawEngine
+      from customtkinter.windows.widgets.font import FontManager
+      import palmettobug
+      assert FontManager.linux_font_path == "/usr/local/share/fonts/customtkinter/"
+      assert DrawEngine.preferred_drawing_method == "font_shapes"
+      assert not os.path.exists(os.path.join(os.environ["HOME"], ".fonts")), "~/.fonts must not be created"
+      '
+      stderr_out=$(HOME=/sys python3 -c '
+      import customtkinter
+      from customtkinter.windows.widgets.core_rendering import DrawEngine
+      assert DrawEngine.preferred_drawing_method == "font_shapes"
+      ' 2>&1)
+      [ -z "$stderr_out" ] || { echo "unexpected stderr: $stderr_out"; exit 1; }
+      fc-list | grep -qi "Roboto"
+      fc-list | grep -qi "CustomTkinter_shapes_font"
+      echo "fonts isolated"
+    expected_output_contains: "fonts isolated"
+    expected_exit_code: 0
+
   # ==========================================================================
   # BASIC ENVIRONMENT CHECKS
   # ==========================================================================
