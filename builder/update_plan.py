@@ -220,6 +220,10 @@ def validate_sources_config(config: dict) -> None:
         destinations.add(destination)
         if target.get("value", "value") not in {"value", "version", "tag"}:
             raise ValueError(f"{name}: value must select value, version or tag")
+        if source["method"] == "apt" and target.get("value", "value") != "value":
+            raise ValueError(
+                f"{name}: apt sources must store the raw package pin (value: value)"
+            )
         if "variable" in target and key in {"version", "original_version"}:
             raise ValueError("independent sources cannot target the container version")
         if "file" in target and source["method"] not in {
@@ -567,7 +571,9 @@ def plan_sources(
             observed_version = fields.get(field)
             if not isinstance(observed_version, str) or not observed_version:
                 raise ValueError(f"{source['id']}: observation lacks field version")
-            if _is_older(observed_version, str(recipe["variables"][variable])):
+            if source["method"] != "apt" and _is_older(
+                observed_version, str(recipe["variables"][variable])
+            ):
                 metadata_downgrade = True
                 break
         if metadata_downgrade:

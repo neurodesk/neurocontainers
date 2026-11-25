@@ -207,7 +207,12 @@ def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu(
 def test_variable_backed_container_version_enforces_multiarch_apt_peers():
     recipe = {
         "version": "2.0.0",
-        "variables": {"amd64": "2.0.0", "arm64": "1.0.0"},
+        "variables": {
+            "amd64_pin": "2.0-1",
+            "arm64_pin": "1.0-1",
+            "amd64": "2.0",
+            "arm64": "1.0",
+        },
         "auto_update": {
             "method": "sources",
             "container_version": {"variable": "amd64"},
@@ -219,7 +224,10 @@ def test_variable_backed_container_version_enforces_multiarch_apt_peers():
                     "urls": [
                         "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
                     ],
-                    "target": {"variables": {"amd64": "version"}},
+                    "target": {
+                        "variable": "amd64_pin",
+                        "variables": {"amd64": "version"},
+                    },
                 },
                 {
                     "id": "pkg-arm64",
@@ -228,19 +236,36 @@ def test_variable_backed_container_version_enforces_multiarch_apt_peers():
                     "urls": [
                         "https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz"
                     ],
-                    "target": {"variables": {"arm64": "version"}},
+                    "target": {
+                        "variable": "arm64_pin",
+                        "variables": {"arm64": "version"},
+                    },
                 },
             ],
         },
     }
     with pytest.raises(ValueError, match="multi-architecture APT sources"):
         validate_container_version(recipe)
-    recipe["variables"]["arm64"] = "2.0.0"
+
+    # Distinct raw upstream prerelease vs post-release (2.1~rc1-1 vs 2.1+rc1-1)
+    # must still fail peer validation even though both labels normalize to 2.1-rc1.
+    recipe["version"] = "2.1.0-rc1"
+    recipe["variables"].update(
+        amd64_pin="2.1~rc1-1",
+        arm64_pin="2.1+rc1-1",
+        amd64="2.1-rc1",
+        arm64="2.1-rc1",
+    )
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(recipe)
+
+    # Matching raw pins pass validation cleanly with auxiliary version variable.
+    recipe["variables"]["arm64_pin"] = "2.1~rc1-2"
     validate_container_version(recipe)
 
-    # Pre-normalized target.value == "version" preserves prerelease hyphens (e.g. 2.1-rc1 -> 2.1.0-rc1).
+    # Storing a lossy normalized version as the primary APT target is rejected.
     for driver in ("pkg", {"variable": "pkg_ver"}):
-        prenorm = {
+        bad_target = {
             "version": "2.1.0-rc1",
             "variables": {"pkg_ver": "2.1-rc1"},
             "auto_update": {
@@ -259,4 +284,5 @@ def test_variable_backed_container_version_enforces_multiarch_apt_peers():
                 ],
             },
         }
-        validate_container_version(prenorm)
+        with pytest.raises(ValueError, match="raw package pin"):
+            validate_container_version(bad_target)

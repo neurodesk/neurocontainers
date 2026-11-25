@@ -37,8 +37,10 @@ def source_version(recipe: dict, source: dict) -> str:
     if "variable" in target:
         value = str(variables[target["variable"]])
         if source["method"] == "apt":
-            if target.get("value") == "version":
-                return value
+            if target.get("value", "value") != "value":
+                raise ValueError(
+                    f"{source['id']}: apt sources must store the raw package pin (value: value)"
+                )
             from .update_observations import debian_upstream_version
 
             return debian_upstream_version(value)
@@ -75,9 +77,14 @@ def container_version(recipe: dict) -> str:
         apt_driver = _resolve_apt_driver_source(config)
         if apt_driver is not None:
             target = apt_driver.get("target") or {}
+            if target.get("value", "value") != "value":
+                raise ValueError(
+                    f"{apt_driver['id']}: apt sources must store the raw package pin (value: value)"
+                )
             is_raw_pin = (
-                target.get("variable") == var_name and target.get("value") != "version"
-            ) or (target.get("variables") or {}).get(var_name) == "value"
+                target.get("variable") == var_name
+                or (target.get("variables") or {}).get(var_name) == "value"
+            )
             if is_raw_pin:
                 from .update_observations import debian_upstream_version
 
@@ -123,18 +130,16 @@ def _apt_peer_upstream_identity(variables: dict, peer: dict) -> str:
 
     target = peer.get("target") or {}
     if "variable" in target:
-        raw = str(variables[target["variable"]])
-        if target.get("value") == "version":
-            return raw
-        return debian_upstream_source_version(raw)
+        if target.get("value", "value") != "value":
+            raise ValueError(
+                f"{peer['id']}: apt sources must store the raw package pin (value: value)"
+            )
+        return debian_upstream_source_version(str(variables[target["variable"]]))
     target_vars = target.get("variables") or {}
     for var_name, field in target_vars.items():
         if field == "value":
             return debian_upstream_source_version(str(variables[var_name]))
-    for var_name, field in target_vars.items():
-        if field == "version":
-            return str(variables[var_name])
-    raise ValueError(f"{peer['id']}: APT peer source lacks a version variable target")
+    raise ValueError(f"{peer['id']}: APT peer source requires a raw package pin target")
 
 
 def primary_apt_peer_versions(recipe: dict) -> dict[str, str]:

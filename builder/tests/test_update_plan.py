@@ -837,48 +837,92 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
         validate_container_version(bad_hyphen)
     assert plan_sources(path, observations=obs("2.18.0-0-1", "2.18.0-1")) is None
 
-    # Pre-normalized target.value == "version" preserves prerelease suffix in planner.
-    prenorm_root = tmp_path / "prenorm"
-    prenorm_root.mkdir()
-    prenorm_recipe = {
-        "name": "prenorm",
+    # Lossy normalized primary APT targets (value: version) are rejected by config validation.
+    with pytest.raises(ValueError, match="raw package pin"):
+        validate_sources_config(
+            {
+                "method": "sources",
+                "container_version": "pkg",
+                "sources": [
+                    {
+                        "id": "pkg",
+                        "method": "apt",
+                        "package": "prenorm",
+                        "urls": [amd64_url],
+                        "target": {"variable": "pkg_version", "value": "version"},
+                    }
+                ],
+            }
+        )
+
+    # Raw APT pin + auxiliary version label advances cleanly from ~rc1 to final release,
+    # and rejects colliding ~rc1 vs +rc1 across architectures.
+    aux_root = tmp_path / "auxapt"
+    aux_root.mkdir()
+    aux_recipe = {
+        "name": "auxapt",
         "version": "2.0.0",
-        "variables": {"pkg_version": "2.0"},
+        "variables": {
+            "amd64_pin": "2.0-1",
+            "arm64_pin": "2.0-1",
+            "amd64_label": "2.0",
+            "arm64_label": "2.0",
+        },
         "auto_update": {
             "method": "sources",
-            "container_version": {"variable": "pkg_version"},
+            "container_version": {"variable": "amd64_label"},
             "sources": [
                 {
-                    "id": "pkg",
+                    "id": "pkg-amd64",
                     "method": "apt",
-                    "package": "prenorm",
+                    "package": "auxapt",
                     "urls": [amd64_url],
-                    "target": {"variable": "pkg_version", "value": "version"},
-                }
+                    "target": {
+                        "variable": "amd64_pin",
+                        "variables": {"amd64_label": "version"},
+                    },
+                },
+                {
+                    "id": "pkg-arm64",
+                    "method": "apt",
+                    "package": "auxapt",
+                    "urls": [arm64_url],
+                    "target": {
+                        "variable": "arm64_pin",
+                        "variables": {"arm64_label": "version"},
+                    },
+                },
             ],
         },
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:24.04",
             "pkg-manager": "apt",
-            "directives": [{"install": ["prenorm={{ context.pkg_version }}"]}],
+            "directives": [
+                {"install": ["auxapt={{ context.amd64_pin }}"]},
+                {"install": ["auxapt={{ context.arm64_pin }}"]},
+            ],
         },
     }
-    prenorm_path = prenorm_root / "build.yaml"
-    prenorm_path.write_text(yaml.safe_dump(prenorm_recipe, sort_keys=False))
-    (prenorm_root / "fulltest.yaml").write_text(
+    aux_path = aux_root / "build.yaml"
+    aux_path.write_text(yaml.safe_dump(aux_recipe, sort_keys=False))
+    (aux_root / "fulltest.yaml").write_text(
         yaml.safe_dump(
             {
-                "name": "prenorm",
+                "name": "auxapt",
                 "version": "2.0.0",
                 "tests": [{"name": "ok", "command": "true"}],
             },
             sort_keys=False,
         )
     )
-    rc_obs = SourceObservation(
-        "2.1~rc1-1", amd64_url, version=debian_upstream_version("2.1~rc1-1")
-    )
-    rc_plan = plan_sources(prenorm_path, observations={"pkg": rc_obs})
+    # Colliding 2.1~rc1-1 vs 2.1+rc1-1 (same label 2.1-rc1) is held back.
+    assert plan_sources(aux_path, observations=obs("2.1~rc1-1", "2.1+rc1-1")) is None
+    # Matching 2.1~rc1-1 advances to 2.1.0-rc1, then final 2.1-1 advances to 2.1.0.
+    rc_plan = plan_sources(aux_path, observations=obs("2.1~rc1-1", "2.1~rc1-1"))
     assert rc_plan is not None
     assert rc_plan.next_version == "2.1.0-rc1"
+    rc_plan.apply()
+    final_plan = plan_sources(aux_path, observations=obs("2.1-1", "2.1-1"))
+    assert final_plan is not None
+    assert final_plan.next_version == "2.1.0"
