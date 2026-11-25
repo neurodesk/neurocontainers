@@ -768,6 +768,26 @@ def debian_version_equivalence_key(
     )
 
 
+def debian_upstream_equivalence_key(
+    version: str,
+) -> tuple[int, tuple[tuple[str, int], ...]]:
+    """Return a hashable Debian Policy 5.6.12 key for an upstream-only version (with optional epoch).
+
+    Unlike ``debian_version_equivalence_key``, hyphens inside ``version`` are
+    treated as part of the upstream string rather than a Debian revision
+    separator, so upstream ``1.0-0`` (from ``1.0-0-1``) does not collapse to
+    ``1.0`` (from ``1.0-1``).
+    """
+    epoch = 0
+    upstream = version
+    if ":" in version:
+        raw_epoch, candidate_rest = version.split(":", 1)
+        if raw_epoch.isdigit():
+            epoch = int(raw_epoch)
+            upstream = candidate_rest
+    return (epoch, _debian_part_equivalence_key(upstream))
+
+
 def debian_upstream_source_version(version: str) -> str:
     """Return the upstream software identity (including VCS snapshots), without Debian revision, binNMU, or repack markers.
 

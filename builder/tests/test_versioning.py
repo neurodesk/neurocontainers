@@ -176,6 +176,7 @@ build:
 
 def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu():
     from builder.update_observations import (
+        debian_upstream_equivalence_key,
         debian_upstream_source_version,
         debian_version_equivalence_key,
     )
@@ -195,6 +196,12 @@ def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu(
     assert debian_version_equivalence_key("1.0") != debian_version_equivalence_key(
         "1.0.0"
     )
+    assert debian_upstream_equivalence_key(
+        debian_upstream_source_version("1.0-0-1")
+    ) != debian_upstream_equivalence_key(debian_upstream_source_version("1.0-1"))
+    assert debian_upstream_equivalence_key(
+        debian_upstream_source_version("2.016.0-1")
+    ) == debian_upstream_equivalence_key(debian_upstream_source_version("2.16.0-1"))
 
 
 def test_variable_backed_container_version_enforces_multiarch_apt_peers():
@@ -230,3 +237,26 @@ def test_variable_backed_container_version_enforces_multiarch_apt_peers():
         validate_container_version(recipe)
     recipe["variables"]["arm64"] = "2.0.0"
     validate_container_version(recipe)
+
+    # Pre-normalized target.value == "version" preserves prerelease hyphens (e.g. 2.1-rc1 -> 2.1.0-rc1).
+    for driver in ("pkg", {"variable": "pkg_ver"}):
+        prenorm = {
+            "version": "2.1.0-rc1",
+            "variables": {"pkg_ver": "2.1-rc1"},
+            "auto_update": {
+                "method": "sources",
+                "container_version": driver,
+                "sources": [
+                    {
+                        "id": "pkg",
+                        "method": "apt",
+                        "package": "demo",
+                        "urls": [
+                            "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                        ],
+                        "target": {"variable": "pkg_ver", "value": "version"},
+                    }
+                ],
+            },
+        }
+        validate_container_version(prenorm)

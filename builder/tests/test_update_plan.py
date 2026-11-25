@@ -827,3 +827,58 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
     var_leading_zero = plan_sources(path, observations=obs("2.017.0-1", "2.17.0-1"))
     assert var_leading_zero is not None
     assert var_leading_zero.next_version == "2.017.0"
+
+    # Upstream hyphen mismatch (1.0-0-1 vs 1.0-1 -> upstream 1.0-0 vs 1.0) is rejected.
+    bad_hyphen = yaml.safe_load(path.read_text())
+    bad_hyphen["version"] = "1.0.0-0"
+    bad_hyphen["variables"]["pkg_amd64_version"] = "1.0-0-1"
+    bad_hyphen["variables"]["pkg_arm64_version"] = "1.0-1"
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(bad_hyphen)
+    assert plan_sources(path, observations=obs("2.18.0-0-1", "2.18.0-1")) is None
+
+    # Pre-normalized target.value == "version" preserves prerelease suffix in planner.
+    prenorm_root = tmp_path / "prenorm"
+    prenorm_root.mkdir()
+    prenorm_recipe = {
+        "name": "prenorm",
+        "version": "2.0.0",
+        "variables": {"pkg_version": "2.0"},
+        "auto_update": {
+            "method": "sources",
+            "container_version": {"variable": "pkg_version"},
+            "sources": [
+                {
+                    "id": "pkg",
+                    "method": "apt",
+                    "package": "prenorm",
+                    "urls": [amd64_url],
+                    "target": {"variable": "pkg_version", "value": "version"},
+                }
+            ],
+        },
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [{"install": ["prenorm={{ context.pkg_version }}"]}],
+        },
+    }
+    prenorm_path = prenorm_root / "build.yaml"
+    prenorm_path.write_text(yaml.safe_dump(prenorm_recipe, sort_keys=False))
+    (prenorm_root / "fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "prenorm",
+                "version": "2.0.0",
+                "tests": [{"name": "ok", "command": "true"}],
+            },
+            sort_keys=False,
+        )
+    )
+    rc_obs = SourceObservation(
+        "2.1~rc1-1", amd64_url, version=debian_upstream_version("2.1~rc1-1")
+    )
+    rc_plan = plan_sources(prenorm_path, observations={"pkg": rc_obs})
+    assert rc_plan is not None
+    assert rc_plan.next_version == "2.1.0-rc1"
