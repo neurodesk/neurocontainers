@@ -111,25 +111,26 @@ build:
           && make -j4) || exit 1;
           done
         - >-
-          cd /tmp/octproz/octproz_project/octproz
+          mkdir -p /tmp/octproz-build
+          && cd /tmp/octproz-build
           && LIBRARY_PATH=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs
           qmake CONFIG+=release
           QMAKE_CXXFLAGS+=-fPIC
           QMAKE_CFLAGS+=-fPIC
           QMAKE_LIBDIR+=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs
           QMAKE_LFLAGS+=-Wl,-rpath,/usr/local/cuda-{{ context.cuda_version }}/lib64
-          octproz.pro
+          /tmp/octproz/octproz_project/octproz/octproz.pro
           && LIBRARY_PATH=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs make -j4
-        - install -D -m 755 /tmp/octproz/octproz_project/octproz/OCTproZ {{ context.install_dir }}/lib/OCTproZ
+        - install -D -m 755 /tmp/octproz-build/OCTproZ {{ context.install_dir }}/lib/OCTproZ
         - mkdir -p {{ context.install_dir }}/lib/plugins
         - cp -a /tmp/octproz/octproz_project/octproz_share_dev/plugins/release/*.so {{ context.install_dir }}/lib/plugins/
-        - cp -a /tmp/octproz/octproz_project/octproz/luts {{ context.install_dir }}/lib/luts
-        - cp -a /tmp/octproz/octproz_project/octproz/docs {{ context.install_dir }}/lib/docs
+        - cp -a /tmp/octproz-build/luts {{ context.install_dir }}/lib/luts
+        - cp -a /tmp/octproz-build/docs {{ context.install_dir }}/lib/docs
         - install -D -m 644 /tmp/octproz/LICENSE {{ context.install_dir }}/LICENSE
         - install -D -m 755 {{ get_file("octproz_launcher.py") }} {{ context.install_dir }}/bin/OCTproZ
         - ln -sf OCTproZ {{ context.install_dir }}/bin/octproz
         - cd /
-        - rm -rf /tmp/octproz
+        - rm -rf /tmp/octproz /tmp/octproz-build
         - >-
           apt-get purge -y -q --auto-remove
           cuda-nvcc-{{ context.cuda_package_suffix }}

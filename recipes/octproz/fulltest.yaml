@@ -9,7 +9,7 @@ tests:
       set -euo pipefail
       bin="/opt/octproz-${upstream_version}/lib/OCTproZ"
       [ -x "$bin" ] || { echo "missing binary: $bin"; exit 1; }
-      for lib in libcufft.so libcudart.so libQt5Core.so libQt5Gui.so libQt5Widgets.so libQt5OpenGL.so libQt5PrintSupport.so libGL.so; do
+      for lib in libcufft.so libcudart.so libQt5Core.so libQt5Gui.so libQt5Widgets.so libQt5PrintSupport.so libGL.so libGLU.so; do
         ldd "$bin" | grep -q "$lib[^ ]* => /" || { echo "unresolved $lib"; exit 1; }
       done
       missing=$(ldd "$bin" | awk '/not found/ && $1 != "libcuda.so.1" {print $1}')
