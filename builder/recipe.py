@@ -309,7 +309,7 @@ def _default_template_command(pkg_manager: str) -> str:
             "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
             "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
             '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
-            '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
+            '  echo \'if [ -n "$1" ]; then exec "$@"; else exec /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
             "fi\n"
             "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
         )
@@ -335,7 +335,7 @@ def _default_template_command(pkg_manager: str) -> str:
             "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
             "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
             '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
-            '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
+            '  echo \'if [ -n "$1" ]; then exec "$@"; else exec /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
             "fi\n"
             "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
         )
@@ -346,7 +346,7 @@ def _default_template_command(pkg_manager: str) -> str:
         "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
         "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
         '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
-        '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
+        '  echo \'if [ -n "$1" ]; then exec "$@"; else exec /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
         "fi\n"
         "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
     )

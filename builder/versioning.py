@@ -82,18 +82,52 @@ def container_version(recipe: dict) -> str:
     return software_version(value)
 
 
+def _resolve_apt_driver_source(config: dict) -> dict | None:
+    """Find the APT source driving container_version, whether named by id or variable."""
+    sources = config.get("sources") or []
+    driver = config.get("container_version")
+    if isinstance(driver, str):
+        source = next((s for s in sources if s.get("id") == driver), None)
+        return source if source and source.get("method") == "apt" else None
+    var_name: str | None = None
+    if isinstance(driver, dict) and isinstance(driver.get("variable"), str):
+        var_name = driver["variable"]
+    elif isinstance(config.get("version_variable"), str):
+        var_name = config["version_variable"]
+    if not var_name:
+        return None
+    for source in sources:
+        if source.get("method") != "apt":
+            continue
+        target = source.get("target") or {}
+        if target.get("variable") == var_name or var_name in (
+            target.get("variables") or {}
+        ):
+            return source
+    return None
+
+
+def _apt_peer_raw_version(variables: dict, peer: dict) -> str:
+    target = peer.get("target") or {}
+    if "variable" in target:
+        return str(variables[target["variable"]])
+    target_vars = target.get("variables") or {}
+    for preferred_field in ("value", "version"):
+        for var_name, field in target_vars.items():
+            if field == preferred_field:
+                return str(variables[var_name])
+    raise ValueError(f"{peer['id']}: APT peer source lacks a version variable target")
+
+
 def primary_apt_peer_versions(recipe: dict) -> dict[str, str]:
     """Return upstream source identities for peer primary APT sources of the same package."""
     from .update_observations import debian_upstream_source_version
 
     config = recipe.get("auto_update", {})
-    driver_id = config.get("container_version")
-    if not isinstance(driver_id, str):
+    driver = _resolve_apt_driver_source(config)
+    if not driver:
         return {}
     sources = config.get("sources") or []
-    driver = next((s for s in sources if s.get("id") == driver_id), None)
-    if not driver or driver.get("method") != "apt":
-        return {}
     package = driver.get("package")
     peers = [
         s
@@ -107,7 +141,7 @@ def primary_apt_peer_versions(recipe: dict) -> dict[str, str]:
     variables = recipe.get("variables", {})
     return {
         peer["id"]: debian_upstream_source_version(
-            str(variables[peer["target"]["variable"]])
+            _apt_peer_raw_version(variables, peer)
         )
         for peer in peers
     }

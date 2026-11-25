@@ -1,3 +1,5 @@
+import shutil
+
 import pytest
 import yaml
 
@@ -562,6 +564,7 @@ def _make_debian_suffix_apt_recipe(tmp_path, *, version: str, package_version: s
     return path
 
 
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="requires dpkg")
 def test_apt_planner_strips_stacked_suffixes_and_labels_tilde_git_snapshots(tmp_path):
     from builder.update_observations import debian_upstream_version
 
@@ -666,6 +669,7 @@ def test_apt_planner_strips_stacked_suffixes_and_labels_tilde_git_snapshots(tmp_
     assert plan.next_version == "1.0.0"
 
 
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="requires dpkg")
 def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
     from builder.update_observations import debian_upstream_version
     from builder.versioning import validate_container_version
@@ -783,3 +787,26 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
     bad_snap["variables"]["pkg_arm64_version"] = pin
     with pytest.raises(ValueError, match="multi-architecture APT sources"):
         validate_container_version(bad_snap)
+
+    # Equivalent implicit 0: epoch and native binNMU (+b1) peer versions are accepted.
+    equiv_zero_epoch = plan_sources(path, observations=obs("0:2.14.0-1", "2.14.0-1"))
+    assert equiv_zero_epoch is not None
+    assert equiv_zero_epoch.next_version == "2.14.0"
+    equiv_zero_epoch.apply()
+
+    equiv_binnmu = plan_sources(path, observations=obs("2.15.0+b1", "2.15.0"))
+    assert equiv_binnmu is not None
+    assert equiv_binnmu.next_version == "2.15.0"
+    equiv_binnmu.apply()
+
+    # Variable-backed container_version also enforces peer agreement.
+    var_recipe = yaml.safe_load(path.read_text())
+    var_recipe["auto_update"]["container_version"] = {"variable": "pkg_amd64_version"}
+    var_recipe["variables"]["pkg_amd64_version"] = "2.15.0"
+    var_recipe["variables"]["pkg_arm64_version"] = "2.15.0"
+    path.write_text(yaml.safe_dump(var_recipe, sort_keys=False))
+    var_suite = yaml.safe_load((root / "fulltest.yaml").read_text())
+    var_suite["pkg_amd64_version"] = "2.15.0"
+    var_suite["pkg_arm64_version"] = "2.15.0"
+    (root / "fulltest.yaml").write_text(yaml.safe_dump(var_suite, sort_keys=False))
+    assert plan_sources(path, observations=obs("2.16.0-1", "2.15.0")) is None

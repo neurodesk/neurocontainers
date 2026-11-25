@@ -85,11 +85,12 @@ Two modality categories are added to `CATEGORIES` in `builder/validation.py`:
   multiphoton/FLIM, and hyperspectral containers across `dermatology`, `microscopy`,
   and `preclinical`.
 
-Registry sync note: [NeuroContainers UI](https://github.com/neurodesk/neurocontainers-ui)
+Registry sync prerequisite: [NeuroContainers UI](https://github.com/neurodesk/neurocontainers-ui)
 maintains the `CATEGORIES` map in `components/common.ts`, and `lib/zodSchema.ts`
-derives its category enum from `Object.keys(CATEGORIES)`. Add both entries to
-`components/common.ts` (and verify the derived schema accepts them) before opening
-recipes with the new categories in the web editor.
+derives its category enum from `Object.keys(CATEGORIES)`. Keep syncing both new
+entries into `components/common.ts` (and verifying the derived schema accepts
+them) as a prerequisite before editing or publishing recipes that use either
+category through the web UI.
 
 ## Multi-Domain Tagging List for the `dermatology` Desktop
 
@@ -111,7 +112,12 @@ dual-use recipes on `main` were tagged in PR #3958. Rollout steps:
 * `isic-cli`, `wsidicomizer`, `colour-science`, `dicom-validator`, `labelme`,
   `meshlab`, `cloudcompare`, `bioformats2raw`, `instanseg`, `tiatoolbox`
 
-### 2. Shared dual-use recipes already in `microscopy` / `neuroimaging` / `preclinical`
+### 2. Proposed shared dual-use candidates from `microscopy` / `neuroimaging` / `preclinical`
+
+Some of these (including `cellpose`, `cellprofiler`, `fiji`, `qupath`, `napari`,
+`slicer`, `ants`, `gimp`, `blender`, `rstudio`) were tagged in PR #3958; the
+remaining entries (such as `itksnap`, `vessynth`, `vesselvio`, `terastitcher`)
+are proposed follow-up candidates pending curation review:
 
 * **Dermatopathology & WSI:** `cellprofiler`, `fiji`, `ilastik`, `qupath` (plus `palmettobug` after font-isolation check)
 * **Non-invasive optical / volumetric & vascular:** `itksnap`, `napari`, `skan`, `slicer`, `terastitcher`, `vesselvio`, `vessynth`

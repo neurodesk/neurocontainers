@@ -727,8 +727,24 @@ def _debian_newer(candidate: str, current: str) -> bool:
 
 
 def debian_upstream_source_version(version: str) -> str:
-    """Return the upstream software identity (including VCS snapshots), without Debian revision or repack markers."""
-    upstream = version.rsplit("-", 1)[0] if "-" in version else version
+    """Return the upstream software identity (including VCS snapshots), without Debian revision, binNMU, or repack markers.
+
+    Implicit epoch ``0:`` and leading zeros on numeric epochs are normalized so
+    ``0:2.0-1`` and ``2.0-1`` compare equal, while non-zero epochs remain
+    distinct. Native binary-only rebuild suffixes (``+bN`` when no Debian
+    ``-revision`` is present) are stripped so ``1.0+b1`` and ``1.0`` agree.
+    """
+    epoch = 0
+    rest = version
+    if ":" in version:
+        raw_epoch, candidate_rest = version.split(":", 1)
+        if raw_epoch.isdigit():
+            epoch = int(raw_epoch)
+            rest = candidate_rest
+    if "-" in rest:
+        upstream = rest.rsplit("-", 1)[0]
+    else:
+        upstream = re.sub(r"\+b\d+$", "", rest)
     while True:
         stripped = re.sub(
             r"[~+](?:dfsg|ds|repack)\d*(?:\.\d+)*(?=$|[~+])",
@@ -738,11 +754,11 @@ def debian_upstream_source_version(version: str) -> str:
         if stripped == upstream:
             break
         upstream = stripped
-    return upstream
+    return f"{epoch}:{upstream}" if epoch else upstream
 
 
 def debian_upstream_version(version: str) -> str:
-    """Return the software's own version, without epoch, Debian revision, or repack suffixes.
+    """Return the software's own version, without epoch, Debian revision, binNMU, or repack suffixes.
 
     A container labelled with packaging revisions or Debian repack/post-release
     markers (such as ``~dfsg``, ``+ds``, or ``+gitYYYYMMDD``) would rename
@@ -752,8 +768,11 @@ def debian_upstream_version(version: str) -> str:
     and any remaining Debian ``~`` or ``+`` separators are normalised to ``-``
     so the emitted label is always OCI-tag-safe.
     """
-    upstream = version.split(":", 1)[-1]
-    upstream = upstream.rsplit("-", 1)[0] if "-" in upstream else upstream
+    rest = version.split(":", 1)[-1]
+    if "-" in rest:
+        upstream = rest.rsplit("-", 1)[0]
+    else:
+        upstream = re.sub(r"\+b\d+$", "", rest)
     while True:
         stripped = re.sub(
             r"[~+](?:dfsg|ds|repack)\d*(?:\.\d+)*(?=$|[~+])|\+(?:git|svn|hg|bzr)[0-9A-Za-z.]+$",

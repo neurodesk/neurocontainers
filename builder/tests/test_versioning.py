@@ -40,6 +40,8 @@ def test_software_version_preserves_upstream_components(upstream, label):
         ("2.13.3~git20240822+ds-4", "2.13.3-git20240822"),
         ("1.0+ds~git20251231-1", "1.0.0-git20251231"),
         ("1:3.4.1+dfsg1-1", "3.4.1"),
+        ("1.0+b1", "1.0.0"),
+        ("0:2.0-1", "2.0.0"),
     ],
 )
 def test_apt_container_version_strips_debian_repack_and_git_suffixes(
@@ -170,3 +172,51 @@ build:
     assert recipe["variables"]["upstream_tag"] == "v7.1"
     assert recipe["variables"]["upstream_version"] == "7.1"
     assert recipe["version"] == "7.1.0"
+
+
+def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu():
+    from builder.update_observations import debian_upstream_source_version
+
+    assert debian_upstream_source_version("0:2.0-1") == "2.0"
+    assert debian_upstream_source_version("00:2.0-1") == "2.0"
+    assert debian_upstream_source_version("2.0-1") == "2.0"
+    assert debian_upstream_source_version("1:2.0-1") == "1:2.0"
+    assert debian_upstream_source_version("01:2.0-1") == "1:2.0"
+    assert debian_upstream_source_version("1.0+b1") == "1.0"
+    assert debian_upstream_source_version("1.0+ds+b2") == "1.0"
+    assert debian_upstream_source_version("1.0") == "1.0"
+
+
+def test_variable_backed_container_version_enforces_multiarch_apt_peers():
+    recipe = {
+        "version": "2.0.0",
+        "variables": {"amd64": "2.0.0", "arm64": "1.0.0"},
+        "auto_update": {
+            "method": "sources",
+            "container_version": {"variable": "amd64"},
+            "sources": [
+                {
+                    "id": "pkg-amd64",
+                    "method": "apt",
+                    "package": "demo",
+                    "urls": [
+                        "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                    ],
+                    "target": {"variables": {"amd64": "version"}},
+                },
+                {
+                    "id": "pkg-arm64",
+                    "method": "apt",
+                    "package": "demo",
+                    "urls": [
+                        "https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz"
+                    ],
+                    "target": {"variables": {"arm64": "version"}},
+                },
+            ],
+        },
+    }
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(recipe)
+    recipe["variables"]["arm64"] = "2.0.0"
+    validate_container_version(recipe)
