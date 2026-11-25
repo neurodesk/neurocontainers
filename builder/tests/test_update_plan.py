@@ -683,8 +683,14 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
             "pkg_arm64_version": pin,
             "package_version": {
                 "try": [
-                    {"value": "{{ context.pkg_amd64_version }}", "condition": 'arch=="x86_64"'},
-                    {"value": "{{ context.pkg_arm64_version }}", "condition": 'arch=="aarch64"'},
+                    {
+                        "value": "{{ context.pkg_amd64_version }}",
+                        "condition": 'arch=="x86_64"',
+                    },
+                    {
+                        "value": "{{ context.pkg_arm64_version }}",
+                        "condition": 'arch=="aarch64"',
+                    },
                 ]
             },
         },
@@ -697,14 +703,20 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
                     "method": "apt",
                     "package": "multiapt",
                     "urls": [amd64_url],
-                    "target": {"variable": "pkg_amd64_version", "fulltest_variable": "pkg_amd64_version"},
+                    "target": {
+                        "variable": "pkg_amd64_version",
+                        "fulltest_variable": "pkg_amd64_version",
+                    },
                 },
                 {
                     "id": "pkg-arm64",
                     "method": "apt",
                     "package": "multiapt",
                     "urls": [arm64_url],
-                    "target": {"variable": "pkg_arm64_version", "fulltest_variable": "pkg_arm64_version"},
+                    "target": {
+                        "variable": "pkg_arm64_version",
+                        "fulltest_variable": "pkg_arm64_version",
+                    },
                 },
             ],
         },
@@ -743,12 +755,8 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
     assert plan_sources(path, observations=obs(pin, "2.13.3-1")) is None
 
     # Different upstream VCS snapshots under the same release label are also held back.
-    assert (
-        plan_sources(path, observations=obs("2.13.2+git20240822+ds-4", pin)) is None
-    )
-    assert (
-        plan_sources(path, observations=obs(pin, "2.13.2+git20240822+ds-4")) is None
-    )
+    assert plan_sources(path, observations=obs("2.13.2+git20240822+ds-4", pin)) is None
+    assert plan_sources(path, observations=obs(pin, "2.13.2+git20240822+ds-4")) is None
 
     # Architecture-specific packaging-only revision is still allowed.
     pkg_only = plan_sources(path, observations=obs("2.13.2+git20240821+ds-5", pin))

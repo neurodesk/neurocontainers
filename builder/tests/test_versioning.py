@@ -56,7 +56,9 @@ def test_apt_container_version_strips_debian_repack_and_git_suffixes(
                     "id": "pkg",
                     "method": "apt",
                     "package": "demo",
-                    "urls": ["https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"],
+                    "urls": [
+                        "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                    ],
                     "target": {"variable": "package_version"},
                 }
             ],
