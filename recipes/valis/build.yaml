@@ -65,6 +65,7 @@ auto_update:
     - id: aicspylibczi_source_digest
       method: http_digest
       url: https://files.pythonhosted.org/packages/source/a/aicspylibczi/aicspylibczi-{{ context.aicspylibczi_version }}.tar.gz
+      dependency: true
       target:
         variable: aicspylibczi_source_sha256
     - id: opencv
@@ -77,11 +78,13 @@ auto_update:
     - id: opencv_source_digest
       method: http_digest
       url: https://github.com/opencv/opencv/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+      dependency: true
       target:
         variable: opencv_source_sha256
     - id: opencv_contrib_source_digest
       method: http_digest
       url: https://github.com/opencv/opencv_contrib/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+      dependency: true
       target:
         variable: opencv_contrib_source_sha256
 
@@ -731,6 +734,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "digital pathology"

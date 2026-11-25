@@ -642,6 +642,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "image segmentation"

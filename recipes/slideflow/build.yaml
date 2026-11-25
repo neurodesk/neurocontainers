@@ -61,6 +61,7 @@ auto_update:
     - id: crc32c_source_digest
       method: http_digest
       url: https://files.pythonhosted.org/packages/source/c/crc32c/crc32c-{{ context.crc32c_version }}.tar.gz
+      dependency: true
       target:
         variable: crc32c_source_sha256
     - id: imgui
@@ -598,6 +599,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "digital pathology"

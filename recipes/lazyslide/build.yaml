@@ -68,6 +68,7 @@ auto_update:
     - id: openslide_bin_source_digest
       method: http_digest
       url: https://github.com/openslide/openslide-bin/releases/download/v{{ context.openslide_bin_version }}/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+      dependency: true
       target:
         variable: openslide_bin_source_sha256
     - id: openslide_python
@@ -79,6 +80,7 @@ auto_update:
     - id: openslide_python_source_digest
       method: http_digest
       url: https://files.pythonhosted.org/packages/source/o/openslide_python/openslide_python-{{ context.openslide_python_version }}.tar.gz
+      dependency: true
       target:
         variable: openslide_python_source_sha256
     - id: opencv
@@ -91,6 +93,7 @@ auto_update:
     - id: opencv_source_digest
       method: http_digest
       url: https://github.com/opencv/opencv/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+      dependency: true
       target:
         variable: opencv_source_sha256
 
@@ -694,6 +697,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "digital pathology"

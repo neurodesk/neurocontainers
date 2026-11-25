@@ -524,6 +524,7 @@ deploy:
 
 domains:
   - microscopy
+  - dermatology
 
 categories:
   - "image reconstruction"
