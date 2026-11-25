@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "open3d 0.20.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "shape analysis",
+    "visualization",
+    "body"
+  ]
+}

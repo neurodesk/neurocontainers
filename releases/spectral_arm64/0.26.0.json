@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "spectral_arm64 0.26.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "spectroscopy",
+    "quantitative imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "spectral"
+}

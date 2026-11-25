@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "hyperspy 2.5.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "spectroscopy",
+    "quantitative imaging"
+  ]
+}

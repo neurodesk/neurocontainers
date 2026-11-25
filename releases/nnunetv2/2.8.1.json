@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "nnunetv2 2.8.1": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "machine learning",
+    "digital pathology",
+    "optical imaging"
+  ]
+}

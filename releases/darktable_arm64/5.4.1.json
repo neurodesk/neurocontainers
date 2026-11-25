@@ -1,0 +1,21 @@
+{
+  "apps": {
+    "darktable_arm64 5.4.1": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "darktable-darktable_arm64 5.4.1": {
+      "version": "20261125",
+      "exec": "darktable",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "visualization"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "darktable"
+}

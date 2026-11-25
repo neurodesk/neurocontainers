@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "open3d_arm64 0.20.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "shape analysis",
+    "visualization",
+    "body"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "open3d"
+}

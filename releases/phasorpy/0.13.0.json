@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "phasorpy 0.13.0": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "quantitative imaging",
+    "spectroscopy"
+  ]
+}

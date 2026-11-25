@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "colmap 3.12.6": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "COLMAP-colmap 3.12.6": {
+      "version": "20261125",
+      "exec": "colmap gui",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "shape analysis",
+    "body"
+  ]
+}

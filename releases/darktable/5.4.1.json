@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "darktable 5.4.1": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "darktable-darktable 5.4.1": {
+      "version": "20261125",
+      "exec": "darktable",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "optical imaging",
+    "visualization"
+  ]
+}

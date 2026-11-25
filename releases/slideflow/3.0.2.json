@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "slideflow 3.0.2": {
+      "version": "20261125",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "digital pathology",
+    "machine learning",
+    "optical imaging",
+    "visualization"
+  ]
+}
