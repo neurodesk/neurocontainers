@@ -175,7 +175,10 @@ build:
 
 
 def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu():
-    from builder.update_observations import debian_upstream_source_version
+    from builder.update_observations import (
+        debian_upstream_source_version,
+        debian_version_equivalence_key,
+    )
 
     assert debian_upstream_source_version("0:2.0-1") == "2.0"
     assert debian_upstream_source_version("00:2.0-1") == "2.0"
@@ -185,6 +188,13 @@ def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu(
     assert debian_upstream_source_version("1.0+b1") == "1.0"
     assert debian_upstream_source_version("1.0+ds+b2") == "1.0"
     assert debian_upstream_source_version("1.0") == "1.0"
+    assert debian_version_equivalence_key("2.016.0") == debian_version_equivalence_key(
+        "2.16.0"
+    )
+    assert debian_version_equivalence_key("1a") == debian_version_equivalence_key("1a0")
+    assert debian_version_equivalence_key("1.0") != debian_version_equivalence_key(
+        "1.0.0"
+    )
 
 
 def test_variable_backed_container_version_enforces_multiarch_apt_peers():

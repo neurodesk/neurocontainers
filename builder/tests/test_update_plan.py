@@ -799,7 +799,7 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
     assert equiv_binnmu.next_version == "2.15.0"
     equiv_binnmu.apply()
 
-    # Variable-backed container_version also enforces peer agreement.
+    # Variable-backed container_version also enforces peer agreement and normalizes raw pins.
     var_recipe = yaml.safe_load(path.read_text())
     var_recipe["auto_update"]["container_version"] = {"variable": "pkg_amd64_version"}
     var_recipe["variables"]["pkg_amd64_version"] = "2.15.0"
@@ -810,3 +810,20 @@ def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
     var_suite["pkg_arm64_version"] = "2.15.0"
     (root / "fulltest.yaml").write_text(yaml.safe_dump(var_suite, sort_keys=False))
     assert plan_sources(path, observations=obs("2.16.0-1", "2.15.0")) is None
+
+    # Packaging-only revision under variable-backed container_version preserves clean label.
+    var_pkg_only = plan_sources(path, observations=obs("2.15.0-1", "2.15.0"))
+    assert var_pkg_only is not None
+    assert var_pkg_only.next_version == "2.15.0"
+    var_pkg_only.apply()
+
+    # Converged pins with 0: epoch normalize to a clean OCI label (never 0.0.0:2.16.0-1).
+    var_converged = plan_sources(path, observations=obs("0:2.16.0-1", "2.16.0-2"))
+    assert var_converged is not None
+    assert var_converged.next_version == "2.16.0"
+    var_converged.apply()
+
+    # Leading-zero Debian-equivalent peer versions (2.017.0-1 vs 2.17.0-1) agree cleanly.
+    var_leading_zero = plan_sources(path, observations=obs("2.017.0-1", "2.17.0-1"))
+    assert var_leading_zero is not None
+    assert var_leading_zero.next_version == "2.017.0"

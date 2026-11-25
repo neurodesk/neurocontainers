@@ -14,7 +14,11 @@ from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 from packaging.version import InvalidVersion
 
-from .versioning import container_version, primary_apt_peer_versions
+from .versioning import (
+    apt_peer_versions_agree,
+    container_version,
+    primary_apt_peer_versions,
+)
 
 # These sources pin exact bytes without naming a software version, so they can
 # never drive the container label.
@@ -658,7 +662,7 @@ def plan_sources(
             triggered = triggered or not (source.get("dependency") or republished)
     staged_recipe = yaml.safe_load(updated)
     peers = primary_apt_peer_versions(staged_recipe)
-    if peers and len(set(peers.values())) > 1:
+    if peers and not apt_peer_versions_agree(peers):
         return None
     current_version = str(recipe["version"])
     next_version = container_version(staged_recipe)

@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import re
+import select
 import signal
 import subprocess
 import sys
-import time
 
 import pytest
 import yaml
@@ -125,29 +125,37 @@ def test_bootstrap_startup_script_execs_command_and_receives_sigterm(
     assert 'exec "$@"' in startup.read_text()
     assert "exec /usr/bin/env bash" in startup.read_text()
 
-    ready = tmp_path / "ready"
     got_sig = tmp_path / "sig"
     child = tmp_path / "child.py"
     child.write_text(
         "import os, signal, sys, time\n"
-        "ready, got_sig = sys.argv[1], sys.argv[2]\n"
+        "got_sig = sys.argv[1]\n"
         "def h(signum, _):\n"
         "    open(got_sig, 'w').write(str(signum))\n"
         "    raise SystemExit(128 + signum)\n"
         "signal.signal(signal.SIGTERM, h)\n"
-        "open(ready, 'w').write(str(os.getpid()))\n"
+        "print(os.getpid(), flush=True)\n"
         "time.sleep(10)\n"
     )
     proc = subprocess.Popen(
-        [shell, str(startup), sys.executable, str(child), str(ready), str(got_sig)],
+        [shell, str(startup), sys.executable, str(child), str(got_sig)],
         env={**os.environ, "USER": "tester"},
+        stdout=subprocess.PIPE,
+        text=True,
     )
-    deadline = time.time() + 5.0
-    while not ready.exists() and time.time() < deadline:
-        time.sleep(0.02)
-    assert ready.exists(), "child did not start"
-    assert int(ready.read_text().strip()) == proc.pid
-    proc.send_signal(signal.SIGTERM)
-    rc = proc.wait(timeout=5)
-    assert rc == 128 + signal.SIGTERM.value
-    assert got_sig.read_text().strip() == str(signal.SIGTERM.value)
+    try:
+        assert proc.stdout is not None
+        readable, _, _ = select.select([proc.stdout], [], [], 5.0)
+        assert readable, "child did not report its PID in time"
+        reported_pid = proc.stdout.readline().strip()
+        assert reported_pid and int(reported_pid) == proc.pid
+        proc.send_signal(signal.SIGTERM)
+        rc = proc.wait(timeout=5)
+        assert rc == 128 + signal.SIGTERM.value
+        assert got_sig.read_text().strip() == str(signal.SIGTERM.value)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()

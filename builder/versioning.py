@@ -66,11 +66,20 @@ def container_version(recipe: dict) -> str:
     config = recipe.get("auto_update", {})
     driver = config.get("container_version")
     if isinstance(driver, dict):
-        value = str(recipe.get("variables", {}).get(driver["variable"], ""))
+        var_name = driver["variable"]
+        value = str(recipe.get("variables", {}).get(var_name, ""))
         if not value:
-            raise ValueError(
-                f"container_version requires variables.{driver['variable']}"
-            )
+            raise ValueError(f"container_version requires variables.{var_name}")
+        apt_driver = _resolve_apt_driver_source(config)
+        if apt_driver is not None:
+            target = apt_driver.get("target") or {}
+            if (
+                target.get("variable") == var_name
+                or (target.get("variables") or {}).get(var_name) == "value"
+            ):
+                from .update_observations import debian_upstream_version
+
+                value = debian_upstream_version(value)
         value = driver.get("prefix", "") + value
     elif driver:
         source = next(source for source in config["sources"] if source["id"] == driver)
@@ -147,9 +156,18 @@ def primary_apt_peer_versions(recipe: dict) -> dict[str, str]:
     }
 
 
+def apt_peer_versions_agree(peers: dict[str, str]) -> bool:
+    """Return True when all peer APT source identities are Debian-version equivalent."""
+    if len(peers) < 2:
+        return True
+    from .update_observations import debian_version_equivalence_key
+
+    return len({debian_version_equivalence_key(ver) for ver in peers.values()}) <= 1
+
+
 def validate_container_version(recipe: dict) -> None:
     peers = primary_apt_peer_versions(recipe)
-    if peers and len(set(peers.values())) > 1:
+    if peers and not apt_peer_versions_agree(peers):
         details = ", ".join(f"{sid}={ver}" for sid, ver in peers.items())
         raise ValueError(
             "multi-architecture APT sources for the primary package must share "

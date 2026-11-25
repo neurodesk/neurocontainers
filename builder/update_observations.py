@@ -726,6 +726,48 @@ def _debian_newer(candidate: str, current: str) -> bool:
     return result.returncode == 0
 
 
+def _debian_part_equivalence_key(part: str) -> tuple[tuple[str, int], ...]:
+    """Canonical Debian Policy 5.6.12 equivalence key for a single version component."""
+    chunks: list[tuple[str, int]] = []
+    pos = 0
+    length = len(part)
+    while pos < length:
+        non_digit_start = pos
+        while pos < length and not part[pos].isdigit():
+            pos += 1
+        non_digit = part[non_digit_start:pos]
+        digit_start = pos
+        while pos < length and part[pos].isdigit():
+            pos += 1
+        digit = int(part[digit_start:pos]) if pos > digit_start else 0
+        chunks.append((non_digit, digit))
+    while chunks and chunks[-1] == ("", 0):
+        chunks.pop()
+    return tuple(chunks)
+
+
+def debian_version_equivalence_key(
+    version: str,
+) -> tuple[int, tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]:
+    """Return a hashable key matching ``dpkg --compare-versions A eq B``."""
+    epoch = 0
+    rest = version
+    if ":" in version:
+        raw_epoch, candidate_rest = version.split(":", 1)
+        if raw_epoch.isdigit():
+            epoch = int(raw_epoch)
+            rest = candidate_rest
+    if "-" in rest:
+        upstream, revision = rest.rsplit("-", 1)
+    else:
+        upstream, revision = rest, ""
+    return (
+        epoch,
+        _debian_part_equivalence_key(upstream),
+        _debian_part_equivalence_key(revision),
+    )
+
+
 def debian_upstream_source_version(version: str) -> str:
     """Return the upstream software identity (including VCS snapshots), without Debian revision, binNMU, or repack markers.
 
