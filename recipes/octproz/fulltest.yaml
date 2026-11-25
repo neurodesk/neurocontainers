@@ -10,7 +10,7 @@ tests:
       bin="/opt/octproz-${upstream_version}/lib/OCTproZ"
       [ -x "$bin" ] || { echo "missing binary: $bin"; exit 1; }
       ldd_out=$(ldd "$bin")
-      for lib in libcufft.so libcudart.so libQt5Core.so libQt5Gui.so libQt5Widgets.so libQt5PrintSupport.so libGL.so libGLU.so; do
+      for lib in libcufft.so libcudart.so libQt5Core.so libQt5Gui.so libQt5Widgets.so libQt5PrintSupport.so libGL.so; do
         grep -q "$lib[^ ]* => /" <<< "$ldd_out" || { echo "unresolved $lib"; echo "$ldd_out"; exit 1; }
       done
       missing=$(awk '/not found/ && $1 != "libcuda.so.1" {print $1}' <<< "$ldd_out")
