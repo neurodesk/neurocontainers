@@ -30,6 +30,7 @@ variables:
   torch_home: /opt/relion-{{ context.version }}/torch
   relion_commit: "e7823d2650c1ee752f819f27ab173c1839a05b47"
   ctffind_version: 4.1.14
+  ctffind_sha256: "db17b2ebeb3c3b2b3764e42b820cd50d19ccccf6956c64257bfe5d5ba6b40cb5"
   motioncor2_version: 1.6.4
   cuda_version: "11.8"
   cuda_package: cuda-toolkit-11-8
@@ -310,7 +311,8 @@ files:
   - name: cuda_repo_deb
     url: https://developer.download.nvidia.com/compute/cuda/{{ context.cuda_version }}.0/local_installers/{{ context.cuda_repo_deb }}
   - name: ctffind_archive
-    url: https://grigoriefflab.umassmed.edu/system/tdf?path=ctffind-{{ context.ctffind_version }}.tar.gz&file=1&type=node&id=26
+    url: https://grigoriefflab.umassmed.edu/system/tdf/ctffind-{{ context.ctffind_version }}.tar.gz?file=1&id=26&type=page
+    sha256: "{{ context.ctffind_sha256 }}"
   - name: motioncor2_zip
     url: https://drive.google.com/uc?export=download&id=1hskY_AbXVgrl_BUIjWokDNLZK0c1FLxF
   - name: go_archive
