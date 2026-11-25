@@ -169,6 +169,7 @@ deploy:
 domains:
   - neuroimaging
   - microscopy
+  - dermatology
 categories:
   - image segmentation
   - machine learning

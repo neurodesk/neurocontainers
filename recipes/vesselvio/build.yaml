@@ -135,6 +135,7 @@ domains:
   - microscopy
   - preclinical
   - molecular-imaging
+  - dermatology
 categories:
   - quantitative imaging
   - visualization
