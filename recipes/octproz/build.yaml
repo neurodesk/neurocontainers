@@ -84,6 +84,7 @@ build:
           apt-get install -y -q --no-install-recommends
           cuda-nvcc-{{ context.cuda_package_suffix }}
           cuda-cudart-dev-{{ context.cuda_package_suffix }}
+          cuda-profiler-api-{{ context.cuda_package_suffix }}
           libcufft-dev-{{ context.cuda_package_suffix }}
           qtbase5-dev
           qt5-qmake
@@ -95,6 +96,7 @@ build:
           make
         - mkdir -p /tmp/octproz
         - tar -xzf {{ get_file("octproz_source") }} --strip-components=1 -C /tmp/octproz
+        - sed -i 's/^CUDA_DEFINES_FLAGS = .*/CUDA_DEFINES_FLAGS = -DENABLE_CUDA_ZERO_COPY/' /tmp/octproz/octproz_project/octproz/pri/cuda.pri
         - mkdir -p /tmp/octproz/octproz_project/octproz_share_dev/release /tmp/octproz/octproz_project/octproz_share_dev/plugins/release
         - >-
           cd /tmp/octproz/octproz_project/octproz_devkit
@@ -130,6 +132,7 @@ build:
           apt-get purge -y -q --auto-remove
           cuda-nvcc-{{ context.cuda_package_suffix }}
           cuda-cudart-dev-{{ context.cuda_package_suffix }}
+          cuda-profiler-api-{{ context.cuda_package_suffix }}
           libcufft-dev-{{ context.cuda_package_suffix }}
           qtbase5-dev
           qt5-qmake
