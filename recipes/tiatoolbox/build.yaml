@@ -59,6 +59,7 @@ build:
 
     - install:
         - ca-certificates
+        - libgfortran5
         - libgl1
         - libglib2.0-0
         - libgomp1
@@ -112,10 +113,11 @@ build:
           "openslide-bin=={{ context.openslide_bin_version }}"
           "openslide-python=={{ context.openslide_python_version }}"
           && rm -f /tmp/tiatoolbox-reqs.txt
-        # Link torch and imagecodecs against Ubuntu's system libgomp1 instead of
-        # shipping bundled wheel copies of libgomp.
+        # Link torch and imagecodecs against Ubuntu's system libgomp1 and libgfortran5
+        # instead of shipping bundled wheel copies of GNU runtime libraries.
         - >-
           rm -f /opt/tiatoolbox/lib/python*/site-packages/torch/lib/libgomp.so.1
+          /opt/tiatoolbox/lib/python*/site-packages/torch/lib/libgfortran.so.5
           && for f in $(find /opt/tiatoolbox/lib/python*/site-packages/imagecodecs /opt/tiatoolbox/lib/python*/site-packages/imagecodecs.libs -name '*.so*' 2>/dev/null); do
           for need in $(patchelf --print-needed "$f" 2>/dev/null | grep '^libgomp-' || true); do
           patchelf --replace-needed "$need" libgomp.so.1 "$f";

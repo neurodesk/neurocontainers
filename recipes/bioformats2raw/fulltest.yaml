@@ -9,10 +9,10 @@ tests:
     expected_output_contains: "/opt/bioformats2raw/wrappers/bioformats2raw"
 
   - name: bioformats2raw version matches recipe with read-only HOME
-    description: Verify bioformats2raw --version reports the pinned upstream version when HOME is read-only (upstream exits 255 on --version).
+    description: Verify bioformats2raw --version reports the pinned upstream version when HOME is read-only and host JAVA_HOME is invalid (upstream exits 255 on --version).
     command: |
       set +e
-      out="$(HOME=/sys bioformats2raw --version 2>&1)"
+      out="$(HOME=/sys JAVA_HOME=/nonexistent/host/jdk bioformats2raw --version 2>&1)"
       rc=$?
       set -e
       printf '%s\n' "$out"
@@ -201,6 +201,8 @@ tests:
               os.setsid()
               fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
           benv = os.environ.copy()
+          for k in ("PROMPT_COMMAND", "BASH_ENV", "ENV"):
+              benv.pop(k, None)
           benv["PS1"] = "BP> "
           bash = subprocess.Popen(["bash", "--norc", "--noprofile", "-i"], stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec_bash, close_fds=True, env=benv)
           os.close(slave)

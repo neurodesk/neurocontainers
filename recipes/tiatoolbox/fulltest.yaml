@@ -240,6 +240,8 @@ tests:
               os.setsid()
               fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
           benv = env.copy()
+          for k in ("PROMPT_COMMAND", "BASH_ENV", "ENV"):
+              benv.pop(k, None)
           benv["PS1"] = "BP> "
           bash = subprocess.Popen(["bash", "--norc", "--noprofile", "-i"], stdin=slave, stdout=slave, stderr=slave, preexec_fn=preexec_bash, close_fds=True, env=benv)
           os.close(slave)
