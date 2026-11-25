@@ -1,0 +1,772 @@
+name: valis
+version: 1.2.0
+
+description: Virtual Alignment of pathoLogy Image Series (VALIS) for rigid and non-rigid registration of serial H&E, IHC, and multiplex dermatopathology whole-slide images (CPU PyTorch + pyvips + OpenCV contrib without FFmpeg or proprietary Magic Leap SuperGlue/SuperPoint weights).
+
+copyright:
+  - license: MIT
+    name: VALIS license
+    url: https://github.com/MathOnco/valis/blob/v{{ context.upstream_version }}/LICENSE.txt
+  - license: Apache-2.0
+    name: OpenCV license
+    url: https://github.com/opencv/opencv/blob/{{ context.opencv_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: PyTorch license
+    url: https://github.com/pytorch/pytorch/blob/v{{ context.torch_version }}/LICENSE
+  - license: GPL-3.0-or-later
+    name: aicspylibczi license
+    url: https://github.com/AllenCellModeling/aicspylibczi/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "1.2.0"
+  torch_version: "2.15.0"
+  torchvision_version: "0.29.1"
+  aicspylibczi_version: "3.3.1"
+  aicspylibczi_source_sha256: "e3d18daf92c4de6e91d37a33a43b83611d3268cadf8a610c2f3eae7f54408ba3"
+  # Pinned to match valis-wsi's opencv-contrib-python-headless==4.9.0.80 requirement.
+  opencv_version: "4.9.0"
+  opencv_source_sha256: "ddf76f9dffd322c7c3cb1f721d0887f62d747b82059342213138dc190f28bc6c"
+  opencv_contrib_source_sha256: "8952c45a73b75676c522dd574229f563e43c271ae1d5bbbd26f8e2b6bc1a4dae"
+
+auto_update:
+  method: sources
+  container_version: valis
+  sources:
+    - id: valis
+      method: pypi
+      package: valis-wsi
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: torch_cpu
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torch/
+      version_regex: 'torch-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\+|%2B)cpu-cp312-cp312-manylinux[^"]*x86_64\.whl'
+      dependency: true
+      target:
+        variable: torch_version
+    - id: torchvision_cpu
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torchvision/
+      version_regex: 'torchvision-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\+|%2B)cpu-cp312-cp312-manylinux[^"]*x86_64\.whl'
+      dependency: true
+      target:
+        variable: torchvision_version
+    - id: aicspylibczi
+      method: pypi
+      package: aicspylibczi
+      version_regex: '^(?P<version>3\.[0-9.]+)$'
+      dependency: true
+      target:
+        variable: aicspylibczi_version
+    - id: aicspylibczi_source_digest
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/source/a/aicspylibczi/aicspylibczi-{{ context.aicspylibczi_version }}.tar.gz
+      target:
+        variable: aicspylibczi_source_sha256
+    - id: opencv
+      method: github_release
+      repo: opencv/opencv
+      version_regex: '^(?P<version>4\.9\.[0-9]+)$'
+      dependency: true
+      target:
+        variable: opencv_version
+    - id: opencv_source_digest
+      method: http_digest
+      url: https://github.com/opencv/opencv/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+      target:
+        variable: opencv_source_sha256
+    - id: opencv_contrib_source_digest
+      method: http_digest
+      url: https://github.com/opencv/opencv_contrib/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+      target:
+        variable: opencv_contrib_source_sha256
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+        PATH: /opt/valis/wrappers:/opt/valis/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - cmake
+        - g++
+        - libffi-dev
+        - libgfortran5
+        - libgomp1
+        - libjpeg-turbo8
+        - libjpeg-turbo8-dev
+        - libopenslide0
+        - libpng-dev
+        - libpng16-16t64
+        - libquadmath0
+        - libtiff-dev
+        - libtiff6
+        - libvips42t64
+        - ninja-build
+        - openjdk-21-jre-headless
+        - patchelf
+        - python3
+        - python3-bs4
+        - python3-cffi
+        - python3-colorama
+        - python3-dev
+        - python3-lxml
+        - python3-markupsafe
+        - python3-matplotlib
+        - python3-numpy
+        - python3-openpyxl
+        - python3-pandas
+        - python3-pip
+        - python3-scipy
+        - python3-shapely
+        - python3-sklearn
+        - python3-tqdm
+        - python3-venv
+        - zlib1g
+        - zlib1g-dev
+
+    - run:
+        # Inherit Ubuntu 24.04 system numpy 1.26.4 (<2.0.0 required by valis-wsi),
+        # scipy, sklearn, matplotlib, pandas, shapely, lxml, and libvips42t64.
+        - python3 -m venv --system-site-packages /opt/valis
+        # Build minimal headless OpenCV + opencv_contrib 4.9.0 (xfeatures2d + optflow,
+        # NO FFmpeg/Qt/nonfree/bundled GNU libs) against Ubuntu 24.04 numpy 1.26.4.
+        - >-
+          mkdir -p /tmp/opencv-src /tmp/opencv_contrib-src /tmp/opencv-build
+          && tar -xzf {{ get_file("opencv_source") }} --strip-components=1 -C /tmp/opencv-src
+          && tar -xzf {{ get_file("opencv_contrib_source") }} --strip-components=1 -C /tmp/opencv_contrib-src
+          && site_dir="$(/opt/valis/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+          && numpy_inc="$(/opt/valis/bin/python -c 'import numpy; print(numpy.get_include())')"
+          && cmake -S /tmp/opencv-src -B /tmp/opencv-build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=/opt/valis/opencv
+          -DBUILD_SHARED_LIBS=OFF
+          -DOPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib-src/modules
+          -DOPENCV_ENABLE_NONFREE=OFF
+          -DBUILD_LIST=core,imgproc,imgcodecs,calib3d,features2d,flann,photo,video,xfeatures2d,optflow,python3
+          -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOCS=OFF
+          -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python2=OFF
+          -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF -DWITH_V4L=OFF -DWITH_GTK=OFF -DWITH_QT=OFF
+          -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_TBB=OFF
+          -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF -DWITH_OPENJPEG=OFF -DWITH_WEBP=OFF -DWITH_ADE=OFF
+          -DWITH_PNG=ON -DWITH_JPEG=ON -DWITH_TIFF=ON
+          -DBUILD_PNG=OFF -DBUILD_JPEG=OFF -DBUILD_TIFF=OFF -DBUILD_ZLIB=OFF
+          -DOPENCV_GENERATE_PKGCONFIG=OFF
+          -DPYTHON3_EXECUTABLE=/opt/valis/bin/python
+          -DPYTHON3_NUMPY_INCLUDE_DIRS="$numpy_inc"
+          -DOPENCV_PYTHON3_INSTALL_PATH="$site_dir"
+          && cmake --build /tmp/opencv-build --target opencv_python3 -j"$(nproc)"
+          && cmake --install /tmp/opencv-build --component python
+          && mkdir -p "$site_dir/opencv_contrib_python_headless-4.9.0.80.dist-info" /opt/valis/share/licenses /opt/valis/share/src
+          && install -m 0644 /tmp/opencv-src/LICENSE "$site_dir/opencv_contrib_python_headless-4.9.0.80.dist-info/LICENSE"
+          && install -m 0644 /tmp/opencv-src/LICENSE /opt/valis/share/licenses/OPENCV-LICENSE.txt
+          && printf 'Metadata-Version: 2.1\nName: opencv-contrib-python-headless\nVersion: 4.9.0.80\nLicense: Apache-2.0\n' > "$site_dir/opencv_contrib_python_headless-4.9.0.80.dist-info/METADATA"
+          && printf 'pip\n' > "$site_dir/opencv_contrib_python_headless-4.9.0.80.dist-info/INSTALLER"
+          && rm -rf /tmp/opencv-src /tmp/opencv_contrib-src /tmp/opencv-build
+        - >-
+          /opt/valis/bin/python -m pip install --no-cache-dir
+          --index-url https://download.pytorch.org/whl/cpu
+          "torch=={{ context.torch_version }}+cpu"
+          "torchvision=={{ context.torchvision_version }}+cpu"
+        - >-
+          /opt/valis/bin/python -m pip install --no-cache-dir
+          "aicspylibczi=={{ context.aicspylibczi_version }}"
+          "valis-wsi=={{ context.upstream_version }}"
+        - /opt/valis/bin/python -m pip check
+        # Strip Magic Leap proprietary/non-commercial SuperGlue & SuperPoint code and
+        # .pth weights bundled in valis-wsi, replacing them with clean MIT stubs.
+        - /opt/valis/bin/python {{ get_file("strip_valis_superglue") }}
+        # Relink bundled GNU runtime libs against Ubuntu system libs.
+        - >-
+          rm -f /opt/valis/lib/python*/site-packages/torch/lib/libgomp.so.1 /opt/valis/lib/python*/site-packages/torch/lib/libgfortran.so.5
+          && for f in $(find /opt/valis/lib/python*/site-packages -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep -E '^lib(gomp|gfortran|quadmath)-' || true); do
+          case "$need" in
+          libgomp-*) target=libgomp.so.1 ;;
+          libgfortran-*) target=libgfortran.so.5 ;;
+          libquadmath-*) target=libquadmath.so.0 ;;
+          *) continue ;;
+          esac;
+          patchelf --replace-needed "$need" "$target" "$f";
+          done;
+          done
+          && find /opt/valis/lib/python*/site-packages -type f \( -name 'libgomp*.so*' -o -name 'libgfortran*.so*' -o -name 'libquadmath*.so*' \) -delete
+        - /opt/valis/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/valis/bin/python -c "import importlib.metadata as md, pathlib, aicspylibczi, cv2, numpy, pyvips, scipy, sklearn, torch, torchvision, valis;
+          assert md.version('valis-wsi') == '{{ context.upstream_version }}', md.version('valis-wsi');
+          assert hasattr(cv2, 'xfeatures2d') and hasattr(cv2.xfeatures2d, 'VGG_create') and hasattr(cv2, 'optflow');
+          assert all(m.__file__.startswith('/usr/lib/python3/dist-packages/') for m in (numpy, scipy, sklearn));
+          bad_libs = [str(p) for p in pathlib.Path('/opt/valis').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libavcodec', 'libavformat', 'libavutil', 'libswscale', 'libswresample'))];
+          assert not bad_libs, bad_libs;
+          bad_pkgs = [d.metadata.get('Name', '') for d in md.distributions() if (d.metadata.get('Name') or '').lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad_pkgs, bad_pkgs;
+          weights = [str(p) for p in pathlib.Path('/opt/valis').rglob('*') if p.is_file() and p.suffix.lower() in ('.pth', '.pt', '.ckpt', '.onnx', '.safetensors') and p.stat().st_size > 100_000];
+          assert not weights, weights"
+        - mkdir -p /opt/valis/wrappers /opt/valis/share/licenses /opt/valis/share/src
+        - install -m 0755 {{ get_file("valis_info") }} /opt/valis/bin/valis-info
+        - install -m 0755 {{ get_file("valis_launcher") }} /opt/valis/wrappers/valis-info
+        - install -m 0644 {{ get_file("valis_license") }} /opt/valis/share/licenses/VALIS-LICENSE.txt
+        - install -m 0644 {{ get_file("jgo_license") }} /opt/valis/share/licenses/JGO-UNLICENSE.txt
+        - install -m 0644 {{ get_file("scyjava_license") }} /opt/valis/share/licenses/SCYJAVA-UNLICENSE.txt
+        - install -m 0644 {{ get_file("aicspylibczi_source") }} /opt/valis/share/src/aicspylibczi-{{ context.aicspylibczi_version }}.tar.gz
+        - tar -xzOf /opt/valis/share/src/aicspylibczi-{{ context.aicspylibczi_version }}.tar.gz "aicspylibczi-{{ context.aicspylibczi_version }}/LICENSE" > /opt/valis/share/licenses/AICSPYLIBCZI-LICENSE.txt
+        - install -m 0644 /usr/share/common-licenses/GPL-3 /opt/valis/share/licenses/GPL-3.0.txt
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/valis
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: valis_license
+    url: https://raw.githubusercontent.com/MathOnco/valis/v{{ context.upstream_version }}/LICENSE.txt
+  - name: jgo_license
+    url: https://raw.githubusercontent.com/scijava/jgo/3.3.3/UNLICENSE
+  - name: scyjava_license
+    url: https://raw.githubusercontent.com/scijava/scyjava/1.12.5/UNLICENSE
+  - name: opencv_source
+    url: https://github.com/opencv/opencv/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+    sha256: "{{ context.opencv_source_sha256 }}"
+  - name: opencv_contrib_source
+    url: https://github.com/opencv/opencv_contrib/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+    sha256: "{{ context.opencv_contrib_source_sha256 }}"
+  - name: aicspylibczi_source
+    url: https://files.pythonhosted.org/packages/source/a/aicspylibczi/aicspylibczi-{{ context.aicspylibczi_version }}.tar.gz
+    sha256: "{{ context.aicspylibczi_source_sha256 }}"
+  - name: strip_valis_superglue
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import shutil
+
+      matches = sorted(pathlib.Path("/opt/valis/lib").glob("python*/site-packages/valis/superglue_models"))
+      assert len(matches) == 1, matches
+      sg_dir = matches[0]
+      shutil.rmtree(sg_dir)
+      sg_dir.mkdir(mode=0o755)
+      stub = (
+          '"""Stub replacing proprietary non-commercial Magic Leap SuperPoint/SuperGlue files."""\n\n'
+          "MSG = (\n"
+          '    "Magic Leap SuperPoint/SuperGlue proprietary non-commercial code and weights are "'
+          '    "omitted from this container. Use an open-licensed detector/matcher such as "'
+          '    "VggFD, BriskFD, OrbFD, KazeFD, AkazeFD, DaisyFD, DiskFD, or LightGlueMatcher."\n'
+          ")\n\n"
+          "class _Omitted:\n"
+          "    def __init__(self, *args, **kwargs):\n"
+          "        raise RuntimeError(MSG)\n\n"
+          "SuperPoint = _Omitted\n"
+          "SuperGlue = _Omitted\n"
+          "Matching = _Omitted\n\n"
+          "def simple_nms(*args, **kwargs):\n"
+          "    raise RuntimeError(MSG)\n\n"
+          "def sample_descriptors(*args, **kwargs):\n"
+          "    raise RuntimeError(MSG)\n"
+      )
+      (sg_dir / "__init__.py").write_text("", encoding="utf-8")
+      for mod in ("matching.py", "superglue.py", "superpoint.py"):
+          (sg_dir / mod).write_text(stub, encoding="utf-8")
+
+      # Patch valis/registration.py and valis/micro_rigid_registrar.py so `import valis`
+      # does not eagerly download Kornia DISK/LightGlue weights over the network at import time.
+      valis_dir = sg_dir.parent
+      reg_py = valis_dir / "registration.py"
+      reg_txt = reg_py.read_text(encoding="utf-8")
+      old_reg = "DEFAULT_MATCHER = feature_matcher.LightGlueMatcher(match_filter_method=feature_matcher.DEFAULT_RANSAC_NAME, feature_detector=feature_detectors.DiskFD())"
+      new_reg = "DEFAULT_MATCHER = feature_matcher.Matcher(match_filter_method=feature_matcher.DEFAULT_RANSAC_NAME, feature_detector=feature_detectors.VggFD())"
+      assert old_reg in reg_txt, "Expected DEFAULT_MATCHER line in valis/registration.py"
+      reg_py.write_text(reg_txt.replace(old_reg, new_reg, 1), encoding="utf-8")
+
+      mr_py = valis_dir / "micro_rigid_registrar.py"
+      mr_txt = mr_py.read_text(encoding="utf-8")
+      old_mr = "DEFAULT_FD = feature_detectors.DiskFD\nDEFAULT_MATCHER = feature_matcher.LightGlueMatcher(DEFAULT_FD())"
+      new_mr = "DEFAULT_FD = feature_detectors.VggFD\nDEFAULT_MATCHER = feature_matcher.Matcher(feature_detector=DEFAULT_FD())"
+      assert old_mr in mr_txt, "Expected DEFAULT_FD/DEFAULT_MATCHER lines in valis/micro_rigid_registrar.py"
+      mr_py.write_text(mr_txt.replace(old_mr, new_mr, 1), encoding="utf-8")
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/valis/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_valis_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for VALIS/PyTorch/Matplotlib caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".valis-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="valis-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("TORCH_HOME", "torch"),
+                      ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "zzz_valis_runtime.pth").write_text(
+          "import _valis_runtime; _valis_runtime.ensure_runtime_env()\n",
+          encoding="utf-8",
+      )
+  - name: valis_info
+    contents: |
+      #!/opt/valis/bin/python
+      from __future__ import annotations
+
+      import argparse
+      import importlib.metadata as md
+
+
+      def main() -> int:
+          parser = argparse.ArgumentParser(
+              prog="valis-info",
+              description="Report installed VALIS, OpenCV contrib, pyvips, SimpleITK, and PyTorch versions.",
+          )
+          parser.add_argument("--version", action="store_true", help="Print valis-wsi version only")
+          args = parser.parse_args()
+          ver = md.version("valis-wsi")
+          if args.version:
+              print(ver)
+              return 0
+          import cv2
+          import pyvips
+          import SimpleITK as sitk
+          import torch
+
+          print(f"valis-wsi {ver}")
+          print(f"opencv {cv2.__version__} (xfeatures2d={hasattr(cv2, 'xfeatures2d')})")
+          print(f"libvips {pyvips.version(0)}.{pyvips.version(1)}.{pyvips.version(2)}")
+          print(f"SimpleITK {sitk.__version__}")
+          print(f"torch {torch.__version__}")
+          return 0
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+  - name: valis_launcher
+    contents: |
+      #!/usr/bin/python3
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+      ENV_SUBDIRS = (
+          ("TORCH_HOME", "torch"),
+          ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".valis-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/valis/bin/valis-info", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="valis.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - valis-info
+
+domains:
+  - microscopy
+
+categories:
+  - "digital pathology"
+  - "image registration"
+  - "optical imaging"
+
+readme: |-
+  ----------------------------------
+  ## valis/{{ context.version }} ##
+
+  VALIS (Virtual Alignment of pathoLogy Image Series) performs automated rigid
+  and non-rigid registration of serial H&E, IHC, and multiplex dermatopathology
+  whole-slide images using OpenCV contrib (`xfeatures2d`, `optflow`), `pyvips`,
+  `SimpleITK`, and CPU PyTorch. Proprietary non-commercial Magic Leap
+  SuperPoint/SuperGlue code and weights are intentionally omitted; open-licensed
+  detectors/matchers (`VggFD`, `BriskFD`, `OrbFD`, `KazeFD`, `AkazeFD`,
+  `DaisyFD`, `DiskFD`, `LightGlueMatcher`) are included.
+
+  ### Included CLI & Python Environment
+  ```
+  valis-info             Report installed VALIS, OpenCV contrib, libvips, SimpleITK, and PyTorch versions
+  /opt/valis/bin/python  Python environment with valis-wsi {{ context.upstream_version }}
+  ```
+
+  ### Example
+  ```
+  ml valis/{{ context.version }}
+  valis-info
+  /opt/valis/bin/python -c "from valis import registration; print(registration.__name__)"
+  ```
+
+  Documentation: https://valis.readthedocs.io/
+  License texts (`VALIS-LICENSE.txt`, `OPENCV-LICENSE.txt`,
+  `AICSPYLIBCZI-LICENSE.txt`, `GPL-3.0.txt`) are installed under
+  `/opt/valis/share/licenses/`, and the GPL-3.0 corresponding source archive for
+  `aicspylibczi` is installed under `/opt/valis/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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
