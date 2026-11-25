@@ -265,9 +265,9 @@ files:
                   signal.signal(signal.SIGTSTP, prev_tstp)
 
           try:
-              signal.signal(signal.SIGINT, handle_signal)
-              signal.signal(signal.SIGTERM, handle_signal)
-              signal.signal(signal.SIGHUP, handle_signal)
+              for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, handle_signal)
               signal.signal(signal.SIGCONT, handle_cont)
               signal.signal(signal.SIGTSTP, handle_tstp)
               if received_signal is not None:

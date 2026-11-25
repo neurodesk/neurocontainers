@@ -163,6 +163,32 @@ tests:
           sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
           assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
           assert not os.path.exists(os.path.dirname(scratch_dir)), scratch_dir
+
+          stub_nohup = os.path.join(td, "stub_nohup.py")
+          open(stub_nohup, "w").write(
+              "import os, signal, sys, time\n"
+              "ready, go = sys.argv[1], sys.argv[2]\n"
+              "assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN, signal.getsignal(signal.SIGHUP)\n"
+              "open(ready, 'w').write('ready\\n')\n"
+              "dl = time.time() + 5.0\n"
+              "while not os.path.exists(go) and time.time() < dl:\n"
+              "    time.sleep(0.02)\n"
+              "assert os.path.exists(go), 'go file not seen'\n"
+          )
+          wrapper_nohup = os.path.join(td, "wrapper_nohup.py")
+          make_wrapper(wrapper_nohup, stub_nohup)
+          ready_nh, go_nh = os.path.join(td, "nh.ready"), os.path.join(td, "nh.go")
+          p_nh = subprocess.Popen(["nohup", py, wrapper_nohup, ready_nh, go_nh], env=env, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+          dl = time.time() + 5.0
+          while not os.path.exists(ready_nh) and time.time() < dl:
+              time.sleep(0.02)
+          assert os.path.exists(ready_nh), f"nohup stub not ready: {p_nh.stderr.read().decode()}"
+          os.killpg(p_nh.pid, signal.SIGHUP)
+          time.sleep(0.1)
+          open(go_nh, "w").write("go\n")
+          rc_nh = p_nh.wait(timeout=10)
+          err_nh = p_nh.stderr.read().decode()
+          assert rc_nh == 0, (rc_nh, err_nh)
       print("wrapper signal and stdin ok")
       PY
     expected_output_contains: "wrapper signal and stdin ok"
