@@ -54,7 +54,7 @@ The `dermatology` distribution is imaging- and computational-dermatology-centric
 
 ## Second-Wave Candidates
 
-* **Dermatopathology & DL:** `histoqc` (`BSD-3-Clause-Clear`, pinned GitHub commit — not published on PyPI), `valis` (`MIT`, serial H&E/IHC registration), `nnunetv2` (`Apache-2.0`, standalone 2D/3D training CLI), `slideflow` (`Apache-2.0` core only), `lazyslide` (`MIT`, code only), standalone `cellpose` (`BSD-3-Clause`) and `stardist` (`BSD-3-Clause`).
+* **Dermatopathology & DL:** `histoqc` (`BSD-3-Clause-Clear`, pinned GitHub commit — not published on PyPI), `valis` (`MIT`, serial H&E/IHC registration), `nnunetv2` (`Apache-2.0`, standalone 2D/3D training CLI), `slideflow` (`Apache-2.0` core only), `lazyslide` (`MIT`, code only), and `stardist` (`BSD-3-Clause`). Standalone `cellpose` (`4.2.1.1`, `BSD-3-Clause`) is already packaged on `main` and tagged with `dermatology`.
 * **Photography & 3D:** `darktable` (`GPL-3.0-or-later`, RAW DSLR clinical photography), `colmap` (`BSD-3-Clause`), `open3d` (`MIT`).
 * **Non-invasive optical imaging:** `hyperspy` (`GPL-3.0-or-later`), `spectral` (`MIT`), `phasorpy` (`MIT`, multiphoton/FLIM), and `octproz` (`GPL-3.0-or-later`, raw OCT interferogram reconstruction if lab fixtures are available).
 
@@ -96,20 +96,17 @@ recipes with the new categories in the web editor.
 NeuroContainers routes recipes to domain desktops through `domains:` in each
 `build.yaml`, validated against the
 [apps-catalog `domains.json`](https://apps-catalog.scigetorg.workers.dev/domains.json)
-registry. Adding the `dermatology` domain requires:
+registry. The `dermatology` domain is registered in `apps-catalog`, and existing
+dual-use recipes on `main` were tagged in PR #3958. Rollout steps:
 
 1. Merge the groundwork PR (category definitions in `builder/validation.py`,
-   unit tests, `AGENTS.md`, and this plan) separately from recipe additions.
+   Debian version-suffix / multi-arch APT peer agreement in `builder/`, unit
+   tests, `AGENTS.md`, and this plan) separately from recipe additions.
    Automated container candidate builds and promotion require recipe-only PRs.
-2. Open recipe-only PRs for the first-wave containers (initially tagged
-   `microscopy` until `dermatology` is registered).
-3. Register `dermatology` in `scigetorg/apps-catalog` (`domains.json`) with
-   `source_repositories: ["NeuroDesk/neurocontainers"]` and publish its desktop image.
-4. Open a domain-only PR adding `dermatology` to `domains:` in the recipes below
-   (without removing existing `microscopy`, `neuroimaging`, or `preclinical` tags;
-   domain-only changes update catalog routing without rebuilding containers).
+2. Open recipe-only PRs for the first-wave and second-wave containers tagged
+   with `dermatology` (and `microscopy` where shared across both desktops).
 
-### 1. First-wave dermatology additions (initially tagged `microscopy` until `dermatology` is registered)
+### 1. First-wave dermatology additions (`domains: [dermatology, ...]`)
 
 * `isic-cli`, `wsidicomizer`, `colour-science`, `dicom-validator`, `labelme`,
   `meshlab`, `cloudcompare`, `bioformats2raw`, `instanseg`, `tiatoolbox`
