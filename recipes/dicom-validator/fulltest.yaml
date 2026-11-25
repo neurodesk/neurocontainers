@@ -155,7 +155,7 @@ tests:
       set +e
       env -u DICOM_VALIDATOR_STANDARD_PATH HOME=/sys TMPDIR="$tmpdir/private_tmp" \
         http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 \
-        HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 NO_PROXY="" \
+        HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 NO_PROXY="" no_proxy="" \
         validate_iods --edition local "$tmpdir/valid.dcm" > "$tmpdir/default_branch.txt" 2>&1
       default_rc=$?
       set -e
