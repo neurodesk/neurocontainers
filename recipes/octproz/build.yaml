@@ -101,9 +101,11 @@ build:
           && qmake CONFIG+=release QMAKE_CXXFLAGS+=-fPIC QMAKE_CFLAGS+=-fPIC octproz_devkit.pro
           && make -j4
         - >-
-          cd /tmp/octproz/octproz_project/octproz_plugins
-          && qmake CONFIG+=release QMAKE_CXXFLAGS+=-fPIC QMAKE_CFLAGS+=-fPIC octproz_plugins.pro
-          && make -j4
+          for p in octproz-virtual-oct-system octproz-demo-extension; do
+          (cd "/tmp/octproz/octproz_project/octproz_plugins/$p"
+          && qmake CONFIG+=release QMAKE_CXXFLAGS+=-fPIC QMAKE_CFLAGS+=-fPIC "${p}.pro"
+          && make -j4) || exit 1;
+          done
         - >-
           cd /tmp/octproz/octproz_project/octproz
           && LIBRARY_PATH=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs
