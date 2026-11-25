@@ -1,0 +1,112 @@
+name: octproz
+version: "1.8.0"
+upstream_version: "1.8.0"
+
+tests:
+  - name: runtime libraries resolve
+    description: Every shared library except the host-supplied NVIDIA driver resolves inside the image for OCTproZ and its bundled plugins.
+    command: |-
+      set -euo pipefail
+      bin="/opt/octproz-${upstream_version}/lib/OCTproZ"
+      [ -x "$bin" ] || { echo "missing binary: $bin"; exit 1; }
+      ldd_out=$(ldd "$bin")
+      for lib in libcufft.so libcudart.so libQt5Core.so libQt5Gui.so libQt5Widgets.so libQt5PrintSupport.so libGL.so; do
+        grep -q "$lib[^ ]* => /" <<< "$ldd_out" || { echo "unresolved $lib"; echo "$ldd_out"; exit 1; }
+      done
+      missing=$(awk '/not found/ && $1 != "libcuda.so.1" {print $1}' <<< "$ldd_out")
+      [ -z "$missing" ] || { echo "missing: $missing"; exit 1; }
+      for plugin in /opt/octproz-${upstream_version}/lib/plugins/*.so; do
+        [ -f "$plugin" ] || { echo "no plugins found"; exit 1; }
+        pldd_out=$(ldd "$plugin")
+        pmissing=$(awk '/not found/ && $1 != "libcuda.so.1" {print $1}' <<< "$pldd_out")
+        [ -z "$pmissing" ] || { echo "missing in $plugin: $pmissing"; exit 1; }
+      done
+      echo "runtime libraries resolve"
+    expected_output_contains: runtime libraries resolve
+
+  - name: GPU kernels for supported architectures
+    description: The OCTproZ binary carries native CUDA kernels from Maxwell to Blackwell and PTX for newer GPUs.
+    command: |-
+      set -euo pipefail
+      bin="/opt/octproz-${upstream_version}/lib/OCTproZ"
+      elf=$(cuobjdump --list-elf "$bin")
+      for arch in 52 60 61 70 75 80 86 87 89 90 100 120; do
+        grep -q "\.sm_$arch\.cubin" <<< "$elf" || { echo "no sm_$arch kernels"; exit 1; }
+      done
+      ptx=$(cuobjdump --list-ptx "$bin")
+      grep -q '\.sm_120\.ptx' <<< "$ptx" || { echo "no PTX"; exit 1; }
+      echo "kernels for sm_52 to sm_120 and PTX present"
+    expected_output_contains: kernels for sm_52 to sm_120 and PTX present
+
+  - name: bundled plugins, LUTs, and docs present
+    description: Virtual OCT System plugin, color LUTs, documentation, and wrapper entrypoints are installed.
+    command: |-
+      set -euo pipefail
+      command -v OCTproZ
+      command -v octproz
+      [ -f "/opt/octproz-${upstream_version}/lib/plugins/libVirtualOCTSystem.so" ]
+      [ -d "/opt/octproz-${upstream_version}/lib/luts" ]
+      [ -n "$(ls -A "/opt/octproz-${upstream_version}/lib/luts")" ]
+      [ -d "/opt/octproz-${upstream_version}/lib/docs" ]
+      [ -n "$(ls -A "/opt/octproz-${upstream_version}/lib/docs")" ]
+      echo "bundled assets present"
+    expected_output_contains: bundled assets present
+
+  - name: headless startup under xvfb with read-only HOME and CUDA driver stub
+    description: OCTproZ starts cleanly under Xvfb with HOME=/sys and the CUDA driver stub, handles SIGTERM cleanly, and preserves ignored SIGHUP (nohup) while cleaning temporary XDG state.
+    command: |-
+      set -euo pipefail
+      stub=$(mktemp -d)
+      tmp_before=$(mktemp -d)
+      trap 'rm -rf "$stub" "$tmp_before"' EXIT
+      ln -s /usr/local/cuda/lib64/stubs/libcuda.so "$stub/libcuda.so.1"
+      out_log="$stub/octproz.log"
+      set +e
+      HOME=/sys TMPDIR="$tmp_before" LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$stub" \
+        LIBGL_ALWAYS_SOFTWARE=1 \
+        xvfb-run -a timeout --signal=TERM 3s OCTproZ >"$out_log" 2>&1
+      rc=$?
+      set -e
+      # 124 = timeout fired SIGTERM after running cleanly for 3s; 143 = exited on SIGTERM.
+      if [ "$rc" -ne 124 ] && [ "$rc" -ne 143 ] && [ "$rc" -ne 0 ]; then
+        cat "$out_log"
+        echo "unexpected exit code: $rc"
+        exit 1
+      fi
+      # Verify wrapper cleaned up its temporary XDG directory on exit.
+      leftover=$(find "$tmp_before" -maxdepth 1 -name 'octproz-xdg-*' | wc -l)
+      [ "$leftover" -eq 0 ] || { echo "leftover temp dirs: $leftover"; exit 1; }
+      # Verify launcher preserves inherited SIG_IGN on SIGHUP (nohup contract)
+      # and cleans up its temporary XDG directory when terminated.
+      xvfb-run -a python3 - <<'PY'
+      import glob, os, signal, subprocess, tempfile, time
+      with tempfile.TemporaryDirectory() as td:
+          stub_dir = os.path.join(td, "stub")
+          os.makedirs(stub_dir)
+          os.symlink("/usr/local/cuda/lib64/stubs/libcuda.so", os.path.join(stub_dir, "libcuda.so.1"))
+          env = os.environ.copy()
+          env["HOME"] = "/sys"
+          env["TMPDIR"] = td
+          env["LIBGL_ALWAYS_SOFTWARE"] = "1"
+          env["LD_LIBRARY_PATH"] = f"{env.get('LD_LIBRARY_PATH', '')}:{stub_dir}".lstrip(":")
+          def _ignore_hup():
+              signal.signal(signal.SIGHUP, signal.SIG_IGN)
+          proc = subprocess.Popen(
+              ["OCTproZ"],
+              env=env,
+              preexec_fn=_ignore_hup,
+              stdout=subprocess.DEVNULL,
+              stderr=subprocess.DEVNULL,
+          )
+          time.sleep(2.0)
+          assert proc.poll() is None, f"process exited early: {proc.returncode}"
+          proc.send_signal(signal.SIGHUP)
+          time.sleep(1.0)
+          assert proc.poll() is None, f"process died on ignored SIGHUP: {proc.returncode}"
+          proc.terminate()
+          proc.wait(timeout=10)
+          leftover = glob.glob(os.path.join(td, "octproz-xdg-*"))
+          assert not leftover, f"leftover temp dirs: {leftover}"
+      PY
+      echo "headless startup ok"
+    expected_output_contains: headless startup ok

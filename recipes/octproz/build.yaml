@@ -1,0 +1,269 @@
+variables:
+  upstream_version: "1.8.0"
+  cuda_version: "12.8"
+  cuda_package_suffix: "12-8"
+  base_image_digest: sha256:133c78a0575303be34164d0b90137a042172bdf60696af01a3c424ab402d86e2
+  install_dir: /opt/octproz-{{ context.upstream_version }}
+
+name: octproz
+version: "1.8.0"
+
+description: GPU-accelerated open-source optical coherence tomography (OCT) raw interferogram reconstruction and 2D/3D visualization software with bundled Virtual OCT System plugin.
+
+copyright:
+  - license: GPL-3.0-or-later
+    name: GNU General Public License v3.0 or later
+    url: https://github.com/spectralcode/OCTproZ/blob/v{{ context.upstream_version }}/LICENSE
+
+architectures:
+  - x86_64
+
+auto_update:
+  method: sources
+  container_version: octproz
+  sources:
+    - id: octproz
+      method: github_release
+      repo: spectralcode/OCTproZ
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: cuda_base_image
+      method: oci_digest
+      dependency: true
+      image: nvidia/cuda
+      tag: 12.8.1-base-ubuntu24.04
+      target:
+        variable: base_image_digest
+
+build:
+  kind: neurodocker
+  base-image: nvidia/cuda:12.8.1-base-ubuntu24.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        QT_X11_NO_MITSHM: "1"
+
+    # Runtime libraries OCTproZ links against. libcuda.so.1 is not installed:
+    # the host NVIDIA driver supplies it (apptainer --nv or NVIDIA container
+    # runtime). cuobjdump and the driver stub let fulltest verify the GPU
+    # kernels and headless startup without a GPU.
+    - install:
+        - ca-certificates
+        - libcufft-{{ context.cuda_package_suffix }}
+        - cuda-cuobjdump-{{ context.cuda_package_suffix }}
+        - cuda-driver-dev-{{ context.cuda_package_suffix }}
+        - libqt5core5t64
+        - libqt5gui5t64
+        - libqt5widgets5t64
+        - libqt5opengl5t64
+        - libqt5printsupport5t64
+        - libgl1
+        - libgl1-mesa-dri
+        - libglu1-mesa
+        - libx11-6
+        - libxcb-xinerama0
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-shape0
+        - libxcb-xkb1
+        - libxkbcommon-x11-0
+        - libdbus-1-3
+        - libfontconfig1
+        - python3
+        - xvfb
+
+    - run:
+        - apt-get update -qq
+        - >-
+          apt-get install -y -q --no-install-recommends
+          cuda-nvcc-{{ context.cuda_package_suffix }}
+          cuda-cudart-dev-{{ context.cuda_package_suffix }}
+          cuda-profiler-api-{{ context.cuda_package_suffix }}
+          libcufft-dev-{{ context.cuda_package_suffix }}
+          qtbase5-dev
+          qt5-qmake
+          libqt5opengl5-dev
+          libgl1-mesa-dev
+          libglu1-mesa-dev
+          libx11-dev
+          g++
+          make
+        - mkdir -p /tmp/octproz
+        - tar -xzf {{ get_file("octproz_source") }} --strip-components=1 -C /tmp/octproz
+        - sed -i 's/^CUDA_DEFINES_FLAGS = .*/CUDA_DEFINES_FLAGS = -DENABLE_CUDA_ZERO_COPY/' /tmp/octproz/octproz_project/octproz/pri/cuda.pri
+        - sed -i 's/-std=c++11/-std=c++17/' /tmp/octproz/octproz_project/octproz/pri/cuda.pri
+        - sed -i 's/-lglut//g' /tmp/octproz/octproz_project/octproz/octproz.pro
+        - mkdir -p /tmp/octproz/octproz_project/octproz_share_dev/release /tmp/octproz/octproz_project/octproz_share_dev/plugins/release
+        - >-
+          cd /tmp/octproz/octproz_project/octproz_devkit
+          && qmake CONFIG+=release QMAKE_CXXFLAGS+=-fPIC QMAKE_CFLAGS+=-fPIC octproz_devkit.pro
+          && make -j4
+        - >-
+          for p in octproz-virtual-oct-system octproz-demo-extension; do
+          (cd "/tmp/octproz/octproz_project/octproz_plugins/$p"
+          && qmake CONFIG+=release QMAKE_CXXFLAGS+=-fPIC QMAKE_CFLAGS+=-fPIC "${p}.pro"
+          && make -j4) || exit 1;
+          done
+        - >-
+          mkdir -p /tmp/octproz-build
+          && cd /tmp/octproz-build
+          && LIBRARY_PATH=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs
+          qmake CONFIG+=release
+          QMAKE_CXXFLAGS+=-fPIC
+          QMAKE_CFLAGS+=-fPIC
+          QMAKE_LIBDIR+=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs
+          QMAKE_LFLAGS+=-Wl,-rpath,/usr/local/cuda-{{ context.cuda_version }}/lib64
+          /tmp/octproz/octproz_project/octproz/octproz.pro
+          && LIBRARY_PATH=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs make -j4
+        - install -D -m 755 /tmp/octproz-build/OCTproZ {{ context.install_dir }}/lib/OCTproZ
+        - mkdir -p {{ context.install_dir }}/lib/plugins
+        - cp -a /tmp/octproz/octproz_project/octproz_share_dev/plugins/release/*.so {{ context.install_dir }}/lib/plugins/
+        - cp -a /tmp/octproz-build/luts {{ context.install_dir }}/lib/luts
+        - cp -a /tmp/octproz-build/docs {{ context.install_dir }}/lib/docs
+        - install -D -m 644 /tmp/octproz/LICENSE {{ context.install_dir }}/LICENSE
+        - install -D -m 755 {{ get_file("octproz_launcher.py") }} {{ context.install_dir }}/bin/OCTproZ
+        - ln -sf OCTproZ {{ context.install_dir }}/bin/octproz
+        - cd /
+        - rm -rf /tmp/octproz /tmp/octproz-build
+        - >-
+          apt-get purge -y -q --auto-remove
+          cuda-nvcc-{{ context.cuda_package_suffix }}
+          cuda-cudart-dev-{{ context.cuda_package_suffix }}
+          cuda-profiler-api-{{ context.cuda_package_suffix }}
+          libcufft-dev-{{ context.cuda_package_suffix }}
+          qtbase5-dev
+          qt5-qmake
+          libqt5opengl5-dev
+          libgl1-mesa-dev
+          libglu1-mesa-dev
+          libx11-dev
+          g++
+          make
+        - rm -rf /var/lib/apt/lists/*
+
+    - environment:
+        PATH: "{{ context.install_dir }}/bin:$PATH"
+
+deploy:
+  bins:
+    - OCTproZ
+    - octproz
+
+gui_apps:
+  - name: "OCTproZ"
+    exec: "OCTproZ"
+
+files:
+  - name: octproz_source
+    url: https://github.com/spectralcode/OCTproZ/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
+  - name: octproz_launcher.py
+    contents: |
+      #!/usr/bin/env python3
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+
+      def _is_writable_dir(path: str) -> bool:
+          if not path:
+              return False
+          if os.path.isdir(path):
+              return os.access(path, os.W_OK | os.X_OK)
+          parent = os.path.dirname(os.path.abspath(path))
+          return bool(parent) and os.path.isdir(parent) and os.access(parent, os.W_OK | os.X_OK)
+
+
+      def main() -> int:
+          script_dir = os.path.dirname(os.path.realpath(__file__))
+          binary = os.path.join(os.path.dirname(script_dir), "lib", "OCTproZ")
+          env = os.environ.copy()
+          tmpdir = None
+          proc = None
+
+          try:
+              for var, sub in (
+                  ("XDG_CONFIG_HOME", "config"),
+                  ("XDG_CACHE_HOME", "cache"),
+                  ("XDG_DATA_HOME", "data"),
+                  ("XDG_RUNTIME_DIR", "runtime"),
+              ):
+                  current = env.get(var, "")
+                  if not _is_writable_dir(current):
+                      if tmpdir is None:
+                          tmpdir = tempfile.mkdtemp(prefix="octproz-xdg-")
+                      target = os.path.join(tmpdir, sub)
+                      os.makedirs(target, mode=0o700, exist_ok=True)
+                      env[var] = target
+
+              def _forward(signum, _frame):
+                  if proc is not None and proc.poll() is None:
+                      try:
+                          proc.send_signal(signum)
+                      except ProcessLookupError:
+                          pass
+
+              for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                  if signal.getsignal(sig) != signal.SIG_IGN:
+                      signal.signal(sig, _forward)
+
+              proc = subprocess.Popen([binary, *sys.argv[1:]], env=env)
+              rc = proc.wait()
+              return (128 + (-rc)) if rc < 0 else rc
+          finally:
+              if tmpdir is not None:
+                  shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+categories:
+  - "optical imaging"
+  - "image reconstruction"
+  - "visualization"
+domains:
+  - dermatology
+  - microscopy
+  - preclinical
+
+readme: |-
+  ----------------------------------
+  ## octproz/{{ context.version }} ##
+
+  OCTproZ is GPU-accelerated open-source software (GPL-3.0-or-later) for raw
+  optical coherence tomography (OCT) interferogram reconstruction and real-time
+  2D B-scan, en face, and 3D volume visualization.
+
+  This container builds OCTproZ {{ context.upstream_version }} (`v{{ context.upstream_version }}`)
+  from source with CUDA {{ context.cuda_version }} (native kernels for compute
+  capability 5.2 through 12.0 plus PTX for newer GPUs) and bundles the in-repo
+  Virtual OCT System and Demo Extension plugins, color lookup tables, and offline
+  documentation.
+
+  Requirements:
+  - An NVIDIA GPU with a CUDA 12 capable driver (525 or newer). The driver library
+    (`libcuda.so.1`) comes from the host, so launch with GPU passthrough (for
+    example `apptainer exec --nv`).
+  - Open test dataset for the Virtual OCT System:
+    https://doi.org/10.6084/m9.figshare.12356705
+
+  Example:
+  ```
+  OCTproZ
+  ```
+
+  More documentation: https://github.com/spectralcode/OCTproZ
+
+  To run container outside of this environment: `ml octproz/{{ context.version }}`
+  ----------------------------------
+
+icon: "data:image/png;base64,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"
