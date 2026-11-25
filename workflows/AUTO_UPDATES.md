@@ -159,9 +159,19 @@ software assertions with `${upstream_version}`. Dependency variables remain
 independent of both values.
 
 APT sources retain the full package pin for installation and derive the label
-from the upstream version, excluding the epoch, Debian revision, and repack suffix.
-A commit source can name the container only when it records version metadata from
-that commit. Otherwise use a recorded software variable or a local/bundle policy.
+from the upstream version, excluding the epoch, Debian revision, native binNMU
+suffix (`+bN`), repack suffixes (`~dfsg`/`+ds`/`+repack`), and post-release
+VCS markers (`+git…`), while normalizing remaining `~`/`+` characters (such as
+pre-release `~git…` snapshots) to OCI-safe `-` separators. When a multi-arch
+recipe declares multiple non-dependency APT sources for the primary package
+(whether `container_version` names a source ID or a variable written by one),
+peer sources are normalized by epoch (treating implicit/explicit `0:` as equal)
+and stripped of Debian revisions, native `+bN` suffixes, and repack markers
+while keeping VCS snapshot identities distinct; if peer architectures disagree
+on the upstream software version, validation fails and `plan_sources` holds the
+update back until all peer architectures converge. A commit source can name the
+container only when it records version metadata from that commit. Otherwise use
+a recorded software variable or a local/bundle policy.
 
 Direct release policies can use `version_variable: upstream_version` to keep
 exact upstream pins separate from the padded label. The updater adds this binding

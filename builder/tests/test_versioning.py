@@ -29,6 +29,46 @@ def test_software_version_preserves_upstream_components(upstream, label):
     assert software_version(upstream) == label
 
 
+@pytest.mark.parametrize(
+    "debian_version,expected",
+    [
+        ("2.10.42-1ubuntu2", "2.10.42"),
+        ("2.1.0-1~nd120+1", "2.1.0"),
+        ("2025.07~dfsg-2", "2025.07.0"),
+        ("2.13.2+git20240821+ds-4", "2.13.2"),
+        ("2.13.2+ds+git20240821-4", "2.13.2"),
+        ("2.13.3~git20240822+ds-4", "2.13.3-git20240822"),
+        ("1.0+ds~git20251231-1", "1.0.0-git20251231"),
+        ("1:3.4.1+dfsg1-1", "3.4.1"),
+        ("1.0+b1", "1.0.0"),
+        ("0:2.0-1", "2.0.0"),
+    ],
+)
+def test_apt_container_version_strips_debian_repack_and_git_suffixes(
+    debian_version, expected
+):
+    recipe = {
+        "version": expected,
+        "variables": {"package_version": debian_version},
+        "auto_update": {
+            "method": "sources",
+            "container_version": "pkg",
+            "sources": [
+                {
+                    "id": "pkg",
+                    "method": "apt",
+                    "package": "demo",
+                    "urls": [
+                        "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                    ],
+                    "target": {"variable": "package_version"},
+                }
+            ],
+        },
+    }
+    validate_container_version(recipe)
+
+
 def test_manual_container_bump_is_rejected():
     recipe = {
         "version": "9.21.1",
@@ -132,3 +172,127 @@ build:
     assert recipe["variables"]["upstream_tag"] == "v7.1"
     assert recipe["variables"]["upstream_version"] == "7.1"
     assert recipe["version"] == "7.1.0"
+
+
+def test_debian_upstream_source_version_normalizes_zero_epoch_and_native_binnmu():
+    from builder.update_observations import (
+        debian_upstream_equivalence_key,
+        debian_upstream_source_version,
+        debian_version_equivalence_key,
+    )
+
+    assert debian_upstream_source_version("0:2.0-1") == "2.0"
+    assert debian_upstream_source_version("00:2.0-1") == "2.0"
+    assert debian_upstream_source_version("2.0-1") == "2.0"
+    assert debian_upstream_source_version("1:2.0-1") == "1:2.0"
+    assert debian_upstream_source_version("01:2.0-1") == "1:2.0"
+    assert debian_upstream_source_version("1.0+b1") == "1.0"
+    assert debian_upstream_source_version("1.0+ds+b2") == "1.0"
+    assert debian_upstream_source_version("1.0") == "1.0"
+    assert debian_version_equivalence_key("2.016.0") == debian_version_equivalence_key(
+        "2.16.0"
+    )
+    assert debian_version_equivalence_key("1a") == debian_version_equivalence_key("1a0")
+    assert debian_version_equivalence_key("1.0") != debian_version_equivalence_key(
+        "1.0.0"
+    )
+    assert debian_upstream_equivalence_key(
+        debian_upstream_source_version("1.0-0-1")
+    ) != debian_upstream_equivalence_key(debian_upstream_source_version("1.0-1"))
+    assert debian_upstream_equivalence_key(
+        debian_upstream_source_version("2.016.0-1")
+    ) == debian_upstream_equivalence_key(debian_upstream_source_version("2.16.0-1"))
+
+
+def test_variable_backed_container_version_enforces_multiarch_apt_peers():
+    recipe = {
+        "version": "2.0.0",
+        "variables": {
+            "amd64_pin": "2.0-1",
+            "arm64_pin": "1.0-1",
+            "amd64": "2.0",
+            "arm64": "1.0",
+        },
+        "auto_update": {
+            "method": "sources",
+            "container_version": {"variable": "amd64"},
+            "sources": [
+                {
+                    "id": "pkg-amd64",
+                    "method": "apt",
+                    "package": "demo",
+                    "urls": [
+                        "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                    ],
+                    "target": {
+                        "variable": "amd64_pin",
+                        "variables": {"amd64": "version"},
+                    },
+                },
+                {
+                    "id": "pkg-arm64",
+                    "method": "apt",
+                    "package": "demo",
+                    "urls": [
+                        "https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz"
+                    ],
+                    "target": {
+                        "variable": "arm64_pin",
+                        "variables": {"arm64": "version"},
+                    },
+                },
+            ],
+        },
+    }
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(recipe)
+
+    # Distinct raw upstream prerelease vs post-release (2.1~rc1-1 vs 2.1+rc1-1)
+    # must still fail peer validation even though both labels normalize to 2.1-rc1.
+    recipe["version"] = "2.1.0-rc1"
+    recipe["variables"].update(
+        amd64_pin="2.1~rc1-1",
+        arm64_pin="2.1+rc1-1",
+        amd64="2.1-rc1",
+        arm64="2.1-rc1",
+    )
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(recipe)
+
+    # Matching raw pins pass validation cleanly with auxiliary version variable.
+    recipe["variables"]["arm64_pin"] = "2.1~rc1-2"
+    validate_container_version(recipe)
+
+    # Storing a lossy normalized version as the primary APT target is rejected,
+    # including when container_version names the source ID and an auxiliary version variable is also set.
+    for driver, extra_target in (
+        ("pkg", {}),
+        ("pkg", {"variables": {"label": "version"}}),
+        ({"variable": "pkg_ver"}, {}),
+        ({"variable": "label"}, {"variables": {"label": "version"}}),
+    ):
+        bad_target = {
+            "version": "2.1.0-rc1",
+            "variables": {"pkg_ver": "2.1-rc1", "label": "2.1-rc1"},
+            "auto_update": {
+                "method": "sources",
+                "container_version": driver,
+                "sources": [
+                    {
+                        "id": "pkg",
+                        "method": "apt",
+                        "package": "demo",
+                        "urls": [
+                            "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                        ],
+                        "target": {
+                            "variable": "pkg_ver",
+                            "value": "version",
+                            **extra_target,
+                        },
+                    }
+                ],
+            },
+        }
+        with pytest.raises(ValueError, match="raw package pin"):
+            validate_container_version(bad_target)

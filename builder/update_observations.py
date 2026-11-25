@@ -726,14 +726,125 @@ def _debian_newer(candidate: str, current: str) -> bool:
     return result.returncode == 0
 
 
-def debian_upstream_version(version: str) -> str:
-    """Return the software's own version, without the epoch or Debian revision.
+def _debian_part_equivalence_key(part: str) -> tuple[tuple[str, int], ...]:
+    """Canonical Debian Policy 5.6.12 equivalence key for a single version component."""
+    chunks: list[tuple[str, int]] = []
+    pos = 0
+    length = len(part)
+    while pos < length:
+        non_digit_start = pos
+        while pos < length and not part[pos].isdigit():
+            pos += 1
+        non_digit = part[non_digit_start:pos]
+        digit_start = pos
+        while pos < length and part[pos].isdigit():
+            pos += 1
+        digit = int(part[digit_start:pos]) if pos > digit_start else 0
+        chunks.append((non_digit, digit))
+    while chunks and chunks[-1] == ("", 0):
+        chunks.pop()
+    return tuple(chunks)
 
-    A container labelled with the packaging revision would rename itself for a
-    rebuild that ships identical software.
+
+def debian_version_equivalence_key(
+    version: str,
+) -> tuple[int, tuple[tuple[str, int], ...], tuple[tuple[str, int], ...]]:
+    """Return a hashable key matching ``dpkg --compare-versions A eq B``."""
+    epoch = 0
+    rest = version
+    if ":" in version:
+        raw_epoch, candidate_rest = version.split(":", 1)
+        if raw_epoch.isdigit():
+            epoch = int(raw_epoch)
+            rest = candidate_rest
+    if "-" in rest:
+        upstream, revision = rest.rsplit("-", 1)
+    else:
+        upstream, revision = rest, ""
+    return (
+        epoch,
+        _debian_part_equivalence_key(upstream),
+        _debian_part_equivalence_key(revision),
+    )
+
+
+def debian_upstream_equivalence_key(
+    version: str,
+) -> tuple[int, tuple[tuple[str, int], ...]]:
+    """Return a hashable Debian Policy 5.6.12 key for an upstream-only version (with optional epoch).
+
+    Unlike ``debian_version_equivalence_key``, hyphens inside ``version`` are
+    treated as part of the upstream string rather than a Debian revision
+    separator, so upstream ``1.0-0`` (from ``1.0-0-1``) does not collapse to
+    ``1.0`` (from ``1.0-1``).
     """
-    upstream = version.split(":", 1)[-1]
-    return upstream.rsplit("-", 1)[0] if "-" in upstream else upstream
+    epoch = 0
+    upstream = version
+    if ":" in version:
+        raw_epoch, candidate_rest = version.split(":", 1)
+        if raw_epoch.isdigit():
+            epoch = int(raw_epoch)
+            upstream = candidate_rest
+    return (epoch, _debian_part_equivalence_key(upstream))
+
+
+def debian_upstream_source_version(version: str) -> str:
+    """Return the upstream software identity (including VCS snapshots), without Debian revision, binNMU, or repack markers.
+
+    Implicit epoch ``0:`` and leading zeros on numeric epochs are normalized so
+    ``0:2.0-1`` and ``2.0-1`` compare equal, while non-zero epochs remain
+    distinct. Native binary-only rebuild suffixes (``+bN`` when no Debian
+    ``-revision`` is present) are stripped so ``1.0+b1`` and ``1.0`` agree.
+    """
+    epoch = 0
+    rest = version
+    if ":" in version:
+        raw_epoch, candidate_rest = version.split(":", 1)
+        if raw_epoch.isdigit():
+            epoch = int(raw_epoch)
+            rest = candidate_rest
+    if "-" in rest:
+        upstream = rest.rsplit("-", 1)[0]
+    else:
+        upstream = re.sub(r"\+b\d+$", "", rest)
+    while True:
+        stripped = re.sub(
+            r"[~+](?:dfsg|ds|repack)\d*(?:\.\d+)*(?=$|[~+])",
+            "",
+            upstream,
+        )
+        if stripped == upstream:
+            break
+        upstream = stripped
+    return f"{epoch}:{upstream}" if epoch else upstream
+
+
+def debian_upstream_version(version: str) -> str:
+    """Return the software's own version, without epoch, Debian revision, binNMU, or repack suffixes.
+
+    A container labelled with packaging revisions or Debian repack/post-release
+    markers (such as ``~dfsg``, ``+ds``, or ``+gitYYYYMMDD``) would rename
+    itself for identical software or emit invalid OCI tag characters. Stacked
+    repack and post-release VCS suffixes are stripped in any order, including
+    repack tags preceding a ``~`` prerelease (such as ``1.0+ds~git20251231-1``),
+    and any remaining Debian ``~`` or ``+`` separators are normalised to ``-``
+    so the emitted label is always OCI-tag-safe.
+    """
+    rest = version.split(":", 1)[-1]
+    if "-" in rest:
+        upstream = rest.rsplit("-", 1)[0]
+    else:
+        upstream = re.sub(r"\+b\d+$", "", rest)
+    while True:
+        stripped = re.sub(
+            r"[~+](?:dfsg|ds|repack)\d*(?:\.\d+)*(?=$|[~+])|\+(?:git|svn|hg|bzr)[0-9A-Za-z.]+$",
+            "",
+            upstream,
+        )
+        if stripped == upstream:
+            break
+        upstream = stripped
+    return re.sub(r"[~+]", "-", upstream)
 
 
 def _apt(config: dict, session: requests.Session) -> SourceObservation:

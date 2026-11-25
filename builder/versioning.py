@@ -31,6 +31,10 @@ def source_version(recipe: dict, source: dict) -> str:
 
     target = source["target"]
     variables = recipe.get("variables", {})
+    if source["method"] == "apt" and target.get("value", "value") != "value":
+        raise ValueError(
+            f"{source['id']}: apt sources must store the raw package pin (value: value)"
+        )
     for variable, field in target.get("variables", {}).items():
         if field == "version":
             return str(variables[variable])
@@ -39,9 +43,7 @@ def source_version(recipe: dict, source: dict) -> str:
         if source["method"] == "apt":
             from .update_observations import debian_upstream_version
 
-            return re.sub(
-                r"\+(?:dfsg|ds)\d*(?:\.\d+)*$", "", debian_upstream_version(value)
-            )
+            return debian_upstream_version(value)
         if target.get("value") != "tag":
             return value
         release = parse_release_tag(
@@ -68,11 +70,25 @@ def container_version(recipe: dict) -> str:
     config = recipe.get("auto_update", {})
     driver = config.get("container_version")
     if isinstance(driver, dict):
-        value = str(recipe.get("variables", {}).get(driver["variable"], ""))
+        var_name = driver["variable"]
+        value = str(recipe.get("variables", {}).get(var_name, ""))
         if not value:
-            raise ValueError(
-                f"container_version requires variables.{driver['variable']}"
+            raise ValueError(f"container_version requires variables.{var_name}")
+        apt_driver = _resolve_apt_driver_source(config)
+        if apt_driver is not None:
+            target = apt_driver.get("target") or {}
+            if target.get("value", "value") != "value":
+                raise ValueError(
+                    f"{apt_driver['id']}: apt sources must store the raw package pin (value: value)"
+                )
+            is_raw_pin = (
+                target.get("variable") == var_name
+                or (target.get("variables") or {}).get(var_name) == "value"
             )
+            if is_raw_pin:
+                from .update_observations import debian_upstream_version
+
+                value = debian_upstream_version(value)
         value = driver.get("prefix", "") + value
     elif driver:
         source = next(source for source in config["sources"] if source["id"] == driver)
@@ -84,7 +100,86 @@ def container_version(recipe: dict) -> str:
     return software_version(value)
 
 
+def _resolve_apt_driver_source(config: dict) -> dict | None:
+    """Find the APT source driving container_version, whether named by id or variable."""
+    sources = config.get("sources") or []
+    driver = config.get("container_version")
+    if isinstance(driver, str):
+        source = next((s for s in sources if s.get("id") == driver), None)
+        return source if source and source.get("method") == "apt" else None
+    var_name: str | None = None
+    if isinstance(driver, dict) and isinstance(driver.get("variable"), str):
+        var_name = driver["variable"]
+    elif isinstance(config.get("version_variable"), str):
+        var_name = config["version_variable"]
+    if not var_name:
+        return None
+    for source in sources:
+        if source.get("method") != "apt":
+            continue
+        target = source.get("target") or {}
+        if target.get("variable") == var_name or var_name in (
+            target.get("variables") or {}
+        ):
+            return source
+    return None
+
+
+def _apt_peer_upstream_identity(variables: dict, peer: dict) -> str:
+    from .update_observations import debian_upstream_source_version
+
+    target = peer.get("target") or {}
+    if "variable" in target:
+        if target.get("value", "value") != "value":
+            raise ValueError(
+                f"{peer['id']}: apt sources must store the raw package pin (value: value)"
+            )
+        return debian_upstream_source_version(str(variables[target["variable"]]))
+    target_vars = target.get("variables") or {}
+    for var_name, field in target_vars.items():
+        if field == "value":
+            return debian_upstream_source_version(str(variables[var_name]))
+    raise ValueError(f"{peer['id']}: APT peer source requires a raw package pin target")
+
+
+def primary_apt_peer_versions(recipe: dict) -> dict[str, str]:
+    """Return upstream source identities for peer primary APT sources of the same package."""
+    config = recipe.get("auto_update", {})
+    driver = _resolve_apt_driver_source(config)
+    if not driver:
+        return {}
+    sources = config.get("sources") or []
+    package = driver.get("package")
+    peers = [
+        s
+        for s in sources
+        if s.get("method") == "apt"
+        and s.get("package") == package
+        and not s.get("dependency")
+    ]
+    if len(peers) < 2:
+        return {}
+    variables = recipe.get("variables", {})
+    return {peer["id"]: _apt_peer_upstream_identity(variables, peer) for peer in peers}
+
+
+def apt_peer_versions_agree(peers: dict[str, str]) -> bool:
+    """Return True when all peer APT source identities are Debian-version equivalent."""
+    if len(peers) < 2:
+        return True
+    from .update_observations import debian_upstream_equivalence_key
+
+    return len({debian_upstream_equivalence_key(ver) for ver in peers.values()}) <= 1
+
+
 def validate_container_version(recipe: dict) -> None:
+    peers = primary_apt_peer_versions(recipe)
+    if peers and not apt_peer_versions_agree(peers):
+        details = ", ".join(f"{sid}={ver}" for sid, ver in peers.items())
+        raise ValueError(
+            "multi-architecture APT sources for the primary package must share "
+            f"the same software version ({details})"
+        )
     expected = container_version(recipe)
     if str(recipe["version"]) != expected:
         raise ValueError(

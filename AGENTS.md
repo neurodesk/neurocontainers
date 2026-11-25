@@ -6,7 +6,7 @@
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 - make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
 - Declare `domains:` in every recipe. The [apps-catalog](https://github.com/scigetorg/apps-catalog) `domains.json` (https://apps-catalog.scigetorg.workers.dev/domains.json) is the allowed list; a domain-only change updates catalog routing without a container build.
-- these are the available categories: functional imaging, arterial spin labelling, fetal imaging, image reconstruction, spectroscopy, rodent imaging, preclinical imaging, molecular imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
+- these are the available categories: functional imaging, arterial spin labelling, fetal imaging, image reconstruction, spectroscopy, rodent imaging, preclinical imaging, molecular imaging, digital pathology, optical imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
 
 ## Environment Setup
 
@@ -222,7 +222,7 @@ pin_container: true
 
 Recipe validation (`builder/validation.py`) enforces:
 - **Architectures**: Must be `x86_64` or `aarch64`
-- **Categories**: Must match the 29-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
+- **Categories**: Must match the 31-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
 - **Licenses**: Use a single Zenodo/SPDX license ID. SPDX expressions and
   `LicenseRef-` identifiers are rejected. Custom licenses require `name` and
   `url`; `other-open`/`other-closed` also require both. `NOASSERTION`/`NONE`

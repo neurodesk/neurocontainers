@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import re
+import select
+import signal
+import subprocess
+import sys
 
 import pytest
 import yaml
 
 from builder.config import default_config, resolve_recipe
 from builder.dockerfile import render_dockerfile
-from builder.recipe import compile_recipe
+from builder.recipe import _default_template_command, compile_recipe
 
 
 def test_dockerfile_generation_without_neurodocker_dependency() -> None:
@@ -98,3 +104,58 @@ def test_compile_rejects_nested_test_directive(tmp_path: Path) -> None:
     (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
     with pytest.raises(ValueError, match="fulltest.yaml"):
         compile_recipe(recipe_dir, architecture="aarch64")
+
+
+@pytest.mark.parametrize("pkg_manager", ["apt", "yum", ""])
+@pytest.mark.parametrize("shell", ["sh", "bash"])
+def test_bootstrap_startup_script_execs_command_and_receives_sigterm(
+    tmp_path: Path, pkg_manager: str, shell: str
+) -> None:
+    snippet = _default_template_command(pkg_manager)
+    block = re.search(
+        r'if \[ ! -f "\$ND_ENTRYPOINT" \]; then\n(.*?)\nfi', snippet, re.S
+    )
+    assert block is not None, snippet
+    startup = tmp_path / "startup.sh"
+    subprocess.run(
+        ["sh", "-e", "-c", f'ND_ENTRYPOINT="$1"\n{block.group(0)}', "_", str(startup)],
+        check=True,
+    )
+    startup.chmod(0o755)
+    assert 'exec "$@"' in startup.read_text()
+    assert "exec /usr/bin/env bash" in startup.read_text()
+
+    got_sig = tmp_path / "sig"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import os, signal, sys, time\n"
+        "got_sig = sys.argv[1]\n"
+        "def h(signum, _):\n"
+        "    open(got_sig, 'w').write(str(signum))\n"
+        "    raise SystemExit(128 + signum)\n"
+        "signal.signal(signal.SIGTERM, h)\n"
+        "print(os.getpid(), flush=True)\n"
+        "time.sleep(10)\n"
+    )
+    proc = subprocess.Popen(
+        [shell, str(startup), sys.executable, str(child), str(got_sig)],
+        env={**os.environ, "USER": "tester"},
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stdout is not None
+        readable, _, _ = select.select([proc.stdout], [], [], 5.0)
+        assert readable, "child did not report its PID in time"
+        reported_pid = proc.stdout.readline().strip()
+        assert reported_pid and int(reported_pid) == proc.pid
+        proc.send_signal(signal.SIGTERM)
+        rc = proc.wait(timeout=5)
+        assert rc == 128 + signal.SIGTERM.value
+        assert got_sig.read_text().strip() == str(signal.SIGTERM.value)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()

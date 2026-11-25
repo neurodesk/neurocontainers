@@ -1,3 +1,5 @@
+import shutil
+
 import pytest
 import yaml
 
@@ -508,3 +510,419 @@ def test_container_version_driver_cannot_be_a_dependency(tmp_path):
     config["container_version"] = {"variable": "source_commit"}
     with pytest.raises(ValueError, match="must trigger its own updates"):
         validate_sources_config(config)
+
+
+def _make_debian_suffix_apt_recipe(tmp_path, *, version: str, package_version: str):
+    root = tmp_path / "aptdemo"
+    root.mkdir(parents=True, exist_ok=True)
+    recipe = {
+        "name": "aptdemo",
+        "version": version,
+        "variables": {"package_version": package_version},
+        "auto_update": {
+            "method": "sources",
+            "container_version": "pkg",
+            "sources": [
+                {
+                    "id": "pkg",
+                    "method": "apt",
+                    "package": "aptdemo",
+                    "urls": [
+                        "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+                    ],
+                    "target": {
+                        "variable": "package_version",
+                        "fulltest_variable": "package_version",
+                    },
+                }
+            ],
+        },
+        "build": {
+            "base-image": "ubuntu:26.04",
+            "directives": [{"install": ["aptdemo={{ context.package_version }}"]}],
+        },
+    }
+    path = root / "build.yaml"
+    path.write_text(yaml.safe_dump(recipe, sort_keys=False))
+    (root / "fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "aptdemo",
+                "version": version,
+                "package_version": package_version,
+                "tests": [
+                    {
+                        "name": "version",
+                        "command": "dpkg-query -W -f='${Version}\\n' aptdemo",
+                        "expected_output_contains": "${package_version}",
+                    }
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+    return path
+
+
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="requires dpkg")
+def test_apt_planner_strips_stacked_suffixes_and_labels_tilde_git_snapshots(tmp_path):
+    from builder.update_observations import debian_upstream_version
+
+    path = _make_debian_suffix_apt_recipe(
+        tmp_path, version="2.13.2", package_version="2.13.2+ds+git20240821-4"
+    )
+    # Packaging-only rebuild on stacked suffixes keeps the clean OCI label.
+    rebuild = "2.13.2+ds+git20240821-5"
+    plan = plan_sources(
+        path,
+        observations={
+            "pkg": SourceObservation(
+                rebuild,
+                "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz",
+                version=debian_upstream_version(rebuild),
+            )
+        },
+    )
+    assert plan is not None
+    assert plan.next_version == "2.13.2"
+    plan.apply()
+
+    # Pre-release ~git snapshot is newer than 2.13.2+... and gets an OCI-valid label.
+    snapshot = "2.13.3~git20240822+ds-4"
+    plan = plan_sources(
+        path,
+        observations={
+            "pkg": SourceObservation(
+                snapshot,
+                "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz",
+                version=debian_upstream_version(snapshot),
+            )
+        },
+    )
+    assert plan is not None
+    assert plan.next_version == "2.13.3-git20240822"
+    plan.apply()
+
+    # Full dpkg ordering still ranks final 2.13.3-1 newer than 2.13.3~git20240822+ds-4.
+    final = "2.13.3-1"
+    plan = plan_sources(
+        path,
+        observations={
+            "pkg": SourceObservation(
+                final,
+                "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz",
+                version=debian_upstream_version(final),
+            )
+        },
+    )
+    assert plan is not None
+    assert plan.next_version == "2.13.3"
+    plan.apply()
+
+    # And an older ~git snapshot cannot downgrade final 2.13.3-1.
+    downgrade = plan_sources(
+        path,
+        observations={
+            "pkg": SourceObservation(
+                snapshot,
+                "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz",
+                version=debian_upstream_version(snapshot),
+            )
+        },
+    )
+    assert downgrade is None
+
+    # A repack suffix before a ~git prerelease (e.g. 1.0+ds~git20251231-1) also
+    # yields an OCI-valid label with no '+' or '~', and orders below 1.0+ds-1.
+    path2 = _make_debian_suffix_apt_recipe(
+        tmp_path / "repack_tilde",
+        version="0.9.0",
+        package_version="0.9-1",
+    )
+    repack_pre = "1.0+ds~git20251231-1"
+    plan = plan_sources(
+        path2,
+        observations={
+            "pkg": SourceObservation(
+                repack_pre,
+                "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz",
+                version=debian_upstream_version(repack_pre),
+            )
+        },
+    )
+    assert plan is not None
+    assert plan.next_version == "1.0.0-git20251231"
+    plan.apply()
+
+    repack_final = "1.0+ds-1"
+    plan = plan_sources(
+        path2,
+        observations={
+            "pkg": SourceObservation(
+                repack_final,
+                "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz",
+                version=debian_upstream_version(repack_final),
+            )
+        },
+    )
+    assert plan is not None
+    assert plan.next_version == "1.0.0"
+
+
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="requires dpkg")
+def test_multiarch_apt_planner_requires_matching_upstream_versions(tmp_path):
+    from builder.update_observations import debian_upstream_version
+    from builder.versioning import validate_container_version
+
+    root = tmp_path / "multiapt"
+    root.mkdir()
+    amd64_url = "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.gz"
+    arm64_url = "https://ports.ubuntu.com/ubuntu-ports/dists/resolute/universe/binary-arm64/Packages.gz"
+    pin = "2.13.2+git20240821+ds-4"
+    recipe = {
+        "name": "multiapt",
+        "version": "2.13.2",
+        "variables": {
+            "pkg_amd64_version": pin,
+            "pkg_arm64_version": pin,
+            "package_version": {
+                "try": [
+                    {
+                        "value": "{{ context.pkg_amd64_version }}",
+                        "condition": 'arch=="x86_64"',
+                    },
+                    {
+                        "value": "{{ context.pkg_arm64_version }}",
+                        "condition": 'arch=="aarch64"',
+                    },
+                ]
+            },
+        },
+        "auto_update": {
+            "method": "sources",
+            "container_version": "pkg-amd64",
+            "sources": [
+                {
+                    "id": "pkg-amd64",
+                    "method": "apt",
+                    "package": "multiapt",
+                    "urls": [amd64_url],
+                    "target": {
+                        "variable": "pkg_amd64_version",
+                        "fulltest_variable": "pkg_amd64_version",
+                    },
+                },
+                {
+                    "id": "pkg-arm64",
+                    "method": "apt",
+                    "package": "multiapt",
+                    "urls": [arm64_url],
+                    "target": {
+                        "variable": "pkg_arm64_version",
+                        "fulltest_variable": "pkg_arm64_version",
+                    },
+                },
+            ],
+        },
+        "build": {
+            "base-image": "ubuntu:26.04",
+            "directives": [{"install": ["multiapt={{ context.package_version }}"]}],
+        },
+    }
+    path = root / "build.yaml"
+    path.write_text(yaml.safe_dump(recipe, sort_keys=False))
+    (root / "fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "multiapt",
+                "version": "2.13.2",
+                "pkg_amd64_version": pin,
+                "pkg_arm64_version": pin,
+                "tests": [{"name": "ok", "command": "true"}],
+            },
+            sort_keys=False,
+        )
+    )
+
+    def obs(amd64_ver: str, arm64_ver: str):
+        return {
+            "pkg-amd64": SourceObservation(
+                amd64_ver, amd64_url, version=debian_upstream_version(amd64_ver)
+            ),
+            "pkg-arm64": SourceObservation(
+                arm64_ver, arm64_url, version=debian_upstream_version(arm64_ver)
+            ),
+        }
+
+    # Independent amd64-only or arm64-only upstream bump is held back.
+    assert plan_sources(path, observations=obs("2.13.3-1", pin)) is None
+    assert plan_sources(path, observations=obs(pin, "2.13.3-1")) is None
+
+    # Different upstream VCS snapshots under the same release label are also held back.
+    assert plan_sources(path, observations=obs("2.13.2+git20240822+ds-4", pin)) is None
+    assert plan_sources(path, observations=obs(pin, "2.13.2+git20240822+ds-4")) is None
+
+    # Architecture-specific packaging-only revision is still allowed.
+    pkg_only = plan_sources(path, observations=obs("2.13.2+git20240821+ds-5", pin))
+    assert pkg_only is not None
+    assert pkg_only.next_version == "2.13.2"
+    pkg_only.apply()
+
+    # Once both architectures reach 2.13.3 (even with differing packaging revisions),
+    # the shared label advances cleanly.
+    both = plan_sources(path, observations=obs("2.13.3-1", "2.13.3-1build1"))
+    assert both is not None
+    assert both.next_version == "2.13.3"
+    both.apply()
+
+    # Direct validation rejects mismatched release versions AND mismatched VCS snapshots.
+    bad = yaml.safe_load(path.read_text())
+    bad["variables"]["pkg_arm64_version"] = pin
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(bad)
+
+    bad_snap = yaml.safe_load(path.read_text())
+    bad_snap["version"] = "2.13.2"
+    bad_snap["variables"]["pkg_amd64_version"] = "2.13.2+git20240822+ds-4"
+    bad_snap["variables"]["pkg_arm64_version"] = pin
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(bad_snap)
+
+    # Equivalent implicit 0: epoch and native binNMU (+b1) peer versions are accepted.
+    equiv_zero_epoch = plan_sources(path, observations=obs("0:2.14.0-1", "2.14.0-1"))
+    assert equiv_zero_epoch is not None
+    assert equiv_zero_epoch.next_version == "2.14.0"
+    equiv_zero_epoch.apply()
+
+    equiv_binnmu = plan_sources(path, observations=obs("2.15.0+b1", "2.15.0"))
+    assert equiv_binnmu is not None
+    assert equiv_binnmu.next_version == "2.15.0"
+    equiv_binnmu.apply()
+
+    # Variable-backed container_version also enforces peer agreement and normalizes raw pins.
+    var_recipe = yaml.safe_load(path.read_text())
+    var_recipe["auto_update"]["container_version"] = {"variable": "pkg_amd64_version"}
+    var_recipe["variables"]["pkg_amd64_version"] = "2.15.0"
+    var_recipe["variables"]["pkg_arm64_version"] = "2.15.0"
+    path.write_text(yaml.safe_dump(var_recipe, sort_keys=False))
+    var_suite = yaml.safe_load((root / "fulltest.yaml").read_text())
+    var_suite["pkg_amd64_version"] = "2.15.0"
+    var_suite["pkg_arm64_version"] = "2.15.0"
+    (root / "fulltest.yaml").write_text(yaml.safe_dump(var_suite, sort_keys=False))
+    assert plan_sources(path, observations=obs("2.16.0-1", "2.15.0")) is None
+
+    # Packaging-only revision under variable-backed container_version preserves clean label.
+    var_pkg_only = plan_sources(path, observations=obs("2.15.0-1", "2.15.0"))
+    assert var_pkg_only is not None
+    assert var_pkg_only.next_version == "2.15.0"
+    var_pkg_only.apply()
+
+    # Converged pins with 0: epoch normalize to a clean OCI label (never 0.0.0:2.16.0-1).
+    var_converged = plan_sources(path, observations=obs("0:2.16.0-1", "2.16.0-2"))
+    assert var_converged is not None
+    assert var_converged.next_version == "2.16.0"
+    var_converged.apply()
+
+    # Leading-zero Debian-equivalent peer versions (2.017.0-1 vs 2.17.0-1) agree cleanly.
+    var_leading_zero = plan_sources(path, observations=obs("2.017.0-1", "2.17.0-1"))
+    assert var_leading_zero is not None
+    assert var_leading_zero.next_version == "2.017.0"
+
+    # Upstream hyphen mismatch (1.0-0-1 vs 1.0-1 -> upstream 1.0-0 vs 1.0) is rejected.
+    bad_hyphen = yaml.safe_load(path.read_text())
+    bad_hyphen["version"] = "1.0.0-0"
+    bad_hyphen["variables"]["pkg_amd64_version"] = "1.0-0-1"
+    bad_hyphen["variables"]["pkg_arm64_version"] = "1.0-1"
+    with pytest.raises(ValueError, match="multi-architecture APT sources"):
+        validate_container_version(bad_hyphen)
+    assert plan_sources(path, observations=obs("2.18.0-0-1", "2.18.0-1")) is None
+
+    # Lossy normalized primary APT targets (value: version) are rejected by config validation.
+    with pytest.raises(ValueError, match="raw package pin"):
+        validate_sources_config(
+            {
+                "method": "sources",
+                "container_version": "pkg",
+                "sources": [
+                    {
+                        "id": "pkg",
+                        "method": "apt",
+                        "package": "prenorm",
+                        "urls": [amd64_url],
+                        "target": {"variable": "pkg_version", "value": "version"},
+                    }
+                ],
+            }
+        )
+
+    # Raw APT pin + auxiliary version label advances cleanly from ~rc1 to final release,
+    # and rejects colliding ~rc1 vs +rc1 across architectures.
+    aux_root = tmp_path / "auxapt"
+    aux_root.mkdir()
+    aux_recipe = {
+        "name": "auxapt",
+        "version": "2.0.0",
+        "variables": {
+            "amd64_pin": "2.0-1",
+            "arm64_pin": "2.0-1",
+            "amd64_label": "2.0",
+            "arm64_label": "2.0",
+        },
+        "auto_update": {
+            "method": "sources",
+            "container_version": {"variable": "amd64_label"},
+            "sources": [
+                {
+                    "id": "pkg-amd64",
+                    "method": "apt",
+                    "package": "auxapt",
+                    "urls": [amd64_url],
+                    "target": {
+                        "variable": "amd64_pin",
+                        "variables": {"amd64_label": "version"},
+                    },
+                },
+                {
+                    "id": "pkg-arm64",
+                    "method": "apt",
+                    "package": "auxapt",
+                    "urls": [arm64_url],
+                    "target": {
+                        "variable": "arm64_pin",
+                        "variables": {"arm64_label": "version"},
+                    },
+                },
+            ],
+        },
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [
+                {"install": ["auxapt={{ context.amd64_pin }}"]},
+                {"install": ["auxapt={{ context.arm64_pin }}"]},
+            ],
+        },
+    }
+    aux_path = aux_root / "build.yaml"
+    aux_path.write_text(yaml.safe_dump(aux_recipe, sort_keys=False))
+    (aux_root / "fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "auxapt",
+                "version": "2.0.0",
+                "tests": [{"name": "ok", "command": "true"}],
+            },
+            sort_keys=False,
+        )
+    )
+    # Colliding 2.1~rc1-1 vs 2.1+rc1-1 (same label 2.1-rc1) is held back.
+    assert plan_sources(aux_path, observations=obs("2.1~rc1-1", "2.1+rc1-1")) is None
+    # Matching 2.1~rc1-1 advances to 2.1.0-rc1, then final 2.1-1 advances to 2.1.0.
+    rc_plan = plan_sources(aux_path, observations=obs("2.1~rc1-1", "2.1~rc1-1"))
+    assert rc_plan is not None
+    assert rc_plan.next_version == "2.1.0-rc1"
+    rc_plan.apply()
+    final_plan = plan_sources(aux_path, observations=obs("2.1-1", "2.1-1"))
+    assert final_plan is not None
+    assert final_plan.next_version == "2.1.0"

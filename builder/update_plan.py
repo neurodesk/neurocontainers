@@ -14,7 +14,11 @@ from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 from packaging.version import InvalidVersion
 
-from .versioning import container_version
+from .versioning import (
+    apt_peer_versions_agree,
+    container_version,
+    primary_apt_peer_versions,
+)
 
 # These sources pin exact bytes without naming a software version, so they can
 # never drive the container label.
@@ -216,6 +220,10 @@ def validate_sources_config(config: dict) -> None:
         destinations.add(destination)
         if target.get("value", "value") not in {"value", "version", "tag"}:
             raise ValueError(f"{name}: value must select value, version or tag")
+        if source["method"] == "apt" and target.get("value", "value") != "value":
+            raise ValueError(
+                f"{name}: apt sources must store the raw package pin (value: value)"
+            )
         if "variable" in target and key in {"version", "original_version"}:
             raise ValueError("independent sources cannot target the container version")
         if "file" in target and source["method"] not in {
@@ -563,7 +571,9 @@ def plan_sources(
             observed_version = fields.get(field)
             if not isinstance(observed_version, str) or not observed_version:
                 raise ValueError(f"{source['id']}: observation lacks field version")
-            if _is_older(observed_version, str(recipe["variables"][variable])):
+            if source["method"] != "apt" and _is_older(
+                observed_version, str(recipe["variables"][variable])
+            ):
                 metadata_downgrade = True
                 break
         if metadata_downgrade:
@@ -656,8 +666,12 @@ def plan_sources(
         if updated != before_recipe or suite_updated != before_suite:
             urls.append(observation.url)
             triggered = triggered or not (source.get("dependency") or republished)
+    staged_recipe = yaml.safe_load(updated)
+    peers = primary_apt_peer_versions(staged_recipe)
+    if peers and not apt_peer_versions_agree(peers):
+        return None
     current_version = str(recipe["version"])
-    next_version = container_version(yaml.safe_load(updated))
+    next_version = container_version(staged_recipe)
     if current_version != next_version:
         updated = rewrite_scalar(updated, ("version",), next_version)
     suite = yaml.safe_load(suite_updated)

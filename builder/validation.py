@@ -46,6 +46,8 @@ CATEGORIES = [
     "rodent imaging",
     "preclinical imaging",
     "molecular imaging",
+    "digital pathology",
+    "optical imaging",
     "data organisation",
     "diffusion imaging",
     "structural imaging",
