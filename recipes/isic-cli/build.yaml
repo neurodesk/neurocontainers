@@ -83,7 +83,7 @@ files:
           if not needed:
               os.execve(cmd[0], cmd, env)
 
-          tmp_root = tempfile.mkdtemp(prefix="isic-cli.")
+          tmp_root: str | None = None
           proc: subprocess.Popen[bytes] | None = None
           received_signal: int | None = None
           pending_signal: int | None = None
@@ -97,6 +97,15 @@ files:
                   proc.send_signal(signum)
 
           try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="isic-cli.")
               for key, subdir in (
                   ("XDG_DATA_HOME", "data"),
                   ("XDG_CACHE_HOME", "cache"),
@@ -106,9 +115,6 @@ files:
                       path = os.path.join(tmp_root, subdir)
                       os.mkdir(path, 0o700)
                       env[key] = path
-
-              signal.signal(signal.SIGINT, handle_signal)
-              signal.signal(signal.SIGTERM, handle_signal)
               if received_signal is not None:
                   return 128 + received_signal
               proc = subprocess.Popen(cmd, env=env)
@@ -125,7 +131,8 @@ files:
                   return 128 + received_signal
               return 128 - rc if rc < 0 else rc
           finally:
-              shutil.rmtree(tmp_root, ignore_errors=True)
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
 
 
       if __name__ == "__main__":

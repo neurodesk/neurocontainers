@@ -163,7 +163,7 @@ files:
       def main() -> int:
           target = "/opt/bioformats2raw/app/bin/bioformats2raw"
           cmd = [target, *sys.argv[1:]]
-          tmp_root = tempfile.mkdtemp(prefix="bioformats2raw.")
+          tmp_root: str | None = None
           proc: subprocess.Popen[bytes] | None = None
           received_signal: int | None = None
           pending_signal: int | None = None
@@ -218,7 +218,7 @@ files:
               if proc is not None and proc.returncode is None:
                   try:
                       os.killpg(proc.pid, signum)
-                      if signum in (signal.SIGINT, signal.SIGTERM):
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                           os.killpg(proc.pid, signal.SIGCONT)
                   except ProcessLookupError:
                       pass
@@ -253,6 +253,17 @@ files:
                   signal.signal(signal.SIGTSTP, prev_tstp)
 
           try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="bioformats2raw.")
               env = os.environ.copy()
               java_home_dir = os.path.join(tmp_root, "home")
               java_tmp_dir = os.path.join(tmp_root, "tmp")
@@ -271,11 +282,6 @@ files:
               if not env.get("XDG_CACHE_HOME"):
                   env["XDG_CACHE_HOME"] = os.path.join(tmp_root, "cache")
                   os.mkdir(env["XDG_CACHE_HOME"], 0o700)
-
-              signal.signal(signal.SIGINT, handle_signal)
-              signal.signal(signal.SIGTERM, handle_signal)
-              signal.signal(signal.SIGCONT, handle_cont)
-              signal.signal(signal.SIGTSTP, handle_tstp)
               if received_signal is not None:
                   return 128 + received_signal
 
@@ -370,7 +376,8 @@ files:
                       os.close(tty_fd)
                   except OSError:
                       pass
-              shutil.rmtree(tmp_root, ignore_errors=True)
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
 
 
       if __name__ == "__main__":

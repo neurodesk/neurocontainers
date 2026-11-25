@@ -79,7 +79,7 @@ tests:
           stub = os.path.join(td, "stub.py")
           open(stub, "w").write(
               "#!/opt/instanseg/bin/python\n"
-              "import signal, sys, time\n"
+              "import os, signal, sys, time\n"
               "if sys.argv[1] == 'stdin':\n"
               "    print('GOT:' + sys.stdin.readline().strip(), flush=True)\n"
               "    raise SystemExit(0)\n"
@@ -89,7 +89,8 @@ tests:
               "    seen.append(sig)\n"
               "    open(log, 'a').write(f'{sig}\\n')\n"
               "signal.signal(signal.SIGINT, h)\n"
-              "open(ready, 'w').write('ready\\n')\n"
+              "signal.signal(signal.SIGHUP, h)\n"
+              "open(ready, 'w').write(os.environ.get('XDG_CACHE_HOME', '') + '\\n')\n"
               "deadline = time.time() + 5.0\n"
               "while not seen and time.time() < deadline:\n"
               "    time.sleep(0.02)\n"
@@ -136,7 +137,22 @@ tests:
           sigs = [int(x) for x in open(log).read().splitlines() if x.strip()]
           assert rc == 130 and sigs == [signal.SIGINT.value], (rc, sigs)
 
-          # 5. Interactive Bash Ctrl-Z returns shell prompt and fg resumes child
+          # 5. SIGHUP forwards to child process group and cleans up scratch dir
+          log_hup, ready_hup = os.path.join(td, "hup.log"), os.path.join(td, "hup.ready")
+          p_hup = subprocess.Popen([wrapper, "sig", log_hup, ready_hup], env=env, start_new_session=True)
+          deadline = time.time() + 5.0
+          while not os.path.exists(ready_hup) and time.time() < deadline:
+              time.sleep(0.02)
+          assert os.path.exists(ready_hup), "hup stub did not become ready"
+          scratch_cache = open(ready_hup).read().strip()
+          assert scratch_cache and os.path.isdir(scratch_cache), scratch_cache
+          os.kill(p_hup.pid, signal.SIGHUP)
+          rc_hup = p_hup.wait(timeout=10)
+          sigs_hup = [int(x) for x in open(log_hup).read().splitlines() if x.strip()]
+          assert rc_hup == 128 + signal.SIGHUP.value and sigs_hup == [signal.SIGHUP.value], (rc_hup, sigs_hup)
+          assert not os.path.exists(os.path.dirname(scratch_cache)), f"scratch dir leaked on SIGHUP: {scratch_cache}"
+
+          # 6. Interactive Bash Ctrl-Z returns shell prompt and fg resumes child
           ready_z = os.path.join(td, "tstp.ready")
           stub_z = os.path.join(td, "stub_z.py")
           open(stub_z, "w").write(

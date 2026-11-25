@@ -120,7 +120,7 @@ files:
           if env_std:
               os.execv(target, [target, "--standard-path", env_std, *argv])
 
-          tmp_std = tempfile.mkdtemp(prefix="dicom-validator.")
+          tmp_std: str | None = None
           proc: subprocess.Popen[bytes] | None = None
           received_signal: int | None = None
           pending_signal: int | None = None
@@ -134,8 +134,15 @@ files:
                   proc.send_signal(signum)
 
           try:
+              # Install signal handlers BEFORE creating tmp_std so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
               signal.signal(signal.SIGINT, handle_signal)
               signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_std = tempfile.mkdtemp(prefix="dicom-validator.")
               if received_signal is not None:
                   return 128 + received_signal
               proc = subprocess.Popen([target, "--standard-path", tmp_std, *argv])
@@ -152,7 +159,8 @@ files:
                   return 128 + received_signal
               return 128 - rc if rc < 0 else rc
           finally:
-              shutil.rmtree(tmp_std, ignore_errors=True)
+              if tmp_std is not None:
+                  shutil.rmtree(tmp_std, ignore_errors=True)
 
 
       if __name__ == "__main__":
@@ -194,7 +202,7 @@ files:
           if env_std:
               os.execv(target, [target, "--standard-path", env_std, *argv])
 
-          tmp_std = tempfile.mkdtemp(prefix="dicom-validator.")
+          tmp_std: str | None = None
           proc: subprocess.Popen[bytes] | None = None
           received_signal: int | None = None
           pending_signal: int | None = None
@@ -208,8 +216,15 @@ files:
                   proc.send_signal(signum)
 
           try:
+              # Install signal handlers BEFORE creating tmp_std so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
               signal.signal(signal.SIGINT, handle_signal)
               signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_std = tempfile.mkdtemp(prefix="dicom-validator.")
               if received_signal is not None:
                   return 128 + received_signal
               proc = subprocess.Popen([target, "--standard-path", tmp_std, *argv])
@@ -226,7 +241,8 @@ files:
                   return 128 + received_signal
               return 128 - rc if rc < 0 else rc
           finally:
-              shutil.rmtree(tmp_std, ignore_errors=True)
+              if tmp_std is not None:
+                  shutil.rmtree(tmp_std, ignore_errors=True)
 
 
       if __name__ == "__main__":

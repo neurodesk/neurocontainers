@@ -117,7 +117,7 @@ files:
           if not missing:
               os.execve(cmd[0], cmd, env)
 
-          tmp_root = tempfile.mkdtemp(prefix="instanseg.")
+          tmp_root: str | None = None
           proc: subprocess.Popen[bytes] | None = None
           received_signal: int | None = None
           pending_signal: int | None = None
@@ -172,7 +172,7 @@ files:
               if proc is not None and proc.returncode is None:
                   try:
                       os.killpg(proc.pid, signum)
-                      if signum in (signal.SIGINT, signal.SIGTERM):
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                           os.killpg(proc.pid, signal.SIGCONT)
                   except ProcessLookupError:
                       pass
@@ -207,15 +207,21 @@ files:
                   signal.signal(signal.SIGTSTP, prev_tstp)
 
           try:
+              # Install signal handlers BEFORE creating tmp_root so an early
+              # SIGHUP/SIGINT/SIGTERM can never terminate the wrapper and leak scratch.
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              tmp_root = tempfile.mkdtemp(prefix="instanseg.")
               for key, subdir in missing:
                   path = os.path.join(tmp_root, subdir)
                   os.mkdir(path, 0o700)
                   env[key] = path
-
-              signal.signal(signal.SIGINT, handle_signal)
-              signal.signal(signal.SIGTERM, handle_signal)
-              signal.signal(signal.SIGCONT, handle_cont)
-              signal.signal(signal.SIGTSTP, handle_tstp)
               if received_signal is not None:
                   return 128 + received_signal
 
@@ -310,7 +316,8 @@ files:
                       os.close(tty_fd)
                   except OSError:
                       pass
-              shutil.rmtree(tmp_root, ignore_errors=True)
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
 
 
       if __name__ == "__main__":
@@ -357,7 +364,9 @@ readme: |-
   `INSTANSEG_BIOIMAGEIO_PATH` (and optionally `TORCH_HOME`) to a writable,
   persistent directory to cache downloaded BioImage.IO models across sessions;
   otherwise the wrapper creates an atomic private (`0700`) temporary directory
-  so runs work cleanly on read-only containers without `/home`.
+  so runs work cleanly on read-only containers without `/home`. Note that
+  downloaded BioImage.IO models carry their own license terms separate from the
+  Apache-2.0 InstanSeg package.
 
   Documentation: https://github.com/instanseg/instanseg
   License notices and corresponding LGPL-3.0 source for `fastremap` are
