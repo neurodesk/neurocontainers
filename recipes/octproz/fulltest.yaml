@@ -9,14 +9,16 @@ tests:
       set -euo pipefail
       bin="/opt/octproz-${upstream_version}/lib/OCTproZ"
       [ -x "$bin" ] || { echo "missing binary: $bin"; exit 1; }
+      ldd_out=$(ldd "$bin")
       for lib in libcufft.so libcudart.so libQt5Core.so libQt5Gui.so libQt5Widgets.so libQt5PrintSupport.so libGL.so libGLU.so; do
-        ldd "$bin" | grep -q "$lib[^ ]* => /" || { echo "unresolved $lib"; exit 1; }
+        grep -q "$lib[^ ]* => /" <<< "$ldd_out" || { echo "unresolved $lib"; echo "$ldd_out"; exit 1; }
       done
-      missing=$(ldd "$bin" | awk '/not found/ && $1 != "libcuda.so.1" {print $1}')
+      missing=$(awk '/not found/ && $1 != "libcuda.so.1" {print $1}' <<< "$ldd_out")
       [ -z "$missing" ] || { echo "missing: $missing"; exit 1; }
       for plugin in /opt/octproz-${upstream_version}/lib/plugins/*.so; do
         [ -f "$plugin" ] || { echo "no plugins found"; exit 1; }
-        pmissing=$(ldd "$plugin" | awk '/not found/ && $1 != "libcuda.so.1" {print $1}')
+        pldd_out=$(ldd "$plugin")
+        pmissing=$(awk '/not found/ && $1 != "libcuda.so.1" {print $1}' <<< "$pldd_out")
         [ -z "$pmissing" ] || { echo "missing in $plugin: $pmissing"; exit 1; }
       done
       echo "runtime libraries resolve"
@@ -29,9 +31,10 @@ tests:
       bin="/opt/octproz-${upstream_version}/lib/OCTproZ"
       elf=$(cuobjdump --list-elf "$bin")
       for arch in 52 60 61 70 75 80 86 87 89 90 100 120; do
-        echo "$elf" | grep -q "\.sm_$arch\.cubin" || { echo "no sm_$arch kernels"; exit 1; }
+        grep -q "\.sm_$arch\.cubin" <<< "$elf" || { echo "no sm_$arch kernels"; exit 1; }
       done
-      cuobjdump --list-ptx "$bin" | grep -q '\.sm_120\.ptx' || { echo "no PTX"; exit 1; }
+      ptx=$(cuobjdump --list-ptx "$bin")
+      grep -q '\.sm_120\.ptx' <<< "$ptx" || { echo "no PTX"; exit 1; }
       echo "kernels for sm_52 to sm_120 and PTX present"
     expected_output_contains: kernels for sm_52 to sm_120 and PTX present
 
@@ -61,10 +64,10 @@ tests:
       set +e
       HOME=/sys TMPDIR="$tmp_before" LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$stub" \
         LIBGL_ALWAYS_SOFTWARE=1 \
-        timeout --signal=TERM 5s xvfb-run -a OCTproZ >"$out_log" 2>&1
+        xvfb-run -a timeout --signal=TERM 3s OCTproZ >"$out_log" 2>&1
       rc=$?
       set -e
-      # 124 = timeout fired SIGTERM after running cleanly for 5s; 143 = exited on SIGTERM.
+      # 124 = timeout fired SIGTERM after running cleanly for 3s; 143 = exited on SIGTERM.
       if [ "$rc" -ne 124 ] && [ "$rc" -ne 143 ] && [ "$rc" -ne 0 ]; then
         cat "$out_log"
         echo "unexpected exit code: $rc"
