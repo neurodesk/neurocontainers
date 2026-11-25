@@ -1,0 +1,732 @@
+name: lazyslide
+version: 0.13.0
+
+description: Accessible whole-slide image (WSI) analysis toolkit (tissue detection, tiling, SpatialData/WSIData integration; CPU PyTorch, code-only without baked foundation-model weights) for computational dermatopathology.
+
+copyright:
+  - license: MIT
+    name: LazySlide license
+    url: https://github.com/rendeirolab/lazyslide/blob/v{{ context.upstream_version }}/LICENSE
+  - license: Apache-2.0
+    name: OpenCV license
+    url: https://github.com/opencv/opencv/blob/{{ context.opencv_version }}/LICENSE
+  - license: BSD-3-Clause
+    name: PyTorch license
+    url: https://github.com/pytorch/pytorch/blob/v{{ context.torch_version }}/LICENSE
+  - license: LGPL-2.1-only
+    name: OpenSlide binary distribution license
+    url: https://github.com/openslide/openslide-bin/blob/v{{ context.openslide_bin_version }}/COPYING.LESSER
+  - license: LGPL-2.1-only
+    name: OpenSlide Python license
+    url: https://github.com/openslide/openslide-python/blob/v{{ context.openslide_python_version }}/COPYING.LESSER
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  upstream_version: "0.13.0"
+  torch_version: "2.15.0"
+  torchvision_version: "0.29.1"
+  openslide_bin_version: "4.0.1.2"
+  openslide_bin_source_sha256: "83c9a4a598f3a5fe1dea83e123745e48b94ce7eab99833f04902bdf4fa0af1db"
+  openslide_python_version: "1.4.7"
+  openslide_python_source_sha256: "730fed798de683b00c8ef4d956f3d429cc02f2c449eb0d58944e1769ba7983cc"
+  opencv_version: "4.14.0"
+  opencv_source_sha256: "ee8fb9b30eb60850431b4656447080e3737b56e45719c92b67f245950609f86e"
+
+auto_update:
+  method: sources
+  container_version: lazyslide
+  sources:
+    - id: lazyslide
+      method: pypi
+      package: lazyslide
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: torch_cpu
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torch/
+      version_regex: 'torch-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\+|%2B)cpu-cp312-cp312-manylinux[^"]*x86_64\.whl'
+      dependency: true
+      target:
+        variable: torch_version
+    - id: torchvision_cpu
+      method: webpage
+      url: https://download.pytorch.org/whl/cpu/torchvision/
+      version_regex: 'torchvision-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\+|%2B)cpu-cp312-cp312-manylinux[^"]*x86_64\.whl'
+      dependency: true
+      target:
+        variable: torchvision_version
+    - id: openslide_bin
+      method: pypi
+      package: openslide-bin
+      dependency: true
+      target:
+        variable: openslide_bin_version
+    - id: openslide_bin_source_digest
+      method: http_digest
+      url: https://github.com/openslide/openslide-bin/releases/download/v{{ context.openslide_bin_version }}/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+      target:
+        variable: openslide_bin_source_sha256
+    - id: openslide_python
+      method: pypi
+      package: openslide-python
+      dependency: true
+      target:
+        variable: openslide_python_version
+    - id: openslide_python_source_digest
+      method: http_digest
+      url: https://files.pythonhosted.org/packages/source/o/openslide_python/openslide_python-{{ context.openslide_python_version }}.tar.gz
+      target:
+        variable: openslide_python_source_sha256
+    - id: opencv
+      method: github_release
+      repo: opencv/opencv
+      version_regex: '^(?P<version>4\.[0-9.]+)$'
+      dependency: true
+      target:
+        variable: opencv_version
+    - id: opencv_source_digest
+      method: http_digest
+      url: https://github.com/opencv/opencv/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+      target:
+        variable: opencv_source_sha256
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MPLBACKEND: Agg
+        PIP_NO_CACHE_DIR: "1"
+        HF_HUB_DISABLE_TELEMETRY: "1"
+        PATH: /opt/lazyslide/wrappers:/opt/lazyslide/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - cmake
+        - g++
+        - libgdal-dev
+        - libgdal34t64
+        - libgeos-c1t64
+        - libgeos-dev
+        - libgfortran5
+        - libgomp1
+        - libjpeg-turbo8
+        - libjpeg-turbo8-dev
+        - libpng-dev
+        - libpng16-16t64
+        - libtiff-dev
+        - libtiff6
+        - ninja-build
+        - patchelf
+        - python3
+        - python3-dev
+        - python3-pip
+        - python3-venv
+        - zlib1g
+        - zlib1g-dev
+
+    - install:
+        - libquadmath0
+      condition: arch == "x86_64"
+
+    - run:
+        # Install CPU-only PyTorch + NumPy 2.x first, build minimal headless OpenCV
+        # without FFmpeg/Qt/bundled GNU libs against Ubuntu system image codecs,
+        # then install LazySlide and OpenSlide (with corresponding LGPL-2.1 sources).
+        - python3 -m venv /opt/lazyslide
+        - >-
+          /opt/lazyslide/bin/python -m pip install --no-cache-dir
+          --index-url https://download.pytorch.org/whl/cpu
+          "torch=={{ context.torch_version }}+cpu"
+          "torchvision=={{ context.torchvision_version }}+cpu"
+        - /opt/lazyslide/bin/python -m pip install --no-cache-dir "numpy>=2.0.0"
+        # Build minimal headless OpenCV (no FFmpeg/Qt/GUI) directly into /opt/lazyslide
+        # so zero PyPI FFmpeg/GNU shared libraries ship while cv2 matches NumPy 2.x ABI.
+        - >-
+          mkdir -p /tmp/opencv-src /tmp/opencv-build
+          && tar -xzf {{ get_file("opencv_source") }} --strip-components=1 -C /tmp/opencv-src
+          && site_dir="$(/opt/lazyslide/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+          && numpy_inc="$(/opt/lazyslide/bin/python -c 'import numpy; print(numpy.get_include())')"
+          && cmake -S /tmp/opencv-src -B /tmp/opencv-build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=/opt/lazyslide/opencv
+          -DBUILD_SHARED_LIBS=OFF
+          -DBUILD_LIST=core,imgproc,imgcodecs,calib3d,features2d,flann,photo,python3
+          -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOCS=OFF
+          -DBUILD_opencv_apps=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_python2=OFF
+          -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF -DWITH_V4L=OFF -DWITH_GTK=OFF -DWITH_QT=OFF
+          -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_TBB=OFF
+          -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF -DWITH_OPENJPEG=OFF -DWITH_WEBP=OFF -DWITH_ADE=OFF
+          -DWITH_PNG=ON -DWITH_JPEG=ON -DWITH_TIFF=ON
+          -DBUILD_PNG=OFF -DBUILD_JPEG=OFF -DBUILD_TIFF=OFF -DBUILD_ZLIB=OFF
+          -DOPENCV_GENERATE_PKGCONFIG=OFF
+          -DPYTHON3_EXECUTABLE=/opt/lazyslide/bin/python
+          -DPYTHON3_NUMPY_INCLUDE_DIRS="$numpy_inc"
+          -DOPENCV_PYTHON3_INSTALL_PATH="$site_dir"
+          && cmake --build /tmp/opencv-build --target opencv_python3 -j"$(nproc)"
+          && cmake --install /tmp/opencv-build --component python
+          && mkdir -p "$site_dir/opencv_python_headless-{{ context.opencv_version }}.dist-info" /opt/lazyslide/share/licenses
+          && install -m 0644 /tmp/opencv-src/LICENSE "$site_dir/opencv_python_headless-{{ context.opencv_version }}.dist-info/LICENSE"
+          && install -m 0644 /tmp/opencv-src/LICENSE /opt/lazyslide/share/licenses/OPENCV-LICENSE.txt
+          && printf 'Metadata-Version: 2.1\nName: opencv-python-headless\nVersion: {{ context.opencv_version }}\nLicense: Apache-2.0\n' > "$site_dir/opencv_python_headless-{{ context.opencv_version }}.dist-info/METADATA"
+          && printf 'pip\n' > "$site_dir/opencv_python_headless-{{ context.opencv_version }}.dist-info/INSTALLER"
+          && rm -rf /tmp/opencv-src /tmp/opencv-build
+        # Build shapely and pyogrio from source against Ubuntu system libgeos/libgdal
+        # so zero bundled LGPL libgeos/libgdal wheel copies ship under /opt/lazyslide.
+        - >-
+          /opt/lazyslide/bin/python -m pip install --no-cache-dir --no-binary shapely,pyogrio
+          "shapely>=2.0.1"
+          "pyogrio>=0.7.2"
+        - >-
+          /opt/lazyslide/bin/python -m pip install --no-cache-dir
+          "openslide-bin=={{ context.openslide_bin_version }}"
+          "openslide-python=={{ context.openslide_python_version }}"
+          "lazyslide=={{ context.upstream_version }}"
+        - /opt/lazyslide/bin/python -m pip check
+        # Relink bundled GNU runtime libs (libgomp/libgfortran/libquadmath) against Ubuntu system libs.
+        - >-
+          arch="$(uname -m)"
+          && rm -f /opt/lazyslide/lib/python*/site-packages/torch/lib/libgomp.so.1 /opt/lazyslide/lib/python*/site-packages/torch/lib/libgfortran.so.5
+          && for f in $(find /opt/lazyslide/lib/python*/site-packages -name '*.so*' 2>/dev/null); do
+          for need in $(patchelf --print-needed "$f" 2>/dev/null | grep -E '^lib(gomp|gfortran|quadmath)-' || true); do
+          case "$need" in
+          libgomp-*) target=libgomp.so.1 ;;
+          libgfortran-*) target=libgfortran.so.5 ;;
+          libquadmath-*) [ "$arch" = "x86_64" ] && target=libquadmath.so.0 || continue ;;
+          *) continue ;;
+          esac;
+          patchelf --replace-needed "$need" "$target" "$f";
+          done;
+          done
+          && find /opt/lazyslide/lib/python*/site-packages -type f \( -name 'libgomp*.so*' -o -name 'libgfortran*.so*' -o -name 'libquadmath*.so*' \) -delete
+        - /opt/lazyslide/bin/python {{ get_file("install_runtime_hook") }}
+        - >-
+          /opt/lazyslide/bin/python -c "import importlib.metadata as md, pathlib, cv2, lazyslide, openslide, pyogrio, shapely, spatialdata, torch, torchvision, wsidata;
+          assert md.version('lazyslide') == '{{ context.upstream_version }}', md.version('lazyslide');
+          bad_libs = [str(p) for p in pathlib.Path('/opt/lazyslide').rglob('*.so*') if p.name.startswith(('libquadmath', 'libgfortran', 'libgomp', 'libgeos', 'libgdal', 'libavcodec', 'libavformat', 'libavutil', 'libswscale', 'libswresample'))];
+          assert not bad_libs, bad_libs;
+          bad_pkgs = [d.metadata.get('Name', '') for d in md.distributions() if (d.metadata.get('Name') or '').lower().startswith(('nvidia-', 'cuda-'))];
+          assert not bad_pkgs, bad_pkgs;
+          weights = [str(p) for p in pathlib.Path('/opt/lazyslide').rglob('*') if p.is_file() and p.suffix.lower() in ('.pth', '.pt', '.ckpt', '.onnx', '.safetensors', '.bin') and p.stat().st_size > 1_000_000];
+          assert not weights, weights"
+        - mkdir -p /opt/lazyslide/wrappers /opt/lazyslide/share/licenses/openslide-bin /opt/lazyslide/share/src
+        - install -m 0755 {{ get_file("lazyslide_info") }} /opt/lazyslide/bin/lazyslide-info
+        - install -m 0755 {{ get_file("lazyslide_launcher") }} /opt/lazyslide/wrappers/lazyslide-info
+        - install -m 0644 {{ get_file("lazyslide_license") }} /opt/lazyslide/share/licenses/LAZYSLIDE-LICENSE.txt
+        - install -m 0644 {{ get_file("array_api_compat_license") }} /opt/lazyslide/share/licenses/ARRAY-API-COMPAT-LICENSE.txt
+        - install -m 0644 {{ get_file("pims_license") }} /opt/lazyslide/share/licenses/PIMS-LICENSE.txt
+        - install -m 0644 {{ get_file("tokenizers_license") }} /opt/lazyslide/share/licenses/TOKENIZERS-LICENSE.txt
+        - install -m 0644 {{ get_file("transformnd_license") }} /opt/lazyslide/share/licenses/TRANSFORMND-LICENSE.txt
+        - cp -a /opt/lazyslide/lib/python*/site-packages/openslide_bin-{{ context.openslide_bin_version }}.dist-info/licenses/. /opt/lazyslide/share/licenses/openslide-bin/
+        - install -m 0644 /opt/lazyslide/lib/python*/site-packages/openslide_python-{{ context.openslide_python_version }}.dist-info/licenses/COPYING.LESSER /opt/lazyslide/share/licenses/OPENSLIDE-PYTHON-COPYING.LESSER
+        - install -m 0644 {{ get_file("openslide_bin_source") }} /opt/lazyslide/share/src/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+        - install -m 0644 {{ get_file("openslide_python_source") }} /opt/lazyslide/share/src/openslide_python-{{ context.openslide_python_version }}.tar.gz
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'if [ -z "${USER:-}" ]; then export USER="$(whoami 2>/dev/null || echo "uid$(id -u)")"; fi' 'if [ -n "${1:-}" ]; then exec "$@"; else exec /usr/bin/env bash; fi' > /neurodocker/startup.sh && chmod 0755 /neurodocker/startup.sh
+        - chmod -R a+rX /opt/lazyslide
+        - rm -rf /root/.cache/pip
+
+files:
+  - name: lazyslide_license
+    url: https://raw.githubusercontent.com/rendeirolab/lazyslide/v{{ context.upstream_version }}/LICENSE
+  - name: array_api_compat_license
+    url: https://raw.githubusercontent.com/data-apis/array-api-compat/1.16/LICENSE
+  - name: pims_license
+    url: https://raw.githubusercontent.com/soft-matter/pims/v0.7/license.txt
+  - name: tokenizers_license
+    url: https://raw.githubusercontent.com/huggingface/tokenizers/v0.23.3/LICENSE
+  - name: transformnd_license
+    url: https://raw.githubusercontent.com/clbarnes/transformnd/v0.9.2/LICENSE
+  - name: opencv_source
+    url: https://github.com/opencv/opencv/archive/refs/tags/{{ context.opencv_version }}.tar.gz
+    sha256: "{{ context.opencv_source_sha256 }}"
+  - name: openslide_bin_source
+    url: https://github.com/openslide/openslide-bin/releases/download/v{{ context.openslide_bin_version }}/openslide-bin-{{ context.openslide_bin_version }}.tar.gz
+    sha256: "{{ context.openslide_bin_source_sha256 }}"
+  - name: openslide_python_source
+    url: https://files.pythonhosted.org/packages/source/o/openslide_python/openslide_python-{{ context.openslide_python_version }}.tar.gz
+    sha256: "{{ context.openslide_python_source_sha256 }}"
+  - name: install_runtime_hook
+    contents: |
+      from __future__ import annotations
+
+      import pathlib
+      import textwrap
+
+      matches = sorted(pathlib.Path("/opt/lazyslide/lib").glob("python*/site-packages"))
+      assert len(matches) == 1, matches
+      site_packages = matches[0]
+      (site_packages / "_lazyslide_runtime.py").write_text(
+          textwrap.dedent(
+              '''\
+              """Container runtime defaults for LazySlide/PyTorch/Numba/HF caches, PID 1 signals, and unlisted UIDs."""
+
+              from __future__ import annotations
+
+              import atexit
+              import errno
+              import getpass
+              import os
+              import shutil
+              import signal
+              import tempfile
+              from pathlib import Path
+
+              _CACHE_ROOT: Path | None = None
+              _CACHE_OWNER_PID: int | None = None
+              _CLEANUP_REGISTERED = False
+
+
+              def is_writable_dir(path_str: str | None) -> bool:
+                  if not path_str:
+                      return False
+                  blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                  prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                  try:
+                      os.makedirs(path_str, exist_ok=True)
+                      if hasattr(os, "O_TMPFILE"):
+                          try:
+                              fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                              os.close(fd)
+                              return True
+                          except OSError as exc:
+                              if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                                  return False
+                      fd, probe = tempfile.mkstemp(prefix=".lazyslide-write-check-", dir=path_str)
+                      try:
+                          os.close(fd)
+                      finally:
+                          os.unlink(probe)
+                      return True
+                  except OSError:
+                      return False
+                  finally:
+                      signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+              def _cleanup_cache() -> None:
+                  if _CACHE_ROOT is not None and _CACHE_OWNER_PID == os.getpid():
+                      shutil.rmtree(_CACHE_ROOT, ignore_errors=True)
+
+
+              def _signal_cleanup(signum: int, _frame: object) -> None:
+                  _cleanup_cache()
+                  if os.getpid() == 1:
+                      os._exit(128 + signum)
+                  signal.signal(signum, signal.SIG_DFL)
+                  os.kill(os.getpid(), signum)
+
+
+              def _install_signal_handlers() -> None:
+                  try:
+                      for sig in (signal.SIGTERM, signal.SIGHUP):
+                          if signal.getsignal(sig) == signal.SIG_DFL:
+                              signal.signal(sig, _signal_cleanup)
+                  except ValueError:
+                      pass
+
+
+              def _private_subdir(sub: str) -> Path:
+                  global _CACHE_ROOT, _CACHE_OWNER_PID, _CLEANUP_REGISTERED
+                  if _CACHE_ROOT is None or _CACHE_OWNER_PID != os.getpid():
+                      blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+                      prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+                      try:
+                          _CACHE_ROOT = Path(tempfile.mkdtemp(prefix="lazyslide-cache."))
+                          _CACHE_OWNER_PID = os.getpid()
+                          if not _CLEANUP_REGISTERED:
+                              atexit.register(_cleanup_cache)
+                              _CLEANUP_REGISTERED = True
+                          _install_signal_handlers()
+                      finally:
+                          signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+                  subdir = _CACHE_ROOT / sub
+                  subdir.mkdir(mode=0o700, exist_ok=True)
+                  return subdir
+
+
+              def ensure_runtime_env() -> None:
+                  try:
+                      getpass.getuser()
+                  except Exception:
+                      os.environ["USER"] = f"uid{os.getuid()}"
+
+                  for key, sub in (
+                      ("TORCH_HOME", "torch"),
+                      ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+                      ("HF_HOME", "hf"),
+                      ("NUMBA_CACHE_DIR", "numba"),
+                      ("MPLCONFIGDIR", "mpl"),
+                      ("XDG_CACHE_HOME", "cache"),
+                      ("XDG_CONFIG_HOME", "config"),
+                  ):
+                      if not is_writable_dir(os.environ.get(key)):
+                          os.environ[key] = str(_private_subdir(sub))
+
+                  if not os.environ.get("HOME"):
+                      os.environ["HOME"] = str(_private_subdir("home"))
+
+                  if os.getpid() == 1:
+                      _install_signal_handlers()
+              '''
+          ),
+          encoding="utf-8",
+      )
+      (site_packages / "zzz_lazyslide_runtime.pth").write_text(
+          "import _lazyslide_runtime; _lazyslide_runtime.ensure_runtime_env()\n",
+          encoding="utf-8",
+      )
+  - name: lazyslide_info
+    contents: |
+      #!/opt/lazyslide/bin/python
+      from __future__ import annotations
+
+      import argparse
+      import importlib.metadata as md
+
+
+      def main() -> int:
+          parser = argparse.ArgumentParser(
+              prog="lazyslide-info",
+              description="Report installed LazySlide, WSIData, OpenSlide, and PyTorch versions.",
+          )
+          parser.add_argument("--version", action="store_true", help="Print LazySlide version only")
+          args = parser.parse_args()
+          ver = md.version("lazyslide")
+          if args.version:
+              print(ver)
+              return 0
+          import cv2
+          import openslide
+          import torch
+          import wsidata
+
+          print(f"lazyslide {ver}")
+          print(f"wsidata {md.version('wsidata')}")
+          print(f"spatialdata {md.version('spatialdata')}")
+          print(f"openslide {openslide.__library_version__} (python {openslide.__version__})")
+          print(f"opencv {cv2.__version__}")
+          print(f"torch {torch.__version__}")
+          return 0
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+  - name: lazyslide_launcher
+    contents: |
+      #!/usr/bin/python3
+      from __future__ import annotations
+
+      import errno
+      import getpass
+      import os
+      import shutil
+      import signal
+      import subprocess
+      import sys
+      import tempfile
+
+      ENV_SUBDIRS = (
+          ("TORCH_HOME", "torch"),
+          ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+          ("HF_HOME", "hf"),
+          ("NUMBA_CACHE_DIR", "numba"),
+          ("MPLCONFIGDIR", "mpl"),
+          ("XDG_CACHE_HOME", "cache"),
+          ("XDG_CONFIG_HOME", "config"),
+      )
+
+
+      def _is_writable_dir(path_str: str | None) -> bool:
+          if not path_str:
+              return False
+          blocked = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+          prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+          try:
+              os.makedirs(path_str, exist_ok=True)
+              if hasattr(os, "O_TMPFILE"):
+                  try:
+                      fd = os.open(path_str, os.O_TMPFILE | os.O_RDWR, 0o600)
+                      os.close(fd)
+                      return True
+                  except OSError as exc:
+                      if exc.errno not in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL, errno.ENOSYS):
+                          return False
+              fd, probe = tempfile.mkstemp(prefix=".lazyslide-write-check-", dir=path_str)
+              try:
+                  os.close(fd)
+              finally:
+                  os.unlink(probe)
+              return True
+          except OSError:
+              return False
+          finally:
+              signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
+
+
+      def main() -> int:
+          cmd = ["/opt/lazyslide/bin/lazyslide-info", *sys.argv[1:]]
+          env = os.environ.copy()
+          try:
+              getpass.getuser()
+          except Exception:
+              env["USER"] = f"uid{os.getuid()}"
+
+          tmp_root: str | None = None
+          proc: subprocess.Popen[bytes] | None = None
+          received_signal: int | None = None
+          pending_signal: int | None = None
+          pending_tstp = False
+          tty_fd: int | None = None
+          orig_pgrp: int | None = None
+          handed_tty = False
+
+          def set_tty_pgrp(pgrp: int) -> bool:
+              if tty_fd is None:
+                  return False
+              prev = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+              try:
+                  os.tcsetpgrp(tty_fd, pgrp)
+                  return True
+              except OSError:
+                  return False
+              finally:
+                  signal.signal(signal.SIGTTOU, prev)
+
+          def owns_tty() -> bool:
+              if tty_fd is None or orig_pgrp is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == orig_pgrp
+              except OSError:
+                  return False
+
+          def child_owns_tty() -> bool:
+              if tty_fd is None or proc is None:
+                  return False
+              try:
+                  return os.tcgetpgrp(tty_fd) == proc.pid
+              except OSError:
+                  return False
+
+          def hand_tty_to_child() -> None:
+              nonlocal handed_tty
+              if proc is None or tty_fd is None or not owns_tty():
+                  return
+              if set_tty_pgrp(proc.pid):
+                  handed_tty = True
+
+          def reclaim_tty() -> None:
+              nonlocal handed_tty
+              if handed_tty and tty_fd is not None and orig_pgrp is not None:
+                  if child_owns_tty():
+                      set_tty_pgrp(orig_pgrp)
+                  handed_tty = False
+
+          def forward(signum: int) -> None:
+              if proc is not None and proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signum)
+                      if signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                          os.killpg(proc.pid, signal.SIGCONT)
+                  except ProcessLookupError:
+                      pass
+
+          def handle_signal(signum: int, _frame: object) -> None:
+              nonlocal received_signal, pending_signal
+              received_signal = signum
+              if proc is None:
+                  pending_signal = signum
+              else:
+                  forward(signum)
+
+          def handle_cont(_signum: int, _frame: object) -> None:
+              if proc is not None and proc.returncode is None and received_signal is None:
+                  hand_tty_to_child()
+
+          def handle_tstp(_signum: int, _frame: object) -> None:
+              nonlocal pending_tstp
+              if proc is None:
+                  pending_tstp = True
+              elif proc.returncode is None:
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+          def stop_self(stop_sig: int) -> None:
+              prev_tstp = signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+              try:
+                  os.kill(os.getpid(), stop_sig)
+              finally:
+                  signal.signal(signal.SIGTSTP, prev_tstp)
+
+          try:
+              signal.signal(signal.SIGINT, handle_signal)
+              signal.signal(signal.SIGTERM, handle_signal)
+              signal.signal(signal.SIGHUP, handle_signal)
+              signal.signal(signal.SIGCONT, handle_cont)
+              signal.signal(signal.SIGTSTP, handle_tstp)
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              missing = [item for item in ENV_SUBDIRS if not _is_writable_dir(env.get(item[0]))]
+              if not env.get("HOME"):
+                  missing.append(("HOME", "home"))
+              if received_signal is not None:
+                  return 128 + received_signal
+              if not missing:
+                  os.execve(cmd[0], cmd, env)
+
+              tmp_root = tempfile.mkdtemp(prefix="lazyslide.")
+              for key, subdir in missing:
+                  path = os.path.join(tmp_root, subdir)
+                  os.mkdir(path, 0o700)
+                  env[key] = path
+              if received_signal is not None:
+                  return 128 + received_signal
+
+              try:
+                  tty_fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+                  os.tcgetpgrp(tty_fd)
+                  orig_pgrp = os.getpgrp()
+              except OSError:
+                  if tty_fd is not None:
+                      try:
+                          os.close(tty_fd)
+                      except OSError:
+                          pass
+                  tty_fd = None
+
+              proc = subprocess.Popen(cmd, env=env, process_group=0)
+              if received_signal is None and owns_tty():
+                  hand_tty_to_child()
+                  if handed_tty:
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+
+              sig_to_replay, pending_signal = pending_signal, None
+              if sig_to_replay is not None:
+                  forward(sig_to_replay)
+              elif pending_tstp:
+                  pending_tstp = False
+                  try:
+                      os.killpg(proc.pid, signal.SIGTSTP)
+                  except ProcessLookupError:
+                      pass
+
+              rc = 0
+              while True:
+                  try:
+                      _, status = os.waitpid(proc.pid, os.WUNTRACED)
+                  except InterruptedError:
+                      continue
+                  except ChildProcessError:
+                      break
+                  if os.WIFSTOPPED(status):
+                      stop_sig = os.WSTOPSIG(status)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      if stop_sig in (signal.SIGTTIN, signal.SIGTTOU) and (
+                          owns_tty() or child_owns_tty()
+                      ):
+                          hand_tty_to_child()
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      reclaim_tty()
+                      stop_self(stop_sig)
+                      if received_signal is not None:
+                          try:
+                              os.killpg(proc.pid, signal.SIGCONT)
+                          except ProcessLookupError:
+                              pass
+                          continue
+                      hand_tty_to_child()
+                      try:
+                          os.killpg(proc.pid, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      continue
+                  if os.WIFSIGNALED(status):
+                      rc = -os.WTERMSIG(status)
+                  elif os.WIFEXITED(status):
+                      rc = os.WEXITSTATUS(status)
+                  else:
+                      continue
+                  proc.returncode = rc
+                  break
+              if received_signal is not None:
+                  return 128 + received_signal
+              return 128 - rc if rc < 0 else rc
+          finally:
+              reclaim_tty()
+              if tty_fd is not None:
+                  try:
+                      os.close(tty_fd)
+                  except OSError:
+                      pass
+              if tmp_root is not None:
+                  shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+
+deploy:
+  bins:
+    - lazyslide-info
+
+domains:
+  - microscopy
+
+categories:
+  - "digital pathology"
+  - "image segmentation"
+  - "machine learning"
+  - "optical imaging"
+
+readme: |-
+  ----------------------------------
+  ## lazyslide/{{ context.version }} ##
+
+  LazySlide (CPU-only PyTorch build, code-only without baked foundation-model
+  checkpoints) provides whole-slide image (WSI) reading, tissue segmentation,
+  tiling, and SpatialData/WSIData integration for computational dermatopathology.
+
+  ### Included CLI & Python Environment
+  ```
+  lazyslide-info             Report installed LazySlide, WSIData, OpenSlide, and PyTorch versions
+  /opt/lazyslide/bin/python  Python environment with lazyslide {{ context.upstream_version }}
+  ```
+
+  ### Example
+  ```
+  ml lazyslide/{{ context.version }}
+  lazyslide-info
+  /opt/lazyslide/bin/python -c "import lazyslide as zs, wsidata; print(zs.__version__)"
+  ```
+
+  Documentation: https://lazyslide.readthedocs.io
+  License texts (`LAZYSLIDE-LICENSE.txt`, `OPENCV-LICENSE.txt`,
+  `OPENSLIDE-PYTHON-COPYING.LESSER`, `openslide-bin/`) are installed under
+  `/opt/lazyslide/share/licenses/`, and LGPL-2.1 corresponding source tarballs
+  for OpenSlide are archived under `/opt/lazyslide/share/src/`.
+  ----------------------------------
+
+icon: data:image/png;base64,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
