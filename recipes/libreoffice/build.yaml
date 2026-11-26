@@ -140,6 +140,7 @@ domains:
   - molecular-imaging
   - datascience
   - dermatology
+  - genomics
 categories:
   - data organisation
 

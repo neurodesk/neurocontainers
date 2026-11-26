@@ -104,6 +104,7 @@ domains:
   - neuroimaging
   - datascience
   - dermatology
+  - genomics
 
 categories:
   - data organisation
