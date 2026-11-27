@@ -1,5 +1,5 @@
 name: plantseg
-version: 2.2.0
+version: 2.3.0
 
 tests:
   - name: plantseg and panseg launchers available
