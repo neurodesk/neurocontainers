@@ -887,10 +887,10 @@ tests:
   # ==========================================================================
   # ADDITIONAL BUNDLED TOOLS (C3D, Elastix, BEaST, N3, Perl, GUI, models)
   # ==========================================================================
-  - name: C3D available
-    description: Verify Convert3D (c3d) executable runs
-    command: c3d -h 2>&1 | head -5
-    expected_output_contains: "c3d"
+  - name: C3D image info
+    description: Verify Convert3D (c3d) reads NIfTI image metadata
+    command: c3d ${t1w_nii} -info
+    expected_output_contains: "dim ="
 
   - name: Elastix version check
     description: Verify Elastix executable runs and reports version
