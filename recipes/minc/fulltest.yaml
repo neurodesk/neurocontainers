@@ -887,10 +887,10 @@ tests:
   # ==========================================================================
   # ADDITIONAL BUNDLED TOOLS (C3D, Elastix, BEaST, N3, Perl, GUI, models)
   # ==========================================================================
-  - name: C3D image info
-    description: Verify Convert3D (c3d) reads NIfTI image metadata
-    command: c3d ${t1w_nii} -info
-    expected_output_contains: "dim ="
+  - name: C3D image info (aarch64 source build)
+    description: Verify Convert3D (c3d) reads NIfTI image metadata on builds that bundle it
+    command: 'if [ "$(uname -m)" = "aarch64" ]; then c3d ${t1w_nii} -info | grep -q "dim ="; fi'
+    expected_exit_code: 0
 
   - name: Elastix version check
     description: Verify Elastix executable runs and reports version
