@@ -884,6 +884,34 @@ tests:
     validate:
       - output_exists: ${output_dir}/t1w_std.mnc
 
+  # ==========================================================================
+  # ADDITIONAL BUNDLED TOOLS (C3D, Elastix, BEaST, N3, Perl, GUI, models)
+  # ==========================================================================
+  - name: C3D image info (aarch64 source build)
+    description: Verify Convert3D (c3d) reads NIfTI image metadata on builds that bundle it
+    command: 'if [ "$(uname -m)" = "aarch64" ]; then c3d ${t1w_nii} -info | grep -q "dim ="; fi'
+    expected_exit_code: 0
+
+  - name: Elastix version check
+    description: Verify Elastix executable runs and reports version
+    command: elastix --version
+    expected_output_contains: "elastix"
+
+  - name: BEaST and N3 tools available
+    description: Verify mincbeast and nu_correct are installed and runnable
+    command: command -v mincbeast && command -v nu_correct && mincbeast -help 2>&1 | grep -qi "beast"
+    expected_exit_code: 0
+
+  - name: Perl MNI modules and volgenmodel helpers available
+    description: Verify MNI Perl libraries, volgenmodel scripts, and bundled models are present
+    command: perl -MMNI::Startup -e 'print "MNI::Startup OK\n"' && command -v bestlinreg && command -v minccomplete && test -d "${MNI_DATAPATH}/beast-library-1.1" && test -d "${MNI_DATAPATH}/icbm152_model_09a" && test -d "${MNI_DATAPATH}/icbm152_model_09c"
+    expected_output_contains: "MNI::Startup OK"
+
+  - name: GUI binaries linked cleanly
+    description: Verify register and Display are installed with all shared libraries resolved
+    command: command -v register && command -v Display && ! ldd "$(command -v register)" | grep -q "not found" && ! ldd "$(command -v Display)" | grep -q "not found"
+    expected_exit_code: 0
+
 cleanup:
   script: |
     #!/usr/bin/env bash
