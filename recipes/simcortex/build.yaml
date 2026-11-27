@@ -6,6 +6,9 @@ architectures:
 
 variables:
   upstream_version: "2.0.0"
+  # Digest published in the upstream v2.0.0 release notes. The image label
+  # records commit 59f167e02ebe9680f9d9f2293827f7983d3325a3, the docs-only
+  # parent of release tag v2.0.0 (fa5cee4672681809679298db4d1509198aeb455f).
   image_digest: "sha256:b4dfdfa36a10eeedadd1eb4d62adfe751025e45336e6fdfeab717a2f6245ec25"
 
 auto_update:
@@ -53,9 +56,18 @@ build:
         - THIRD_PARTY_NOTICES.md
         - /opt/SimCortex/THIRD_PARTY_NOTICES.md
 
+    # The upstream image copies untracked Python 3.10 __pycache__ files from
+    # the developer tree into /opt/SimCortex. PYTHONPATH puts
+    # /opt/SimCortex/src ahead of site-packages, so that bytecode would run
+    # instead of the shipped source. /opt/SimCortex/build is the setuptools
+    # tree left by `pip install .` and nothing reads it at runtime.
     - run:
+        - find /opt/SimCortex -name __pycache__ -type d -prune -exec rm -rf {} +
+        - rm -rf /opt/SimCortex/build
+        - test -z "$(find /opt/SimCortex -name '*.pyc' -print)"
         - test -x /opt/conda-env/bin/simcortex
         - test -f /opt/SimCortex/scripts/run_pipeline.py
+        - test -f /opt/SimCortex/src/simcortex/utils/critical186LUT.raw.gz
 
     - deploy:
         path: []

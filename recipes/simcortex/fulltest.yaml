@@ -42,6 +42,15 @@ tests:
       "
     expected_output_contains: "Runtime imports passed"
 
+  - name: Application runs from source
+    description: >-
+      Verify SimCortex imports its source tree and the image ships no
+      prebuilt application bytecode that could run in its place.
+    command: |
+      test -z "$(find /opt/SimCortex -name '*.pyc' -print)" &&
+      /opt/conda-env/bin/python -c "import simcortex; print(simcortex.__file__)"
+    expected_output_contains: "/opt/SimCortex/src/simcortex/__init__.py"
+
   - name: Topology correction resource
     command: |
       echo "cbf1e339d78a0a2c673c939ee2c8a30ee3a35bfd9603d07ed2d48864bb0e88be  /opt/SimCortex/src/simcortex/utils/critical186LUT.raw.gz" | sha256sum -c -
