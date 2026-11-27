@@ -1,0 +1,73 @@
+name: simcortex
+version: "2.0.0"
+
+tests:
+  - name: SimCortex version
+    description: Verify the installed SimCortex version.
+    command: simcortex --version
+    expected_output_contains: "simcortex ${version}"
+
+  - name: SimCortex CLI
+    description: Verify the main command-line interface.
+    command: simcortex --help
+    expected_output_contains: "SimCortex"
+
+  - name: Preprocessing interface
+    command: simcortex fs-to-mni --help
+    expected_output_contains: "--mni-template"
+
+  - name: Segmentation interface
+    command: simcortex seg --help
+    expected_output_contains: "infer"
+
+  - name: Initial surface interface
+    command: simcortex initsurf --help
+    expected_output_contains: "generate"
+
+  - name: Deformation interface
+    command: simcortex deform --help
+    expected_output_contains: "infer"
+
+  - name: Scientific runtime dependencies
+    command: |
+      /opt/conda-env/bin/python -c "
+      import torch
+      import ants
+      import pytorch3d
+      import pytorch3d._C
+      import pymeshlab
+      import fcl
+      import simcortex
+      print('Runtime imports passed')
+      "
+    expected_output_contains: "Runtime imports passed"
+
+  - name: Application runs from source
+    description: >-
+      Verify SimCortex imports its source tree and the image ships no
+      prebuilt application bytecode that could run in its place.
+    command: |
+      test -z "$(find /opt/SimCortex -name '*.pyc' -print)" &&
+      /opt/conda-env/bin/python -c "import simcortex; print(simcortex.__file__)"
+    expected_output_contains: "/opt/SimCortex/src/simcortex/__init__.py"
+
+  - name: Topology correction resource
+    command: |
+      echo "cbf1e339d78a0a2c673c939ee2c8a30ee3a35bfd9603d07ed2d48864bb0e88be  /opt/SimCortex/src/simcortex/utils/critical186LUT.raw.gz" | sha256sum -c -
+    expected_output_contains: "OK"
+
+  - name: Single MRI pipeline
+    command: /opt/conda-env/bin/python /opt/SimCortex/scripts/run_pipeline.py single --help
+    expected_output_contains: "--t1w"
+
+  - name: BIDS pipeline
+    command: /opt/conda-env/bin/python /opt/SimCortex/scripts/run_pipeline.py bids --help
+    expected_output_contains: "--bids-root"
+
+  - name: License and third-party notices
+    description: Verify redistribution notices are available.
+    command: |
+      test -s /opt/SimCortex/LICENSE &&
+      test -s /opt/SimCortex/THIRD_PARTY_NOTICES.md &&
+      echo "License files present"
+    expected_output_contains: "License files present"
