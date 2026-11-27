@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "standalone"
@@ -15,12 +16,18 @@ auto_update:
   - id: standalone
     method: artifact_listing
     url: https://packages.bic.mni.mcgill.ca/minc-toolkit/Debian/
-    version_regex: minc-toolkit-(?P<version>\d+(?:\.\d+)+)-\d+-Ubuntu_18\.04-x86_64\.deb$
+    version_regex: minc-toolkit-(?P<version>1\.9\.18(?:\.\d+)*)-\d+-Ubuntu_18\.04-x86_64\.deb$
     download_base: https://packages.bic.mni.mcgill.ca/minc-toolkit/Debian/
     target:
       file: archive
       variables:
         upstream_version: version
+  - id: source
+    method: github_commit
+    repo: BIC-MNI/minc-toolkit-v2
+    ref: develop-1.9.18
+    target:
+      variable: minc_source_commit
   - id: volgenmodel
     dependency: true
     method: github_commit
@@ -30,11 +37,12 @@ auto_update:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:18.04
+  base-image: "{% if arch == 'aarch64' %}ubuntu:24.04{% else %}ubuntu:18.04{% endif %}"
   pkg-manager: apt
 
   directives:
-    - install:
+    - condition: arch == "x86_64"
+      install:
       - ca-certificates
       - curl
       - libgl1-mesa-dev
@@ -59,6 +67,69 @@ build:
       - gdebi-core
       - binutils
       - git
+    - condition: arch == "aarch64"
+      install:
+      - ca-certificates
+      - curl
+      - unzip
+      - octave
+      - perl
+      - libmath-matrixreal-perl
+      - libparallel-forkmanager-perl
+      - imagemagick
+      - bc
+      - ed
+      - libc6
+      - libstdc++6
+      - binutils
+      - git
+      - libgomp1
+      - libice6
+      - libsm6
+      - libx11-6
+      - libxcursor1
+      - libxext6
+      - libxi6
+      - libxinerama1
+      - libxmu6
+      - libxrandr2
+      - libegl1
+      - libgl1
+      - libglu1-mesa
+      - libglfw3
+      - zlib1g
+      - libnetcdf19t64
+      - libhdf5-103-1t64
+      - libhdf5-cpp-103-1t64
+      - libhdf5-hl-100t64
+      - libhdf5-hl-cpp-100t64
+      - libgsl27
+      - libgslcblas0
+      - libfftw3-double3
+      - libfftw3-single3
+      - libjpeg8
+      - libopenjp2-7
+      - libarchive13t64
+      - libexpat1
+      - libopenblas0
+      - libpng16-16t64
+    - condition: arch == "x86_64"
+      run:
+      - cd / && ar p {{ get_file("archive") }} data.tar.gz | tar -xz
+    - condition: arch == "aarch64"
+      run:
+      - apt-get update -qq
+      - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake lsb-release file bison flex gfortran pkg-config zlib1g-dev libnetcdf-dev libhdf5-dev libgsl-dev libfftw3-dev libjpeg-dev libopenjp2-7-dev libarchive-dev libexpat1-dev libopenblas-dev libpng-dev libx11-dev libxi-dev libxmu-dev libgl-dev libglu1-mesa-dev libglfw3-dev libxrandr-dev libxext-dev
+      - git clone --branch develop-1.9.18 https://github.com/BIC-MNI/minc-toolkit-v2.git /tmp/minc-toolkit-v2
+      - git -C /tmp/minc-toolkit-v2 checkout {{ context.minc_source_commit }}
+      - "SRC_VER=$(awk '/SET\\(MINC_TOOLKIT_PACKAGE_VERSION_(MAJOR|MINOR|PATCH)/ {gsub(/[^0-9]/, \"\", $2); v = (v ? v \".\" $2 : $2)} END {print v}' /tmp/minc-toolkit-v2/CMakeLists.txt) && test \"$SRC_VER\" = \"{{ context.upstream_version }}\""
+      - git -C /tmp/minc-toolkit-v2 submodule update --init --recursive
+      - cmake -S /tmp/minc-toolkit-v2 -B /tmp/minc-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/minc/{{ context.upstream_version }} -DMT_BUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DMT_BUILD_ITK_TOOLS=ON -DMT_BUILD_ANTS=ON -DMT_BUILD_C3D=ON -DMT_BUILD_ELASTIX=ON -DMT_BUILD_VISUAL_TOOLS=ON -DMT_BUILD_OPENBLAS=OFF -DMT_USE_OPENMP=ON -DUSE_SYSTEM_ZLIB=ON -DUSE_SYSTEM_NETCDF=ON -DUSE_SYSTEM_HDF5=ON -DUSE_SYSTEM_GSL=ON -DUSE_SYSTEM_FFTW3F=ON -DUSE_SYSTEM_FFTW3D=ON -DUSE_SYSTEM_JPEG=ON -DUSE_SYSTEM_OPENJPEG=ON -DUSE_SYSTEM_LIBARCHIVE=ON -DUSE_SYSTEM_PNG=ON -DUSE_SYSTEM_ITK=OFF
+      - "{ NPROC=$(nproc); MEM_KB=$(awk '/MemAvailable/ {print $2}' /proc/meminfo); for f in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do if [ -r \"$f\" ]; then v=$(cat \"$f\"); case \"$v\" in ''|*[!0-9]*) ;; *) cg_kb=$((v / 1024)); if [ \"$cg_kb\" -gt 0 ] && [ \"$cg_kb\" -lt \"$MEM_KB\" ]; then MEM_KB=$cg_kb; fi ;; esac; fi; done; MEM_JOBS=$((MEM_KB / 2621440)); [ \"$MEM_JOBS\" -lt 1 ] && MEM_JOBS=1; JOBS=$((NPROC < MEM_JOBS ? NPROC : MEM_JOBS)); cmake --build /tmp/minc-build -j\"${JOBS}\"; }"
+      - cmake --install /tmp/minc-build
+      - rm -rf /tmp/minc-toolkit-v2 /tmp/minc-build
+      - DEBIAN_FRONTEND=noninteractive apt-get purge -y --auto-remove build-essential cmake lsb-release file bison flex gfortran pkg-config zlib1g-dev libnetcdf-dev libhdf5-dev libgsl-dev libfftw3-dev libjpeg-dev libopenjp2-7-dev libarchive-dev libexpat1-dev libopenblas-dev libpng-dev libx11-dev libxi-dev libxmu-dev libgl-dev libglu1-mesa-dev libglfw3-dev libxrandr-dev libxext-dev
+      - rm -rf /var/lib/apt/lists/*
     - environment:
         MINC_TOOLKIT: /opt/minc-{{ context.upstream_version }}
         MINC_TOOLKIT_VERSION: /opt/minc-{{ context.upstream_version }}
@@ -72,14 +143,14 @@ build:
         VOLUME_CACHE_THRESHOLD: '-1'
         MANPATH: /opt/minc-{{ context.upstream_version }}/man:${MANPATH}
     - run:
-      - cd / && ar p {{ get_file("archive") }} data.tar.gz | tar -xz
       - ln -s /opt/minc/{{ context.upstream_version }} /opt/minc-{{ context.upstream_version }}
-      - mkdir -p /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype
+      - mkdir -p /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype /opt/minc-{{ context.upstream_version }}/share
       - tar -xzf {{ get_file("volgenmodel") }} -C /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype --strip-components
         1
       - tar -xzf {{ get_file("beast") }} -C /opt/minc-{{ context.upstream_version }}/share
       - unzip -q {{ get_file("mni_09a") }} -d /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09a
       - unzip -q {{ get_file("mni_09c") }} -d /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09c
+      - chmod -R a+rX /opt/minc/{{ context.upstream_version }}
 deploy:
   path:
     - /opt/minc-{{ context.upstream_version }}/bin/
@@ -123,9 +194,11 @@ gui_apps:
     exec: "register"
 variables:
   upstream_version: 1.9.18
+  minc_source_commit: 2037a070b102ed1425969ca7257dd14ea399f827
   volgenmodel_revision: 9e2d8d9cb9e42925a612c9c81bd081c095879aec
 files:
 - name: archive
+  condition: arch == "x86_64"
   url: https://packages.bic.mni.mcgill.ca/minc-toolkit/Debian/minc-toolkit-1.9.18-20200813-Ubuntu_18.04-x86_64.deb
   sha256: 43701593e9f366604b45b066849c4bb065e9cf5f41602af6e523366e50552947
 - name: volgenmodel
