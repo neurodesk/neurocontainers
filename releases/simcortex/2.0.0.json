@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "simcortex 2.0.0": {
+      "version": "20261127",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "image segmentation",
+    "shape analysis",
+    "machine learning"
+  ]
+}
