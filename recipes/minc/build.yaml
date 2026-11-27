@@ -128,6 +128,8 @@ build:
       - "{ NPROC=$(nproc); MEM_KB=$(awk '/MemAvailable/ {print $2}' /proc/meminfo); for f in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do if [ -r \"$f\" ]; then v=$(cat \"$f\"); case \"$v\" in ''|*[!0-9]*) ;; *) cg_kb=$((v / 1024)); if [ \"$cg_kb\" -gt 0 ] && [ \"$cg_kb\" -lt \"$MEM_KB\" ]; then MEM_KB=$cg_kb; fi ;; esac; fi; done; MEM_JOBS=$((MEM_KB / 2621440)); [ \"$MEM_JOBS\" -lt 1 ] && MEM_JOBS=1; JOBS=$((NPROC < MEM_JOBS ? NPROC : MEM_JOBS)); cmake --build /tmp/minc-build -j\"${JOBS}\"; }"
       - cmake --install /tmp/minc-build
       - rm -rf /tmp/minc-toolkit-v2 /tmp/minc-build
+      - rm -f /opt/minc/{{ context.upstream_version }}/lib/*.a
+      - chmod -R a+rX /opt/minc/{{ context.upstream_version }}
       - DEBIAN_FRONTEND=noninteractive apt-get purge -y --auto-remove build-essential cmake lsb-release file bison flex gfortran pkg-config zlib1g-dev libnetcdf-dev libhdf5-dev libgsl-dev libfftw3-dev libjpeg-dev libopenjp2-7-dev libarchive-dev libexpat1-dev libopenblas-dev libpng-dev libx11-dev libxi-dev libxmu-dev libgl-dev libglu1-mesa-dev libglfw3-dev libxrandr-dev libxext-dev
       - rm -rf /var/lib/apt/lists/*
     - environment:
@@ -150,7 +152,7 @@ build:
       - tar -xzf {{ get_file("beast") }} -C /opt/minc-{{ context.upstream_version }}/share
       - unzip -q {{ get_file("mni_09a") }} -d /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09a
       - unzip -q {{ get_file("mni_09c") }} -d /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09c
-      - chmod -R a+rX /opt/minc/{{ context.upstream_version }}
+      - chmod -R a+rX /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype /opt/minc-{{ context.upstream_version }}/share/beast-library-1.1 /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09a /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09c
 deploy:
   path:
     - /opt/minc-{{ context.upstream_version }}/bin/
