@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "minc_arm64 1.9.18": {
+      "version": "20261127",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "registerGUI-minc_arm64 1.9.18": {
+      "version": "20261127",
+      "exec": "register",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "image registration",
+    "structural imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "minc"
+}
