@@ -1,12 +1,14 @@
 {
   "apps": {
     "minc 1.9.18": {
-      "version": "20230208",
-      "exec": ""
+      "version": "20261127",
+      "exec": "",
+      "apptainer_args": []
     },
     "registerGUI-minc 1.9.18": {
-      "version": "20230208",
-      "exec": "register"
+      "version": "20261127",
+      "exec": "register",
+      "apptainer_args": []
     }
   },
   "categories": [
