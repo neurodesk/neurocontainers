@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "labelme_arm64 7.11.1": {
+      "version": "20261126",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "LabelMe-labelme_arm64 7.11.1": {
+      "version": "20261126",
+      "exec": "labelme",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "optical imaging",
+    "visualization"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "labelme"
+}
