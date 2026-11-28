@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "plantseg 2.3.0": {
+      "version": "20261127",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "PlantSeg (PanSeg)-plantseg 2.3.0": {
+      "version": "20261127",
+      "exec": "plantseg-gui",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "machine learning",
+    "visualization"
+  ]
+}
