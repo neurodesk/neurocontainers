@@ -1,5 +1,5 @@
 name: labelme
-version: 7.11.0
+version: "7.11.1"
 
 description: Offline 2D polygon, mask, and contour annotation GUI for dermoscopic lesions, clinical photography, and chronic wounds.
 
@@ -13,7 +13,7 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: "7.11.0"
+  upstream_version: "7.11.1"
 
 auto_update:
   method: sources

@@ -1,6 +1,6 @@
 name: labelme
-version: 7.11.0
-upstream_version: "7.11.0"
+version: "7.11.1"
+upstream_version: "7.11.1"
 
 tests:
   - name: labelme wrapper available on PATH
