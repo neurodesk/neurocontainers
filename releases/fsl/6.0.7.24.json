@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "fsl 6.0.7.24": {
+      "version": "20261128",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "fsleyesGUI-fsl 6.0.7.24": {
+      "version": "20261128",
+      "exec": "fsleyes",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "arterial spin labelling",
+    "functional imaging",
+    "structural imaging",
+    "diffusion imaging",
+    "image segmentation",
+    "image registration"
+  ]
+}
