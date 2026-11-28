@@ -1,7 +1,7 @@
 name: hyperspy
-version: 2.5.0
-upstream_version: "2.5.0"
-rosettasciio_version: "0.15.0"
+version: "2.6.0"
+upstream_version: "2.6.0"
+rosettasciio_version: "0.16.0"
 
 tests:
   - name: hyperspy-info wrapper available on PATH
