@@ -1,5 +1,5 @@
 name: hyperspy
-version: 2.5.0
+version: "2.6.0"
 
 description: Multi-dimensional hyperspectral and spectroscopic data analysis for Raman, reflectance, and fluorescence optical skin imaging.
 
@@ -16,11 +16,11 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: "2.5.0"
+  upstream_version: "2.6.0"
   # Coordinated GPL-3.0-or-later native extension pin (rsciio/bruker/unbcf_fast)
   # paired with its matching PyPI sdist SHA-256 corresponding source archive.
-  rosettasciio_version: "0.15.0"
-  rosettasciio_source_sha256: "fcf6e6e3675d766231e6eae59b951d2850e3363fd1c9a23957d8408f2833132f"
+  rosettasciio_version: "0.16.0"
+  rosettasciio_source_sha256: "b59356c851e9c7e8eae026e004121851ad35af735f77fc0ee6d04132f5080ff3"
 
 auto_update:
   method: sources
