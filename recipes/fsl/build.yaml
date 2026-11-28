@@ -1,12 +1,12 @@
 name: fsl
 # check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
 # check or add latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: "6.0.7.23"
+version: "6.0.7.24"
 
 variables:
-  fsl_version: "6.0.7.23"
-  fsleyes_version: "1.20.1"
-  fsleyes_filtermain_sha256: 073845ee1c23c7b189a14c2766135f74ccc7fd2f2302f876bd10b90fd32406f5
+  fsl_version: "6.0.7.24"
+  fsleyes_version: "1.20.2"
+  fsleyes_filtermain_sha256: 0829e111feb01aada13a127826ef7cc008cdc5b7d8791aa340d4babdac93b42a
   oxasl_mp_commit: 1986a97cb190471b3938f64d6ef45ef3bf567791
 
 copyright:
@@ -246,8 +246,9 @@ readme: |
   ```
 
   The default `fsleyes` command retains output filtering and restores stdout and stderr
-  safely at shutdown. The build checks the FSLeyes 1.20.1 source before patching the
-  descriptor race tracked in https://github.com/neurodesk/neurodesktop/issues/1012.
+  safely at shutdown (https://github.com/neurodesk/neurodesktop/issues/1012). The build
+  checks the FSLeyes {{ context.fsleyes_version }} source before patching its filter so
+  output redirected to a pipe or file is not lost.
   The container includes OSMesa for `fsleyes render` without an X display.
 
   This container also includes the [oxasl](https://github.com/physimals/oxasl) ASL (Arterial Spin Labelling) analysis pipeline from the Physimals group, along with the `oxasl_ve` (vessel-encoded ASL) and `oxasl_mp` (multi-phase ASL) extensions. The pipeline wraps FSL's BASIL toolbox and provides a single-command interface for preprocessing, kinetic model fitting, calibration, and output of perfusion maps.
