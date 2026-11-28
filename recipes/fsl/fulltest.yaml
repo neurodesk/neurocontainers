@@ -30,38 +30,25 @@ setup:
     mkdir -p test_output
 
 tests:
-  - name: FSLeyes filtered streams restore descriptors and preserve exit status
+  - name: FSLeyes filtered streams keep final output and preserve exit status
+    timeout: 120
     command: |
       fslpython - <<'PYTHON'
+      import os
+      import signal
       import subprocess
       import sys
       import textwrap
+      import time
 
       child = textwrap.dedent(r"""
           import atexit
           import os
+          import subprocess
           import sys
-          import threading
           import types
           import fsleyes
           from fsleyes import filtermain
-
-          readers = {}
-          writers = {}
-          original_filter = filtermain.filter_stream
-          original_close = os.close
-
-          def filter_stream(stream, die, filters=None):
-              reader, writer, alive = original_filter(stream, die, filters)
-              readers[stream.fileno()] = reader
-              writers[stream.fileno()] = writer
-              return reader, writer, alive
-
-          def close(fd):
-              original_close(fd)
-              if threading.current_thread() is writers.get(fd):
-                  readers[fd].join(timeout=5)
-                  assert not readers[fd].is_alive(), "Filter reader did not finish"
 
           def restored():
               for stream in (sys.stdout, sys.stderr):
@@ -69,28 +56,49 @@ tests:
                   print("restored", file=stream, flush=True)
 
           def application(args):
+              status, mode = args
               for stream in (sys.stdout, sys.stderr):
                   print("Gtk-Message: filtered warning", file=stream, flush=True)
                   print("application output", file=stream, flush=True)
-              return int(args[0])
+              if mode == "inherited":
+                  # A background process keeps the filter pipes open.
+                  worker = subprocess.Popen(["sleep", "60"], start_new_session=True)
+                  print(f"worker {worker.pid}", flush=True)
+              else:
+                  os.write(1, b"unterminated progress")
+                  os.write(2, b"last diagnostic")
+              return int(status)
 
           inner = types.ModuleType("fsleyes.main")
           inner.main = application
           sys.modules["fsleyes.main"] = inner
           fsleyes.main = inner
-          filtermain.filter_stream = filter_stream
-          os.close = close
           atexit.register(restored)
-          filtermain.main([sys.argv[1]])
+          filtermain.main(sys.argv[1:])
       """)
       for expected in (0, 7):
           result = subprocess.run(
-              [sys.executable, "-c", child, str(expected)],
+              [sys.executable, "-c", child, str(expected), "partial"],
               capture_output=True, text=True, timeout=30,
           )
           assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
-          for output in (result.stdout, result.stderr):
-              assert output == "application output\nrestored\n", repr(output)
+          assert result.stdout == "application output\nunterminated progressrestored\n", repr(result.stdout)
+          assert result.stderr == "application output\nlast diagnosticrestored\n", repr(result.stderr)
+
+      start = time.monotonic()
+      result = subprocess.run(
+          [sys.executable, "-c", child, "7", "inherited"],
+          capture_output=True, text=True, timeout=30,
+      )
+      elapsed = time.monotonic() - start
+      lines = result.stdout.splitlines()
+      worker = [line for line in lines if line.startswith("worker ")]
+      if worker:
+          os.kill(int(worker[0].split()[1]), signal.SIGTERM)
+      assert result.returncode == 7, (result.returncode, result.stdout, result.stderr)
+      assert elapsed < 20, f"FSLeyes waited {elapsed:.1f}s for an inherited pipe"
+      assert lines == ["application output", worker[0], "restored"], repr(result.stdout)
+      assert result.stderr == "application output\nrestored\n", repr(result.stderr)
       print("FSLeyes filtered streams and exit status preserved")
       PYTHON
     expected_output_contains: FSLeyes filtered streams and exit status preserved
